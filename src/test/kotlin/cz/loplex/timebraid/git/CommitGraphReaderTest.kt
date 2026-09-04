@@ -1,0 +1,139 @@
+package cz.loplex.timebraid.git
+
+import cz.loplex.timebraid.plan.MergePlan
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
+
+class CommitGraphReaderTest {
+
+    @TempDir
+    lateinit var tmp: Path
+
+    private fun open(vararg names: String): List<SourceRepository> =
+        names.map { SourceRepository.open(tmp.resolve("$it.git")) }
+
+    private inline fun <R> List<SourceRepository>.useAll(block: (List<SourceRepository>) -> R): R =
+        try {
+            block(this)
+        } finally {
+            forEach { it.close() }
+        }
+
+    @Test
+    fun `assembles one graph from several repositories and auto-detects the mainline`() {
+        lateinit var a2: String
+        lateinit var b1: String
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1")
+            a2 = repo.commit("a2", parents = listOf(a1)).name
+            repo.branch("main", org.eclipse.jgit.lib.ObjectId.fromString(a2))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            b1 = repo.commit("b1").name
+            repo.branch("main", org.eclipse.jgit.lib.ObjectId.fromString(b1))
+        }
+
+        open("backend", "webui").useAll { repos ->
+            val braid = CommitGraphReader.read(repos, OrderBy.COMMITTER)
+
+            assertEquals("main", braid.mainlineBranch)
+            assertEquals(3, braid.graph.size)
+            assertEquals(listOf("backend", "webui"), braid.graph.sourceNames)
+            assertEquals(a2, braid.graph.idOf(braid.heads[0]))
+            assertEquals(b1, braid.graph.idOf(braid.heads[1]))
+
+            val plan = MergePlan.build(braid.graph, braid.heads, subdirs = listOf("backend", "webui"))
+            assertEquals(3, plan.braid.size)
+        }
+    }
+
+    @Test
+    fun `falls back to master when main is absent in one repository`() {
+        for (name in listOf("backend.git", "webui.git")) {
+            TestRepoBuilder.create(tmp.resolve(name)).use { repo ->
+                val c = repo.commit("c")
+                if (name == "backend.git") repo.branch("main", c)
+                repo.branch("master", c)
+            }
+        }
+
+        open("backend", "webui").useAll { repos ->
+            assertEquals("master", CommitGraphReader.read(repos, OrderBy.COMMITTER).mainlineBranch)
+        }
+    }
+
+    @Test
+    fun `rejects an explicit mainline branch that is missing somewhere`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val c = repo.commit("c")
+            repo.branch("main", c)
+            repo.branch("develop", c)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("main", repo.commit("c"))
+        }
+
+        open("backend", "webui").useAll { repos ->
+            val error = assertThrows<IllegalArgumentException> {
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = "develop")
+            }
+            assertTrue(error.message!!.contains("webui"))
+        }
+    }
+
+    @Test
+    fun `a branch filter narrows what is loaded but always keeps the mainline`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1")
+            val a2 = repo.commit("a2", parents = listOf(a1))
+            val side = repo.commit("side", parents = listOf(a1))
+            repo.branch("main", a2)
+            repo.branch("experiment", side)
+            repo.annotatedTag("v1", a1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("main", repo.commit("b1"))
+        }
+
+        open("backend", "webui").useAll { repos ->
+            assertEquals(4, CommitGraphReader.read(repos, OrderBy.COMMITTER).graph.size)
+
+            // "experiment" filtered out; a1 and a2 survive via the mainline (and the tag on a1).
+            val narrowed = CommitGraphReader.read(repos, OrderBy.COMMITTER, branches = setOf("main"))
+            assertEquals(3, narrowed.graph.size)
+        }
+    }
+
+    @Test
+    fun `committer order and author order can disagree on the interleaving`() {
+        // backend authored before webui, but landed after it.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            repo.branch(
+                "main",
+                repo.commit(
+                    "a1",
+                    at = java.time.Instant.parse("2021-03-01T00:00:00Z"),
+                    authorAt = java.time.Instant.parse("2021-01-01T00:00:00Z"),
+                ),
+            )
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("main", repo.commit("b1", at = java.time.Instant.parse("2021-02-01T00:00:00Z")))
+        }
+
+        open("backend", "webui").useAll { repos ->
+            fun firstOnBraid(orderBy: OrderBy): String {
+                val braid = CommitGraphReader.read(repos, orderBy)
+                val plan = MergePlan.build(braid.graph, braid.heads, listOf("backend", "webui"))
+                val firstSha = braid.graph.idOf(plan.braid.first())
+                return if (firstSha == braid.graph.idOf(braid.heads[0])) "backend" else "webui"
+            }
+            assertEquals("backend", firstOnBraid(OrderBy.AUTHOR))
+            assertEquals("webui", firstOnBraid(OrderBy.COMMITTER))
+        }
+    }
+}
