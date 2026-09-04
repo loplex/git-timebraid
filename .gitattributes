@@ -1,0 +1,7 @@
+# The repository is LF, in the working tree as well as in the object store.
+# Git for Windows defaults core.autocrlf to true, so without this the
+# Windows leg of the matrix checks out CRLF copies of the fixtures that
+# assert on exact tree bytes, and then fails on content it never wrote.
+# The tool takes the same position about the repositories it writes, where
+# it sets core.autocrlf=false and core.eol=lf.
+* text=auto eol=lf
