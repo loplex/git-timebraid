@@ -1,0 +1,149 @@
+package cz.loplex.timebraid.plan
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+
+class MergePlanTest {
+
+    @Test
+    fun `plans two interleaved repositories`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
+        val heads = spec.ids("a3", "b2")
+
+        val plan = MergePlan.build(spec.graph, heads, spec.subdirs())
+
+        assertEquals(listOf("a1", "b1", "a2", "b2", "a3"), spec.names(plan.braid))
+        assertEquals(
+            listOf("a1", "b1", "a2", "b2", "a3"),
+            plan.commits.map { spec.graph.idOf(it.commit.index) },
+        )
+        PlanInvariants.assertAll(plan, heads, "interleaved")
+    }
+
+    @Test
+    fun `accumulates the content of every repository along the braid`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
+        val plan = MergePlan.build(spec.graph, spec.ids("a3", "b2"), spec.subdirs())
+
+        // At b2 the world is: A as of a2, B as of b2 — the state at that moment, not an approximation.
+        assertEquals(listOf("a2", "b2"), contentNames(spec, plan, "b2"))
+        // Before B existed at all, only A is present.
+        assertEquals(listOf("a1"), contentNames(spec, plan, "a1"))
+        assertEquals(listOf("a1", "b1"), contentNames(spec, plan, "b1"))
+    }
+
+    @Test
+    fun `a branch that exists in one repository still carries every repository`() {
+        // f1 and f2 are a side branch of A cut after b1 was already braided in.
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 ; f1(a2)@60 <- f2@70 | B: b1@20 <- b2@40")
+        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b2"), spec.subdirs())
+
+        assertEquals(listOf("f2", "b1"), contentNames(spec, plan, "f2"))
+        // B is frozen at whatever it was when the branch was cut, A follows the branch.
+        assertEquals(listOf("a2", "b1"), contentNames(spec, plan, "a2"))
+    }
+
+    @Test
+    fun `a merge on the braid is planned with three parents`() {
+        val spec = GraphSpec.parse(
+            "A: a1@10 <- a2@40 | B: b1@20 <- b2@30 ; f1(b1)@25 <- b3(b2,f1)@50"
+        )
+        val heads = spec.ids("a2", "b3")
+
+        val plan = MergePlan.build(spec.graph, heads, spec.subdirs())
+
+        assertEquals(listOf("a2", "b2", "f1"), spec.names(plan.parentsOf(spec.id("b3"))))
+        PlanInvariants.assertAll(plan, heads, "merge on the braid")
+        assertTrue(plan.summary().contains("3 -> 1"), plan.summary())
+    }
+
+    @Test
+    fun `one repository may be placed at the root`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
+        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b1"), listOf(null, "webui"))
+
+        assertNull(plan.subdirOf(spec.id("a1")))
+        assertEquals("webui", plan.subdirOf(spec.id("b1")))
+        assertTrue(plan.summary().contains("A -> <root>"), plan.summary())
+    }
+
+    @Test
+    fun `rejects two repositories placed in the same subdirectory`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        val failure = assertThrows<IllegalArgumentException> {
+            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("shared", "shared"))
+        }
+
+        assertTrue(failure.message!!.contains("same subdirectory"))
+    }
+
+    @Test
+    fun `rejects more than one repository at the root`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        assertThrows<IllegalArgumentException> {
+            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf(null, null))
+        }
+    }
+
+    @Test
+    fun `rejects a subdirectory name that is not a single directory`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        assertThrows<IllegalArgumentException> {
+            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("a/b", "B"))
+        }
+        assertThrows<IllegalArgumentException> {
+            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("..", "B"))
+        }
+    }
+
+    @Test
+    fun `rejects a subdirectory list that does not match the repositories`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        assertThrows<IllegalArgumentException> {
+            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("A"))
+        }
+    }
+
+    @Test
+    fun `renders a plan that can simply be diffed`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20 <- b2@40")
+        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b2"), spec.subdirs())
+
+        assertEquals(
+            """
+            repositories:
+              A -> A/
+              B -> B/
+            commits: 4 (braid: 4)
+            parent counts: 0 -> 1, 1 -> 1, 2 -> 2
+
+            000000 * A/a1 @10 parents=[] content=[A=a1]
+            000001 * B/b1 @20 parents=[A/a1] content=[A=a1, B=b1]
+            000002 * A/a2 @30 parents=[B/b1, A/a1] content=[A=a2, B=b1]
+            000003 * B/b2 @40 parents=[A/a2, B/b1] content=[A=a2, B=b2]
+            """.trimIndent() + "\n",
+            plan.render(),
+        )
+    }
+
+    @Test
+    fun `marks commits that are not on the braid`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 ; f1(a1)@20")
+        val plan = MergePlan.build(spec.graph, spec.ids("a2"), spec.subdirs())
+
+        assertTrue(plan.render().contains("   A/f1"), plan.render())
+        assertTrue(plan.render().contains(" * A/a2"), plan.render())
+    }
+
+    private fun contentNames(spec: GraphSpec, plan: MergePlan, name: String): List<String> =
+        plan.contentOf(spec.id(name))
+            .filter { it != CommitGraph.NO_COMMIT }
+            .map { spec.graph.idOf(it) }
+}
