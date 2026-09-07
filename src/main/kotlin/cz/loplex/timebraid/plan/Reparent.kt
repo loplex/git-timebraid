@@ -42,15 +42,8 @@ internal fun reparent(
     }
 
     // Fail loudly rather than write a broken repository: a braid order that respects ancestry
-    // cannot produce a cycle here, so a cycle means the order itself was wrong. The check counts
-    // edges down over a numbering of its own, the way every walk in this package does.
-    val index = HashMap<Commit, Int>(commits.size * 2)
-    commits.forEachIndexed { at, commit -> index[commit] = at }
-    val edges = Array(commits.size) { at ->
-        val row = parents.getValue(commits[at])
-        IntArray(row.size) { index.getValue(row[it]) }
-    }
-    requireAcyclic(edges) { commits[it].toString() }
+    // cannot produce a cycle here, so a cycle means the order itself was wrong.
+    requireAcyclic(commits, parents::getValue)
 
     return parents
 }

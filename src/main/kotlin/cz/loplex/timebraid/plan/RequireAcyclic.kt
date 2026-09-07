@@ -4,8 +4,8 @@ package cz.loplex.timebraid.plan
 class CyclicGraphException(message: String) : IllegalStateException(message)
 
 /**
- * Verifies that [parents] contains no cycle, and throws [CyclicGraphException] naming the offending
- * chain if it does.
+ * Verifies that the edges [parentsOf] reports over [nodes] contain no cycle, and throws
+ * [CyclicGraphException] naming the offending chain if they do.
  *
  * This runs in production, not only in tests. Reparenting adds an edge from each braid commit to its
  * predecessor in the braid sequence; as long as that sequence is a valid topological order, no cycle
@@ -13,14 +13,30 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * to fail loudly before a single object is written.
  *
  * Iterative depth-first search — the first-parent chain of a real repository is tens of thousands of
- * commits deep, which recursion would not survive.
+ * commits deep, which recursion would not survive. It walks a numbering of its own, derived here and
+ * never leaving, for the same reason [KahnOrder] derives one: colouring nodes and unwinding a stack
+ * wants flat arrays rather than a graph of objects. A caller passes nodes and names them by what they
+ * print as.
+ *
+ * @param nodes the nodes to check; every parent [parentsOf] names has to be among them.
+ * @param parentsOf the edges to check, which are not always the nodes' own — reparenting checks the
+ *   braided edges it has just derived, before anything is written from them.
  */
-internal fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String = { "#$it" }) {
+internal fun <T : Any> requireAcyclic(nodes: List<T>, parentsOf: (T) -> List<T>) {
     val white: Byte = 0
     val gray: Byte = 1
     val black: Byte = 2
 
-    val size = parents.size
+    val size = nodes.size
+    val indices = HashMap<T, Int>(size * 2)
+    nodes.forEachIndexed { index, node -> indices[node] = index }
+    val parents = Array(size) { index ->
+        val row = parentsOf(nodes[index])
+        IntArray(row.size) { at ->
+            indices[row[at]] ?: error("${row[at]} is named as a parent but is not among the nodes to check")
+        }
+    }
+
     val color = ByteArray(size)
     val stackNode = IntArray(size)
     val stackNextParent = IntArray(size)
@@ -43,7 +59,7 @@ internal fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String 
                         stackNode[top] = parent
                         stackNextParent[top] = 0
                     }
-                    gray -> throw CyclicGraphException(cycleMessage(stackNode, top, parent, describe))
+                    gray -> throw CyclicGraphException(cycleMessage(stackNode, top, parent, nodes))
                     else -> Unit
                 }
             } else {
@@ -54,14 +70,14 @@ internal fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String 
     }
 }
 
-private fun cycleMessage(
+private fun <T : Any> cycleMessage(
     stackNode: IntArray,
     top: Int,
     closing: Int,
-    describe: (Int) -> String,
+    nodes: List<T>,
 ): String {
     var from = top
     while (from > 0 && stackNode[from] != closing) from--
-    val chain = (from..top).joinToString(" -> ") { describe(stackNode[it]) }
-    return "cycle in the parent chain: $chain -> ${describe(closing)}"
+    val chain = (from..top).joinToString(" -> ") { nodes[stackNode[it]].toString() }
+    return "cycle in the parent chain: $chain -> ${nodes[closing]}"
 }

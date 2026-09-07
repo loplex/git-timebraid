@@ -17,12 +17,12 @@ class CommitGraphTest {
 
     @Test
     fun `requireAcyclic names the commits of the cycle it finds`() {
+        val names = listOf("a1", "a2", "a3")
         // a1 -> a2 -> a3 -> a1
-        val parents = arrayOf(intArrayOf(2), intArrayOf(0), intArrayOf(1))
-        val names = arrayOf("a1", "a2", "a3")
+        val parents = mapOf("a1" to listOf("a3"), "a2" to listOf("a1"), "a3" to listOf("a2"))
 
         val failure = assertThrows<CyclicGraphException> {
-            requireAcyclic(parents) { names[it] }
+            requireAcyclic(names, parents::getValue)
         }
 
         assertTrue(failure.message!!.startsWith("cycle in the parent chain:"))
@@ -32,8 +32,8 @@ class CommitGraphTest {
     @Test
     fun `requireAcyclic accepts a deep chain without exhausting the stack`() {
         val depth = 200_000
-        val parents = Array(depth) { if (it == 0) intArrayOf() else intArrayOf(it - 1) }
+        val chain = (0 until depth).toList()
 
-        requireAcyclic(parents)
+        requireAcyclic(chain) { if (it == 0) emptyList() else listOf(it - 1) }
     }
 }

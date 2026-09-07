@@ -80,7 +80,9 @@ internal class KahnOrder<T : Any>(
 
         if (order.size != size) {
             // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(edges) { nodes[it].toString() }
+            // The check is handed nodes and derives its own numbering rather than borrowing this
+            // one, which costs a map on the one path that ends in an exception anyway.
+            requireAcyclic(nodes) { node -> edges[indices.getValue(node)].map { nodes[it] } }
             // Not worth a caller's wording: reaching this means the cycle check above disagrees with
             // the walk, which is a bug here rather than anything the caller did.
             error("${order.size} of $size nodes were ordered, but no cycle was found")
