@@ -12,8 +12,8 @@ package cz.loplex.timebraid.plan
  * this pass has to guarantee is only that a commit is never written before one of its parents, since
  * a git object cannot reference an object that does not exist yet.
  *
- * The walk itself is [readyOrder], shared with [BraidInterleave]; this pass is that walk with every
- * commit in scope and every commit kept.
+ * The walk itself is [KahnOrder], shared with [BraidInterleave]; this pass is that walk over every
+ * commit there is, keeping every one of them.
  *
  * Ties on the timestamp break on the position a commit was given in, which makes the result a
  * deterministic function of the input: same commits in, byte-identical order out, in this run and
@@ -30,9 +30,6 @@ internal object TopoOrder {
      * @return every commit exactly once, parents before children.
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun compute(commits: List<Commit>, parentsOf: (Commit) -> List<Commit>): List<Commit> {
-        val nodes = Numbering(commits, parentsOf)
-        val everything = BooleanArray(nodes.size) { true }
-        return nodes.commitsAt(nodes.readyOrder(everything, nodes.size, "commits"))
-    }
+    fun compute(commits: List<Commit>, parentsOf: (Commit) -> List<Commit>): List<Commit> =
+        KahnOrder(commits, parentsOf, Commit::time, "commits").order()
 }

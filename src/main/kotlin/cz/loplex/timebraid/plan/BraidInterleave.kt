@@ -66,42 +66,38 @@ internal object BraidInterleave {
         interleaveTips: List<Commit>,
         parentsOf: (Commit) -> List<Commit>,
     ): List<Commit> {
-        val nodes = Numbering(commits, parentsOf)
-
-        val onBraid = BooleanArray(nodes.size)
-        var braidSize = 0
-        for (head in nodes.indicesOf(heads, "head")) {
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && !onBraid[commit]) {
-                onBraid[commit] = true
-                braidSize++
-                commit = nodes.firstParentOf(commit)
-            }
+        // The braid itself: each head's first-parent chain, up to wherever it meets one already
+        // walked. `add` answering false is that meeting point.
+        val onBraid = HashSet<Commit>()
+        for (head in heads) {
+            var commit: Commit? = head
+            while (commit != null && onBraid.add(commit)) commit = parentsOf(commit).firstOrNull()
         }
 
-        val inScope = onBraid.copyOf()
-        var scopeSize = braidSize
-        val pending = ArrayDeque<Int>()
-        for (tip in nodes.indicesOf(interleaveTips, "interleave tip")) {
-            if (!inScope[tip]) {
-                inScope[tip] = true
-                scopeSize++
-                pending.addLast(tip)
-            }
+        // Scope: the braid, plus everything the opted-in tips reach. A commit in scope but off the
+        // braid is never written by this pass; it is here only so that it can delay one that is.
+        val inScope = HashSet(onBraid)
+        val pending = ArrayDeque<Commit>()
+        for (tip in interleaveTips) {
+            if (inScope.add(tip)) pending.addLast(tip)
         }
         while (pending.isNotEmpty()) {
-            for (parent in nodes.edges[pending.removeLast()]) {
-                if (!inScope[parent]) {
-                    inScope[parent] = true
-                    scopeSize++
-                    pending.addLast(parent)
-                }
+            for (parent in parentsOf(pending.removeLast())) {
+                if (inScope.add(parent)) pending.addLast(parent)
             }
         }
 
-        // Everything in scope is ordered, because a commit off the braid still has to be able to
-        // delay one that is on it; only the braid itself is kept.
-        val order = nodes.readyOrder(inScope, scopeSize, "commits in scope")
-        return order.filter { onBraid[it] }.map { nodes.commits[it] }
+        // Taking the scope in the order the commits were given keeps the walk's tie-break the same
+        // as it would be over the whole graph: for any two commits in scope, their positions here
+        // and there rank them alike.
+        val scope = commits.filter { it in inScope }
+        val order = KahnOrder(
+            scope,
+            parentsOf = { commit -> parentsOf(commit).filter { it in inScope } },
+            priority = Commit::time,
+            what = "commits in scope",
+        ).order()
+
+        return order.filter { it in onBraid }
     }
 }
