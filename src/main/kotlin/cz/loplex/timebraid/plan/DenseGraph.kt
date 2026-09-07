@@ -4,9 +4,9 @@ package cz.loplex.timebraid.plan
  * The commit graph as [CommitGraph] stores it: parallel arrays indexed by a dense commit number.
  *
  * A [Commit] is a handle onto one row of these, which is what keeps a history of 14 000 commits to a
- * handful of arrays rather than an object per edge. This is storage and nothing else: the passes do
- * not read it, because each is handed commits and derives its own numbering from them — see
- * [Numbering]. Nothing outside this package can name the type either.
+ * handful of arrays rather than an object per edge. This is storage and nothing else, and its reach
+ * is [CommitGraph] and the commits that graph hands out: every pass takes commits and derives the
+ * numbering it works in for itself. Nothing outside this package can name the type either.
  *
  * Immutable in use: the arrays are copied on the way in and nothing writes into them afterwards. That
  * matters because two public objects can share the same instance — a [Braid] and the [CommitGraph] it
@@ -20,8 +20,6 @@ internal class DenseGraph private constructor(
     val sourceNames: List<String>,
 ) {
     val size: Int get() = edges.size
-
-    val sourceCount: Int get() = sourceNames.size
 
     /** `<repository>/<id>`, for diagnostics. The same text [Commit.toString] gives. */
     fun describe(commit: Int): String = "${sourceNames[source[commit]]}/${ids[commit]}"

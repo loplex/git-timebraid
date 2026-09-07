@@ -14,7 +14,6 @@ package cz.loplex.timebraid.plan
  */
 class Braid internal constructor(
     private val graph: CommitGraph,
-    private val core: DenseGraph,
     /** The braid, in braid order. */
     val commits: List<Commit>,
 ) {
@@ -26,10 +25,8 @@ class Braid internal constructor(
      *
      * @throws CyclicGraphException if the braid order contradicts ancestry.
      */
-    fun reparent(): ReparentedGraph {
-        val order = graph.indicesOf(commits, "braid commit")
-        return ReparentedGraph(graph, core, order, reparent(core, order))
-    }
+    fun reparent(): ReparentedGraph =
+        ReparentedGraph(graph, commits, reparent(graph.commits, commits) { it.parents })
 
     /**
      * The complete plan for the output history — [reparent] followed by [ReparentedGraph.plan].
@@ -49,16 +46,13 @@ class Braid internal constructor(
  */
 class ReparentedGraph internal constructor(
     private val graph: CommitGraph,
-    private val core: DenseGraph,
-    private val braid: IntArray,
-    private val parents: Array<IntArray>,
+    private val braid: List<Commit>,
+    private val parents: Map<Commit, List<Commit>>,
 ) {
-    private val order: IntArray by lazy {
-        graph.indicesOf(topoOrder(graph.commits, ::parentsOf), "write order")
-    }
+    private val order: List<Commit> by lazy { topoOrder(graph.commits, ::parentsOf) }
 
     /** Parents of [commit] after reparenting, first parent first. */
-    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(parents[commit.indexIn(graph)])
+    fun parentsOf(commit: Commit): List<Commit> = parents.getValue(commit)
 
     /**
      * The write order: every commit exactly once, parents before children, so a commit is never
@@ -66,7 +60,7 @@ class ReparentedGraph internal constructor(
      *
      * @throws CyclicGraphException if reparenting produced a graph that is not a DAG.
      */
-    fun writeOrder(): List<Commit> = graph.commitsAt(order)
+    fun writeOrder(): List<Commit> = order
 
     /**
      * The complete, deterministic description of the output repository's history.
@@ -75,5 +69,5 @@ class ReparentedGraph internal constructor(
      *   the root. Every repository of the graph has to appear.
      */
     fun plan(subdirs: Map<Source, String?>): MergePlan =
-        MergePlan.create(graph, core, braid, order, parents, subdirs)
+        MergePlan.create(graph, braid, order, parents, subdirs)
 }

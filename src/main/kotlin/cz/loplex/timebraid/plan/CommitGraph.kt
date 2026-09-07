@@ -86,9 +86,9 @@ class Commit internal constructor(
  * once by the reader. The planner never learns whether it got author or committer time, which keeps
  * that choice a one-line decision outside this package.
  *
- * What it hands out is [Commit] and [Source]. The dense arrays the passes run on stay in a
- * [DenseGraph] this class holds privately and passes to the stages it creates — see [braid] — so the
- * indices are never reachable from a caller, only from a stage that was given them.
+ * What it hands out is [Commit] and [Source]. The dense arrays behind them stay in a [DenseGraph]
+ * this class holds privately, and nothing else in the package holds one: a stage of the pipeline is
+ * given commits and works in commits, deriving whatever numbering it needs for itself.
  */
 class CommitGraph internal constructor(private val core: DenseGraph) {
 
@@ -130,16 +130,12 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
         for (head in heads) head.indexIn(this, "head")
         for (tip in interleaveTips) tip.indexIn(this, "interleave tip")
 
-        return Braid(this, core, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
+        return Braid(this, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
     }
 
     internal fun commitAt(commit: Int): Commit = handles[commit]
 
     internal fun commitsAt(indices: IntArray): List<Commit> = indices.map { handles[it] }
-
-    /** Indices of [commits], each checked to be a commit of this graph — see [Commit.indexIn]. */
-    internal fun indicesOf(commits: List<Commit>, what: String): IntArray =
-        IntArray(commits.size) { commits[it].indexIn(this, what) }
 
     companion object {
         /** Returned where a commit index is expected but there is none (no parent, no content yet). */

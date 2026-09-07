@@ -20,32 +20,37 @@ package cz.loplex.timebraid.plan
  * When `pred` is already a parent — the common case of two consecutive commits from the same
  * repository — nothing is added, which is also what keeps a parent from being listed twice.
  *
+ * @param commits every commit the rule applies to, which is every commit of the graph.
  * @param braid the mainline in braid order, as produced by [BraidInterleave].
- * @return new parent lists for every commit, indexed exactly like the graph.
+ * @param parentsOf the original parent edges.
+ * @return the new parent list of every commit.
  * @throws CyclicGraphException if the braid order contradicts ancestry.
  */
-internal fun reparent(graph: DenseGraph, braid: IntArray): Array<IntArray> {
-    val parents = Array(graph.size) { graph.edges[it].copyOf() }
+internal fun reparent(
+    commits: List<Commit>,
+    braid: List<Commit>,
+    parentsOf: (Commit) -> List<Commit>,
+): Map<Commit, List<Commit>> {
+    val parents = LinkedHashMap<Commit, List<Commit>>(commits.size * 2)
+    for (commit in commits) parents[commit] = parentsOf(commit)
 
     for (i in 1 until braid.size) {
         val commit = braid[i]
         val predecessor = braid[i - 1]
-        val original = parents[commit]
-        if (!original.holds(predecessor)) {
-            parents[commit] = IntArray(original.size + 1).also {
-                it[0] = predecessor
-                original.copyInto(it, destinationOffset = 1)
-            }
-        }
+        val original = parents.getValue(commit)
+        if (predecessor !in original) parents[commit] = listOf(predecessor) + original
     }
 
     // Fail loudly rather than write a broken repository: a braid order that respects ancestry
-    // cannot produce a cycle here, so a cycle means the order itself was wrong.
-    requireAcyclic(parents, graph::describe)
-    return parents
-}
+    // cannot produce a cycle here, so a cycle means the order itself was wrong. The check counts
+    // edges down over a numbering of its own, the way every walk in this package does.
+    val index = HashMap<Commit, Int>(commits.size * 2)
+    commits.forEachIndexed { at, commit -> index[commit] = at }
+    val edges = Array(commits.size) { at ->
+        val row = parents.getValue(commits[at])
+        IntArray(row.size) { index.getValue(row[it]) }
+    }
+    requireAcyclic(edges) { commits[it].toString() }
 
-private fun IntArray.holds(value: Int): Boolean {
-    for (element in this) if (element == value) return true
-    return false
+    return parents
 }

@@ -29,32 +29,29 @@ class PlannedCommit internal constructor(
  */
 class MergePlan private constructor(
     val graph: CommitGraph,
-    private val core: DenseGraph,
-    private val braidOrder: IntArray,
-    private val order: IntArray,
-    private val subdirs: Map<Source, String?>,
-    private val newParents: Array<IntArray>,
-    private val content: Array<IntArray>,
-    private val onBraid: BooleanArray,
-) {
-
     /** The braid, in braid order. */
-    val braid: List<Commit> = graph.commitsAt(braidOrder)
+    val braid: List<Commit>,
+    private val order: List<Commit>,
+    private val subdirs: Map<Source, String?>,
+    private val newParents: Map<Commit, List<Commit>>,
+    private val content: Array<IntArray>,
+    private val onBraid: Set<Commit>,
+) {
 
     /** Every commit to be written, in write order. */
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
-            commit = graph.commitAt(commit),
-            subdir = subdirs.getValue(graph.commitAt(commit).source),
-            parents = graph.commitsAt(newParents[commit]),
+            commit = commit,
+            subdir = subdirs.getValue(commit.source),
+            parents = newParents.getValue(commit),
         )
     }
 
     /** Parents of [commit] after reparenting, first parent first. */
-    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(newParents[commit.indexIn(graph)])
+    fun parentsOf(commit: Commit): List<Commit> = newParents.getValue(commit)
 
     /** Whether [commit] lies on the braid. */
-    fun isOnBraid(commit: Commit): Boolean = onBraid[commit.indexIn(graph)]
+    fun isOnBraid(commit: Commit): Boolean = commit in onBraid
 
     /** Subdirectory of the repository [commit] came from, `null` for the root repository. */
     fun subdirOf(commit: Commit): String? = subdirs.getValue(commit.source)
@@ -89,7 +86,7 @@ class MergePlan private constructor(
     fun summary(): String {
         val histogram = HashMap<Int, Int>()
         for (commit in order) {
-            histogram.merge(newParents[commit].size, 1) { a, b -> a + b }
+            histogram.merge(newParents.getValue(commit).size, 1) { a, b -> a + b }
         }
         val counts = histogram.keys.sorted().joinToString(", ") { "$it -> ${histogram[it]}" }
         return buildString {
@@ -97,7 +94,7 @@ class MergePlan private constructor(
             for (source in graph.sources) {
                 appendLine("  ${source.name} -> ${subdirs.getValue(source)?.plus("/") ?: "<root>"}")
             }
-            appendLine("commits: ${graph.size} (braid: ${braidOrder.size})")
+            appendLine("commits: ${graph.size} (braid: ${braid.size})")
             appendLine("parent counts: $counts")
         }
     }
@@ -110,17 +107,18 @@ class MergePlan private constructor(
         append(summary())
         appendLine()
         for ((position, commit) in order.withIndex()) {
+            val row = content[commit.indexIn(graph)]
             append(position.toString().padStart(6, '0'))
-            append(if (onBraid[commit]) " * " else "   ")
-            append(core.describe(commit))
-            append(" @").append(core.time[commit])
+            append(if (commit in onBraid) " * " else "   ")
+            append(commit)
+            append(" @").append(commit.time)
             append(" parents=[")
-            append(newParents[commit].joinToString(", ") { core.describe(it) })
+            append(newParents.getValue(commit).joinToString(", "))
             append("] content=[")
             append(
                 graph.sources
-                    .filter { content[commit][it.indexIn(graph)] != CommitGraph.NO_COMMIT }
-                    .joinToString(", ") { "${it.name}=${core.ids[content[commit][it.indexIn(graph)]]}" }
+                    .filter { row[it.indexIn(graph)] != CommitGraph.NO_COMMIT }
+                    .joinToString(", ") { "${it.name}=${graph.commitAt(row[it.indexIn(graph)]).id}" }
             )
             appendLine("]")
         }
@@ -136,26 +134,21 @@ class MergePlan private constructor(
          */
         fun create(
             graph: CommitGraph,
-            core: DenseGraph,
-            braidOrder: IntArray,
-            order: IntArray,
-            newParents: Array<IntArray>,
+            braid: List<Commit>,
+            order: List<Commit>,
+            newParents: Map<Commit, List<Commit>>,
             subdirs: Map<Source, String?>,
         ): MergePlan {
             validateSubdirs(graph, subdirs)
 
-            val onBraid = BooleanArray(graph.size)
-            for (commit in braidOrder) onBraid[commit] = true
-
             return MergePlan(
                 graph = graph,
-                core = core,
-                braidOrder = braidOrder,
+                braid = braid,
                 order = order,
                 subdirs = subdirs,
                 newParents = newParents,
-                content = accumulate(core, order, newParents),
-                onBraid = onBraid,
+                content = accumulate(graph, order, newParents),
+                onBraid = braid.toHashSet(),
             )
         }
 
@@ -169,26 +162,29 @@ class MergePlan private constructor(
          * parent, a side branch keeps the other repositories frozen at the point it was cut.
          */
         private fun accumulate(
-            graph: DenseGraph,
-            order: IntArray,
-            newParents: Array<IntArray>,
+            graph: CommitGraph,
+            order: List<Commit>,
+            newParents: Map<Commit, List<Commit>>,
         ): Array<IntArray> {
+            // One row per commit, one column per repository, both addressed by index: this is the
+            // largest thing the plan holds, and a map of maps over a corpus-sized history would cost
+            // far more than the rows are worth. It stays behind contentOf, which hands out commits.
             val content = arrayOfNulls<IntArray>(graph.size)
             for (commit in order) {
-                val parents = newParents[commit]
+                val parents = newParents.getValue(commit)
                 val inherited = if (parents.isEmpty()) {
-                    IntArray(graph.sourceCount) { CommitGraph.NO_COMMIT }
+                    IntArray(graph.sources.size) { CommitGraph.NO_COMMIT }
                 } else {
                     val firstParent = parents[0]
-                    val parentContent = content[firstParent]
+                    val parentContent = content[firstParent.indexIn(graph)]
                         ?: error(
-                            "commit ${graph.describe(commit)} is written before its first parent " +
-                                "${graph.describe(firstParent)} — the write order is not topological"
+                            "commit $commit is written before its first parent $firstParent — " +
+                                "the write order is not topological"
                         )
                     parentContent.copyOf()
                 }
-                inherited[graph.source[commit]] = commit
-                content[commit] = inherited
+                inherited[commit.source.indexIn(graph)] = commit.indexIn(graph)
+                content[commit.indexIn(graph)] = inherited
             }
             @Suppress("UNCHECKED_CAST")
             return content as Array<IntArray>
