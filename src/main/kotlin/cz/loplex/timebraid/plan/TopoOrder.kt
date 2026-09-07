@@ -25,7 +25,7 @@ import java.util.PriorityQueue
  * costs nothing here and keeps a plan dump (`--plan-out`) readable, roughly chronological rather than
  * arbitrary.
  */
-object TopoOrder {
+internal object TopoOrder {
 
     /**
      * @return every commit index exactly once, parents before children.

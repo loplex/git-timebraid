@@ -20,7 +20,7 @@ package cz.loplex.timebraid.plan
  * When `pred` is already a parent — the common case of two consecutive commits from the same
  * repository — nothing is added, which is also what keeps a parent from being listed twice.
  */
-object Reparenter {
+internal object Reparenter {
 
     /**
      * @param braid the mainline in braid order, as produced by [BraidInterleave].

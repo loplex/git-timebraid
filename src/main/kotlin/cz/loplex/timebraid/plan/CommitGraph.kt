@@ -31,7 +31,7 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * read out of a repository is a DAG by definition, and the one place where that can genuinely break
  * is reparenting, which checks explicitly (see [requireAcyclic] and [Reparenter]).
  */
-class CommitGraph(
+class CommitGraph internal constructor(
     parents: Array<IntArray>,
     sourceIndex: IntArray,
     orderingTime: LongArray,
@@ -102,7 +102,7 @@ class CommitGraph(
      * A copy of this graph with a different set of parent edges and everything else unchanged.
      * Used to view the reparented history through the same API as the original one.
      */
-    fun withParents(parents: Array<IntArray>): CommitGraph =
+    internal fun withParents(parents: Array<IntArray>): CommitGraph =
         CommitGraph(parents, source, time, ids, sourceNames)
 
     companion object {
@@ -123,7 +123,7 @@ class CommitGraph(
  * Iterative depth-first search — the first-parent chain of a real repository is tens of thousands of
  * commits deep, which recursion would not survive.
  */
-fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String = { "#$it" }) {
+internal fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String = { "#$it" }) {
     val white: Byte = 0
     val gray: Byte = 1
     val black: Byte = 2
