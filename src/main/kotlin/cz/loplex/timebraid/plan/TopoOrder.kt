@@ -31,5 +31,7 @@ internal object TopoOrder {
      * @throws CyclicGraphException if the graph is not a DAG.
      */
     fun compute(commits: List<Commit>, parentsOf: (Commit) -> List<Commit>): List<Commit> =
-        KahnOrder(commits, parentsOf, Commit::time, "commits").order()
+        KahnOrder(commits, parentsOf, compareBy(Commit::time)) {
+            "$it is named as a parent but is not one of the commits to order"
+        }.order()
 }

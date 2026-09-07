@@ -123,8 +123,15 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
      *   by `--interleave-ref`, already resolved. Empty by default; see [BraidInterleave] for what
      *   widening the scope trades away.
      */
-    fun braid(heads: List<Commit>, interleaveTips: List<Commit> = emptyList()): Braid =
-        Braid(this, core, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
+    fun braid(heads: List<Commit>, interleaveTips: List<Commit> = emptyList()): Braid {
+        // Named for this graph or not at all. The pass orders the commits of this graph, so one from
+        // another would contribute its own first-parent chain to nothing and be dropped without a
+        // word — a wrong braid rather than a refused one.
+        for (head in heads) head.indexIn(this, "head")
+        for (tip in interleaveTips) tip.indexIn(this, "interleave tip")
+
+        return Braid(this, core, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
+    }
 
     internal fun commitAt(commit: Int): Commit = handles[commit]
 

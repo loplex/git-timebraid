@@ -94,9 +94,8 @@ internal object BraidInterleave {
         val order = KahnOrder(
             scope,
             parentsOf = { commit -> parentsOf(commit).filter { it in inScope } },
-            priority = Commit::time,
-            what = "commits in scope",
-        ).order()
+            precedence = compareBy(Commit::time),
+        ) { "$it is reachable in the scope but is not one of the commits given" }.order()
 
         return order.filter { it in onBraid }
     }

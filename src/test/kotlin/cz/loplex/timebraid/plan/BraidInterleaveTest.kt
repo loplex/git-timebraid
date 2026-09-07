@@ -3,6 +3,7 @@ package cz.loplex.timebraid.plan
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 /**
  * Pins down the three properties [BraidInterleave]'s doc claims, and the one place where interleaving
@@ -16,6 +17,31 @@ import org.junit.jupiter.api.Test
  * first. The tests below demonstrate that divergence rather than assume it.
  */
 class BraidInterleaveTest {
+
+    @Test
+    fun `a head of another graph is refused rather than quietly left out of the braid`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
+        val other = GraphSpec.parse("A: x1@10")
+
+        val failure = assertThrows<IllegalArgumentException> {
+            spec.graph.braid(listOf(spec.commit("a2"), other.commit("x1")))
+        }
+
+        assertTrue(failure.message!!.contains("head"), failure.message)
+        assertTrue(failure.message!!.contains("A/x1"), failure.message)
+    }
+
+    @Test
+    fun `an interleave tip of another graph is refused too`() {
+        val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
+        val other = GraphSpec.parse("A: x1@10")
+
+        val failure = assertThrows<IllegalArgumentException> {
+            spec.graph.braid(spec.commits("a2", "b1"), listOf(other.commit("x1")))
+        }
+
+        assertTrue(failure.message!!.contains("interleave tip"), failure.message)
+    }
 
     @Test
     fun `agrees with a whole-graph interleave on two ordinary linear repositories`() {

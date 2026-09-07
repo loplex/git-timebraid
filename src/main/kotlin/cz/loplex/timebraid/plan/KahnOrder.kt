@@ -3,12 +3,12 @@ package cz.loplex.timebraid.plan
 import java.util.PriorityQueue
 
 /**
- * Kahn's algorithm over [nodes], earliest [priority] first among the nodes that are ready at any
+ * Kahn's algorithm over [nodes], [precedence] deciding between the nodes that are ready at any
  * moment. Both passes of this package are this walk; they differ in which nodes they hand it and
  * what they keep of the result, not in what it does.
  *
- * Keep the set of nodes whose parents have all been emitted, and always take the one with the
- * earliest priority. Membership of that ready set means no ancestry relation connects those nodes —
+ * Keep the set of nodes whose parents have all been emitted, and always take the one
+ * [precedence] puts first. Membership of that ready set means no ancestry relation connects those nodes —
  * if `x` were an ancestor of `y`, `y` could not have entered the set before `x` was emitted — so
  * parents-before-children holds by construction rather than by a comparator that has to be trusted
  * to be consistent.
@@ -21,18 +21,22 @@ import java.util.PriorityQueue
  * type: it works in indices because counting edges down wants a flat `IntArray` per node rather than
  * a graph of objects, and nobody else has to. A caller passes nodes and gets nodes back.
  *
- * Ties on [priority] break on the position a node was given in, which makes the result a
- * deterministic function of the input: the same nodes in the same order give byte-identical output
- * in this run and in any other, and two distinct nodes of equal priority can never compare equal and
- * collapse.
+ * [precedence] chooses among the nodes that are ready, and only among those, so it decides which
+ * valid order comes out and never whether the order is valid — an inconsistent comparator cannot
+ * produce a child before its parent here. Ties break on the position a node was given in, which is
+ * what makes the result a deterministic function of the input: the same nodes in the same order give
+ * byte-identical output in this run and in any other, and two distinct nodes can never compare equal
+ * and collapse.
  *
- * @param what names the nodes in a failure message.
+ * @param strayParent what to say about a parent that is not among [nodes]. A caller knows what its
+ *   nodes are and can name them; this cannot.
  */
 internal class KahnOrder<T : Any>(
     private val nodes: List<T>,
     parentsOf: (T) -> List<T>,
-    private val priority: (T) -> Long,
-    private val what: String = "nodes",
+    private val precedence: Comparator<T>,
+    private val strayParent: (T) -> String =
+        { "$it was named as a parent but is not among the nodes to order" },
 ) {
 
     private val indices = HashMap<T, Int>(nodes.size * 2)
@@ -48,8 +52,7 @@ internal class KahnOrder<T : Any>(
         }
     }
 
-    private fun indexOf(node: T): Int =
-        indices[node] ?: error("$node is not among the $what this order was given")
+    private fun indexOf(node: T): Int = indices[node] ?: error(strayParent(node))
 
     /**
      * @return every node exactly once, parents before children.
@@ -60,7 +63,7 @@ internal class KahnOrder<T : Any>(
         val children = childEdges()
         val unemitted = IntArray(size) { edges[it].size }
 
-        val ready = PriorityQueue(maxOf(1, size), earliestFirst())
+        val ready = PriorityQueue(maxOf(1, size), readyFirst())
         for (node in 0 until size) {
             if (unemitted[node] == 0) ready.add(node)
         }
@@ -78,14 +81,16 @@ internal class KahnOrder<T : Any>(
         if (order.size != size) {
             // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
             requireAcyclic(edges) { nodes[it].toString() }
-            error("${order.size} of $size $what were ordered, but no cycle was found")
+            // Not worth a caller's wording: reaching this means the cycle check above disagrees with
+            // the walk, which is a bug here rather than anything the caller did.
+            error("${order.size} of $size nodes were ordered, but no cycle was found")
         }
         return order
     }
 
-    private fun earliestFirst(): Comparator<Int> = Comparator { a, b ->
-        val byPriority = priority(nodes[a]).compareTo(priority(nodes[b]))
-        if (byPriority != 0) byPriority else a.compareTo(b)
+    private fun readyFirst(): Comparator<Int> = Comparator { a, b ->
+        val byPrecedence = precedence.compare(nodes[a], nodes[b])
+        if (byPrecedence != 0) byPrecedence else a.compareTo(b)
     }
 
     /**
