@@ -14,6 +14,9 @@ class GitCommandException(message: String) : RuntimeException(message)
  * Object reading and writing stays in-process (JGit), which is where control and performance matter
  * and where a merge of three repositories spends all of its time.
  *
+ * Inheriting that environment is the point, so it is passed through almost whole — see
+ * [dropRedirectingVariables] for the one class of variable that is not.
+ *
  * @param log receives the command line and every line it prints — wired to `--verbose`.
  */
 class GitCommand(private val log: (String) -> Unit = {}) {
@@ -47,10 +50,11 @@ class GitCommand(private val log: (String) -> Unit = {}) {
     private fun exec(cwd: Path?, vararg args: String) {
         val command = listOf("git", *args)
         log(command.joinToString(" "))
-        val process = ProcessBuilder(command)
+        val builder = ProcessBuilder(command)
             .apply { cwd?.let { directory(it.toFile()) } }
             .redirectErrorStream(true)
-            .start()
+        dropRedirectingVariables(builder.environment())
+        val process = builder.start()
         val output = process.inputStream.bufferedReader().useLines { lines ->
             lines.onEach(log).toList()
         }
@@ -62,6 +66,42 @@ class GitCommand(private val log: (String) -> Unit = {}) {
                     output.takeLast(10).forEach { append('\n').append(it) }
                 }
             )
+        }
+    }
+
+    internal companion object {
+
+        /**
+         * Environment variables that tell git which repository to work on, overriding both `-C` and
+         * the process working directory. A caller that has one of these exported — a git hook, or any
+         * script that wrapped git and exported its own repository along the way — would otherwise send
+         * every `clone`, `fetch` and `checkout` here into a repository nobody asked for, and the
+         * failure would look like a bug in this program rather than in its environment.
+         *
+         * The list is a deny-list rather than an allow-list on purpose. Shelling out is what keeps
+         * `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_AUTH_SOCK`, the proxy variables and `GIT_CONFIG_*`
+         * working, so the environment has to arrive almost whole; only the variables that move the
+         * repository out from under the command are worth taking away.
+         */
+        private val REDIRECTING_VARIABLES = setOf(
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_NAMESPACE",
+        )
+
+        /**
+         * Removes [REDIRECTING_VARIABLES] from a subprocess environment, leaving everything else.
+         *
+         * Removed one key at a time rather than through `keys.removeAll`, whose direction of iteration
+         * depends on the relative sizes of the two collections: on Windows the environment map matches
+         * names case-insensitively, and only the map's own `remove` honours that.
+         */
+        internal fun dropRedirectingVariables(environment: MutableMap<String, String>) {
+            REDIRECTING_VARIABLES.forEach(environment::remove)
         }
     }
 }

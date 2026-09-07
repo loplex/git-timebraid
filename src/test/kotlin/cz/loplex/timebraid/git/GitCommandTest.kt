@@ -52,6 +52,47 @@ class GitCommandTest {
         }
     }
 
+    /**
+     * The environment reaches the subprocess through `ProcessBuilder`, and a test JVM cannot alter its
+     * own, so the policy is checked where it is decided rather than through a real `git` run. Both
+     * halves matter: dropping too much would break the credential and transport setup that shelling
+     * out to `git` exists to inherit.
+     */
+    @Test
+    fun `only the variables that redirect git to another repository are dropped`() {
+        val environment = mutableMapOf(
+            // Redirecting: each one moves the repository out from under the command.
+            "GIT_DIR" to "/elsewhere/.git",
+            "GIT_WORK_TREE" to "/elsewhere",
+            "GIT_COMMON_DIR" to "/elsewhere/.git",
+            "GIT_INDEX_FILE" to "/elsewhere/.git/index",
+            "GIT_OBJECT_DIRECTORY" to "/elsewhere/.git/objects",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES" to "/other/objects",
+            "GIT_NAMESPACE" to "sandbox",
+            // Kept: this is what shelling out to the user's own git is for.
+            "GIT_SSH_COMMAND" to "ssh -i /home/me/.ssh/id_ed25519",
+            "GIT_ASKPASS" to "/usr/bin/my-askpass",
+            "GIT_CONFIG_GLOBAL" to "/home/me/.gitconfig",
+            "SSH_AUTH_SOCK" to "/run/user/1000/ssh-agent",
+            "HTTPS_PROXY" to "http://proxy.example:3128",
+            "HOME" to "/home/me",
+        )
+
+        GitCommand.dropRedirectingVariables(environment)
+
+        assertEquals(
+            setOf(
+                "GIT_SSH_COMMAND",
+                "GIT_ASKPASS",
+                "GIT_CONFIG_GLOBAL",
+                "SSH_AUTH_SOCK",
+                "HTTPS_PROXY",
+                "HOME",
+            ),
+            environment.keys,
+        )
+    }
+
     @Test
     fun `a failing git command throws with its output attached`() {
         val failure = assertThrows<GitCommandException> {
