@@ -1,16 +1,16 @@
 package cz.loplex.timebraid.plan
 
 /**
- * The commit graph as the passes want it: parallel arrays indexed by a dense commit number.
+ * The commit graph as [CommitGraph] stores it: parallel arrays indexed by a dense commit number.
  *
- * Kahn's algorithm walks edges and counts them down; it wants a flat `IntArray` per commit and a
- * counter per commit, not a graph of objects. This holds exactly that, and nothing outside this
- * package can name the type — a stage of the pipeline receives one when it is constructed and hands
- * it on to the next, so the arrays never become anybody's to reach for.
+ * A [Commit] is a handle onto one row of these, which is what keeps a history of 14 000 commits to a
+ * handful of arrays rather than an object per edge. This is storage and nothing else: the passes do
+ * not read it, because each is handed commits and derives its own numbering from them — see
+ * [Numbering]. Nothing outside this package can name the type either.
  *
- * Immutable in use: the arrays are copied on the way in, and every pass that changes the edges builds
- * a new instance through [withParents] rather than writing into this one. That matters because two
- * public objects can share the same instance — a [Braid] and the [CommitGraph] it came from do.
+ * Immutable in use: the arrays are copied on the way in and nothing writes into them afterwards. That
+ * matters because two public objects can share the same instance — a [Braid] and the [CommitGraph] it
+ * came from do.
  */
 internal class DenseGraph private constructor(
     val edges: Array<IntArray>,
@@ -23,15 +23,8 @@ internal class DenseGraph private constructor(
 
     val sourceCount: Int get() = sourceNames.size
 
-    fun firstParentOf(commit: Int): Int =
-        if (edges[commit].isEmpty()) CommitGraph.NO_COMMIT else edges[commit][0]
-
     /** `<repository>/<id>`, for diagnostics. The same text [Commit.toString] gives. */
     fun describe(commit: Int): String = "${sourceNames[source[commit]]}/${ids[commit]}"
-
-    /** The same commits and timestamps under a different set of parent edges. */
-    fun withParents(parents: Array<IntArray>): DenseGraph =
-        DenseGraph(parents, source, time, ids, sourceNames)
 
     companion object {
         /**

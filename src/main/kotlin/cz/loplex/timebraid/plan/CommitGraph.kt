@@ -112,7 +112,7 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
      *
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun topologicalOrder(): List<Commit> = commitsAt(TopoOrder.compute(core))
+    fun topologicalOrder(): List<Commit> = TopoOrder.compute(commits) { it.parents }
 
     /**
      * Interleaves the strands' mainlines into the single braid the output's history is built around.
@@ -124,15 +124,7 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
      *   widening the scope trades away.
      */
     fun braid(heads: List<Commit>, interleaveTips: List<Commit> = emptyList()): Braid =
-        Braid(
-            this,
-            core,
-            BraidInterleave.compute(
-                core,
-                indicesOf(heads, "head"),
-                indicesOf(interleaveTips, "interleave tip"),
-            ),
-        )
+        Braid(this, core, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
 
     internal fun commitAt(commit: Int): Commit = handles[commit]
 

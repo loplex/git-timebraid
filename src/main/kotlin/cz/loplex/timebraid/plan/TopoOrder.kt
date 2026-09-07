@@ -1,7 +1,5 @@
 package cz.loplex.timebraid.plan
 
-import java.util.PriorityQueue
-
 /**
  * Orders every commit of a graph so that **every parent comes before its child**, preferring the
  * earliest timestamp among the commits that are ready at any moment.
@@ -14,49 +12,27 @@ import java.util.PriorityQueue
  * this pass has to guarantee is only that a commit is never written before one of its parents, since
  * a git object cannot reference an object that does not exist yet.
  *
- * The implementation is Kahn's algorithm with a priority queue: keep the set of commits whose parents
- * have all been emitted, and always take the one with the earliest timestamp. Membership of that
- * ready set means no ancestry relation connects those commits — if `x` were an ancestor of `y`, `y`
- * could not have entered the set before `x` was emitted — so ancestry holds by construction rather
- * than by a comparator that has to be trusted to be consistent.
+ * The walk itself is [readyOrder], shared with [BraidInterleave]; this pass is that walk with every
+ * commit in scope and every commit kept.
  *
- * Ties on the timestamp break on the dense index, which makes the result a deterministic function of
- * the input: same graph in, byte-identical order out, in this run and in any other. Preferring time
+ * Ties on the timestamp break on the position a commit was given in, which makes the result a
+ * deterministic function of the input: same commits in, byte-identical order out, in this run and
+ * in any other. Preferring time
  * costs nothing here and keeps a plan dump (`--plan-out`) readable, roughly chronological rather than
  * arbitrary.
  */
 internal object TopoOrder {
 
     /**
-     * @return every commit index exactly once, parents before children.
+     * @param commits the nodes to order; every parent [parentsOf] names has to be among them.
+     * @param parentsOf the edges to order by, which are not always the commits' own — the write
+     *   order runs on the braided history, where a braid edge is a parent like any other.
+     * @return every commit exactly once, parents before children.
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun compute(graph: DenseGraph): IntArray {
-        val size = graph.size
-        val children = ChildEdges.of(graph)
-        val unemittedParents = IntArray(size) { graph.edges[it].size }
-
-        val ready = PriorityQueue(maxOf(1, size), earliestFirst(graph))
-        for (commit in 0 until size) {
-            if (unemittedParents[commit] == 0) ready.add(commit)
-        }
-
-        val order = IntArray(size)
-        var emitted = 0
-        while (ready.isNotEmpty()) {
-            val commit = ready.poll()
-            order[emitted++] = commit
-            for (i in children.starts[commit] until children.starts[commit + 1]) {
-                val child = children.targets[i]
-                if (--unemittedParents[child] == 0) ready.add(child)
-            }
-        }
-
-        if (emitted != size) {
-            // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(graph.edges, graph::describe)
-            error("$emitted of $size commits ordered, but no cycle was found")
-        }
-        return order
+    fun compute(commits: List<Commit>, parentsOf: (Commit) -> List<Commit>): List<Commit> {
+        val nodes = Numbering(commits, parentsOf)
+        val everything = BooleanArray(nodes.size) { true }
+        return nodes.commitsAt(nodes.readyOrder(everything, nodes.size, "commits"))
     }
 }

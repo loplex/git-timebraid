@@ -15,21 +15,21 @@ package cz.loplex.timebraid.plan
 class Braid internal constructor(
     private val graph: CommitGraph,
     private val core: DenseGraph,
-    private val order: IntArray,
-) {
     /** The braid, in braid order. */
-    val commits: List<Commit> get() = graph.commitsAt(order)
-
+    val commits: List<Commit>,
+) {
     /** Number of commits on the braid. */
-    val size: Int get() = order.size
+    val size: Int get() = commits.size
 
     /**
      * Applies the parent rule, turning each braid step into a real parent edge.
      *
      * @throws CyclicGraphException if the braid order contradicts ancestry.
      */
-    fun reparent(): ReparentedGraph =
-        ReparentedGraph(graph, core, order, Reparenter.reparent(core, order))
+    fun reparent(): ReparentedGraph {
+        val order = graph.indicesOf(commits, "braid commit")
+        return ReparentedGraph(graph, core, order, Reparenter.reparent(core, order))
+    }
 
     /**
      * The complete plan for the output history — [reparent] followed by [ReparentedGraph.plan].
@@ -53,11 +53,12 @@ class ReparentedGraph internal constructor(
     private val braid: IntArray,
     private val parents: Array<IntArray>,
 ) {
-    private val order: IntArray by lazy { TopoOrder.compute(core.withParents(parents)) }
+    private val order: IntArray by lazy {
+        graph.indicesOf(TopoOrder.compute(graph.commits, ::parentsOf), "write order")
+    }
 
     /** Parents of [commit] after reparenting, first parent first. */
-    fun parentsOf(commit: Commit): List<Commit> =
-        graph.commitsAt(parents[graph.indicesOf(listOf(commit), "commit")[0]])
+    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(parents[commit.indexIn(graph)])
 
     /**
      * The write order: every commit exactly once, parents before children, so a commit is never

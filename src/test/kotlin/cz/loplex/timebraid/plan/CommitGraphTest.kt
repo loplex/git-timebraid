@@ -67,22 +67,6 @@ class CommitGraphTest {
     }
 
     @Test
-    fun `withParents keeps identity and timestamps and replaces only the edges`() {
-        val spec = GraphSpec.parse("A: a1@10 <- a2@20 | B: b1@15")
-        val braided = CommitGraph(
-            spec.core.withParents(
-                arrayOf(intArrayOf(), intArrayOf(spec.id("b1"), spec.id("a1")), intArrayOf(spec.id("a1")))
-            )
-        )
-
-        val a2 = braided.commits[spec.id("a2")]
-        assertEquals("a2", a2.id)
-        assertEquals(20L, a2.time)
-        assertEquals("B", braided.commits[spec.id("b1")].source.name)
-        assertEquals(listOf("b1", "a1"), a2.parents.map { it.id })
-    }
-
-    @Test
     fun `requireAcyclic names the commits of the cycle it finds`() {
         // a1 -> a2 -> a3 -> a1
         val parents = arrayOf(intArrayOf(2), intArrayOf(0), intArrayOf(1))

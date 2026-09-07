@@ -1,7 +1,5 @@
 package cz.loplex.timebraid.plan
 
-import java.util.PriorityQueue
-
 /**
  * Decides *the braid*: which commits form the output's single interleaved mainline, and in what order.
  *
@@ -58,30 +56,33 @@ internal object BraidInterleave {
      * @param interleaveTips commits whose ancestry is allowed to delay a braid commit — the refs named
      *   by `--interleave-ref`, already resolved. Empty by default, which is the mainline-chains-only
      *   scope described above.
+     * @param commits the nodes in scope; every head, tip and parent has to be among them.
+     * @param parentsOf the edges to walk, the commits' own in every present caller.
      * @return the braid — the union of the heads' first-parent chains — in braid order.
      */
     fun compute(
-        graph: DenseGraph,
-        heads: IntArray,
-        interleaveTips: IntArray = IntArray(0),
-    ): IntArray {
-        val onBraid = BooleanArray(graph.size)
+        commits: List<Commit>,
+        heads: List<Commit>,
+        interleaveTips: List<Commit>,
+        parentsOf: (Commit) -> List<Commit>,
+    ): List<Commit> {
+        val nodes = Numbering(commits, parentsOf)
+
+        val onBraid = BooleanArray(nodes.size)
         var braidSize = 0
-        for (head in heads) {
-            require(head in 0 until graph.size) { "head index $head is not a commit of this graph" }
+        for (head in nodes.indicesOf(heads, "head")) {
             var commit = head
             while (commit != CommitGraph.NO_COMMIT && !onBraid[commit]) {
                 onBraid[commit] = true
                 braidSize++
-                commit = graph.firstParentOf(commit)
+                commit = nodes.firstParentOf(commit)
             }
         }
 
         val inScope = onBraid.copyOf()
         var scopeSize = braidSize
         val pending = ArrayDeque<Int>()
-        for (tip in interleaveTips) {
-            require(tip in 0 until graph.size) { "tip index $tip is not a commit of this graph" }
+        for (tip in nodes.indicesOf(interleaveTips, "interleave tip")) {
             if (!inScope[tip]) {
                 inScope[tip] = true
                 scopeSize++
@@ -89,7 +90,7 @@ internal object BraidInterleave {
             }
         }
         while (pending.isNotEmpty()) {
-            for (parent in graph.edges[pending.removeLast()]) {
+            for (parent in nodes.edges[pending.removeLast()]) {
                 if (!inScope[parent]) {
                     inScope[parent] = true
                     scopeSize++
@@ -98,33 +99,9 @@ internal object BraidInterleave {
             }
         }
 
-        val children = ChildEdges.of(graph)
-        val unemitted = IntArray(graph.size)
-        val ready = PriorityQueue(maxOf(1, scopeSize), earliestFirst(graph))
-        for (commit in 0 until graph.size) {
-            if (!inScope[commit]) continue
-            unemitted[commit] = graph.edges[commit].count { inScope[it] }
-            if (unemitted[commit] == 0) ready.add(commit)
-        }
-
-        val braid = IntArray(braidSize)
-        var next = 0
-        var emitted = 0
-        while (ready.isNotEmpty()) {
-            val commit = ready.poll()
-            emitted++
-            if (onBraid[commit]) braid[next++] = commit
-            for (i in children.starts[commit] until children.starts[commit + 1]) {
-                val child = children.targets[i]
-                if (inScope[child] && --unemitted[child] == 0) ready.add(child)
-            }
-        }
-
-        if (emitted != scopeSize) {
-            // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(graph.edges, graph::describe)
-            error("$emitted of $scopeSize commits in scope were ordered, but no cycle was found")
-        }
-        return braid
+        // Everything in scope is ordered, because a commit off the braid still has to be able to
+        // delay one that is on it; only the braid itself is kept.
+        val order = nodes.readyOrder(inScope, scopeSize, "commits in scope")
+        return order.filter { onBraid[it] }.map { nodes.commits[it] }
     }
 }

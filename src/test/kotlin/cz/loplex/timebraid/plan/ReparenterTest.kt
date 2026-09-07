@@ -84,7 +84,9 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = TopoOrder.compute(spec.core.withParents(parents))
+        val order = TopoOrder.compute(spec.graph.commits) { commit ->
+            spec.graph.commitsAt(parents[commit.indexIn(spec.graph)])
+        }
 
         assertEquals(spec.graph.size, order.size)
     }
@@ -106,8 +108,12 @@ class ReparenterTest {
     }
 
     private fun reparented(spec: GraphSpec, vararg heads: String): Array<IntArray> {
-        val braid = BraidInterleave.compute(spec.core, spec.ids(*heads))
-        return Reparenter.reparent(spec.core, braid)
+        val braid = BraidInterleave.compute(
+            spec.graph.commits,
+            spec.commits(*heads),
+            interleaveTips = emptyList(),
+        ) { it.parents }
+        return Reparenter.reparent(spec.core, spec.graph.indicesOf(braid, "braid commit"))
     }
 
     private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Array<IntArray>) {
