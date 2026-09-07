@@ -91,6 +91,22 @@ class TargetRepository private constructor(
     }
 
     /**
+     * Copies a commit object in verbatim, keeping the sha it has in the input repository.
+     *
+     * The braid rewrites every commit, so the originals are absent from the output by construction.
+     * This puts them back — byte for byte, which is the only way their shas survive — for
+     * `refs/remotes/<repo>/<branch>` to point at. The trees and blobs they reference need no copying:
+     * [importContentObjects] has already brought all of them across for the braid itself.
+     */
+    fun copyCommit(id: ObjectId, raw: ByteArray): ObjectId {
+        val written = inserter.insert(Constants.OBJ_COMMIT, raw)
+        check(written == id) {
+            "copying commit ${id.name} produced ${written.name}; the bytes were not stored verbatim"
+        }
+        return written
+    }
+
+    /**
      * Writes an annotated tag object pointing at [target] and returns its id. [name] is the tag's
      * final (prefixed) name, so the name inside the object and the name of the ref agree.
      */

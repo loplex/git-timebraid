@@ -34,13 +34,18 @@ class GitCommand(private val log: (String) -> Unit = {}) {
         exec(clone, "fetch", "--prune", "origin")
 
     /**
-     * Adds [url] as remote [name] of the repository at [repo] and fetches its branches under
-     * `refs/remotes/<name>/`. Tags are deliberately left out: the output already carries every tag
+     * Records [url] as remote [name] of the repository at [repo], and nothing more.
+     *
+     * No fetch follows, because there is nothing left to fetch: the objects the input holds are in
+     * the output already, and the `refs/remotes/<name>/<branch>` that would point at them are written
+     * directly (see `BraidWriter.mirrorInputs`). What this leaves behind is the configuration, so a
+     * later `git fetch <name>` picks up whatever the input has gained since the merge.
+     *
+     * `--no-tags` is set on the remote for when that day comes: the output already carries every tag
      * under its own prefixed name, and fetching them again unprefixed would collide.
      */
     fun addRemote(repo: Path, name: String, url: String) {
-        exec(repo, "remote", "add", name, url)
-        exec(repo, "fetch", "--no-tags", name)
+        exec(repo, "remote", "add", "--no-tags", name, url)
     }
 
     /** `git -C <repo> checkout -f <branch>` — populate the working tree of a freshly written repo. */

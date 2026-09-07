@@ -6,6 +6,7 @@ import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
+import java.util.BitSet
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
 class WriteOptions(
@@ -24,6 +25,8 @@ class WriteSummary(
     val contentObjects: Int,
     val branches: Int,
     val tags: Int,
+    /** Remote-tracking refs written for the inputs, zero unless the inputs were kept as remotes. */
+    val remoteBranches: Int,
     val head: String,
 )
 
@@ -43,6 +46,8 @@ class BraidWriter(
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
+    /** Whether to mirror the inputs under `refs/remotes/<repo>/<branch>` — see [mirrorInputs]. */
+    private val mirrorRemotes: Boolean = false,
 ) {
 
     private val graph = inputs.graph
@@ -63,6 +68,9 @@ class BraidWriter(
 
     /** Root `.gitmodules` blobs written so far, keyed by their text. */
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
+
+    /** Commits whose original object has been copied in for [mirrorInputs]. */
+    private val mirrored = BitSet(graph.size)
 
     init {
         require(sources.size == graph.sourceCount) {
@@ -90,6 +98,7 @@ class BraidWriter(
             contentObjects = contentObjects,
             branches = refs.branches,
             tags = refs.tags,
+            remoteBranches = refs.remoteBranches,
             head = inputs.mainlineBranch,
         )
     }
@@ -191,7 +200,12 @@ class BraidWriter(
         return if (body.isEmpty()) trailer else "$body\n\n$trailer"
     }
 
-    private class Refs(val targets: Map<String, ObjectId>, val branches: Int, val tags: Int)
+    private class Refs(
+        val targets: Map<String, ObjectId>,
+        val branches: Int,
+        val tags: Int,
+        val remoteBranches: Int,
+    )
 
     /**
      * Works out the complete set of refs the output should have, writing an object for every
@@ -234,8 +248,59 @@ class BraidWriter(
             }
         }
 
+        val remoteBranches = if (mirrorRemotes) mirrorInputs(refs) else 0
+
         checkRefNames(refs.keys)
-        return Refs(refs, branches, tags)
+        return Refs(refs, branches, tags, remoteBranches)
+    }
+
+    /**
+     * Adds `refs/remotes/<repo>/<branch>` for every branch of every input, pointing at that input's
+     * *original* commit, and copies in the original commit objects those refs need.
+     *
+     * Deliberately not a fetch. Every tree and blob of every input is in the output already — the
+     * braid reuses them rather than rewriting them — so fetching the inputs would transfer all of
+     * that content again and, above `transfer.unpackLimit`, store a second copy of it: measured on a
+     * three-repository history of 14 387 commits, 123 676 objects and 92 MB stored twice, against
+     * 13 458 objects that were genuinely new. Those 13 458 were commits, every one of them, which is
+     * exactly what this copies. A reader cannot tell the result from a fetched one.
+     *
+     * The mirror covers the branches that were read, so `-b` narrows it the same way it narrows the
+     * output. That is a feature of doing it this way rather than a shortcut: a fetch brings every
+     * branch the input has, including ones whose content this run never copied, and a ref pointing
+     * at an object that is not there is a broken repository.
+     *
+     * @return how many remote-tracking refs were added.
+     */
+    private fun mirrorInputs(refs: MutableMap<String, ObjectId>): Int {
+        var added = 0
+        for (source in inputs.sources) {
+            copyOriginals(source.branches.map { it.commit })
+            for (branch in source.branches) {
+                refs[Constants.R_REMOTES + source.name + "/" + branch.name] =
+                    inputs.commits[branch.commit].id
+                added++
+            }
+        }
+        return added
+    }
+
+    /**
+     * Copies the original commit object of every commit reachable from [tips] — graph indices, so
+     * the walk follows the *original* parents rather than the braid's.
+     */
+    private fun copyOriginals(tips: List<Int>) {
+        val pending = ArrayDeque(tips)
+        while (pending.isNotEmpty()) {
+            val commit = pending.removeLast()
+            if (mirrored.get(commit)) continue
+            mirrored.set(commit)
+
+            val original = inputs.commits[commit]
+            val source = sources[graph.sourceOf(commit)]
+            target.copyCommit(original.id, source.readCommitObject(original.id))
+            for (parent in graph.parentsOf(commit)) pending.addLast(parent)
+        }
     }
 
     /**

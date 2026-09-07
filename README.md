@@ -178,8 +178,12 @@ the last segment of its path. Name and placement are set separately:
 so tags from different repositories cannot collide. An annotated tag stays annotated, keeping its
 tagger and its message.
 
-**The original repositories as remotes** (with `--keep-remotes`), their branches fetched under
-`refs/remotes/<repo>/*`. Nothing is lost and the originals stay one `git log` away.
+**The original repositories as remotes** (with `--keep-remotes`), their branches under
+`refs/remotes/<repo>/*` — pointing at the original commits, which the output carries next to the
+rewritten ones with their own shas intact. Nothing is fetched to arrive there: every tree and blob of
+every input is in the output already, because that is what the braid reuses, so only the commit
+objects have to be added. The mirror covers the branches that were recreated, so `-b` narrows it too.
+Nothing is lost and the originals stay one `git log` away.
 
 **A provenance trailer** on every commit message:
 
@@ -305,7 +309,8 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)
       --bare / --no-bare        default: bare
-      --keep-remotes            add inputs as remotes, fetch into refs/remotes/<repo>/*
+      --keep-remotes            add inputs as remotes, their branches at their original
+                                commits under refs/remotes/<repo>/*
       --dry-run                 compute and summarize the plan, write nothing
       --plan-out FILE           dump the deterministic plan as text
   -q, --quiet / -v, --verbose

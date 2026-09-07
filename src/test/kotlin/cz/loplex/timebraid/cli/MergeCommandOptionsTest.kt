@@ -16,6 +16,8 @@ import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 
 /** The outer CLI options: cloning a remote input, --no-bare, --keep-remotes, the prefixes, -q/-v. */
 class MergeCommandOptionsTest {
@@ -55,7 +57,7 @@ class MergeCommandOptionsTest {
     }
 
     @Test
-    fun `--keep-remotes adds each input as a remote of the output`() {
+    fun `--keep-remotes points its refs at the inputs' own commits`() {
         corpus()
         val out = tmp.resolve("merged.git")
 
@@ -67,15 +69,46 @@ class MergeCommandOptionsTest {
 
         FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
             assertTrue(repo.remoteNames.containsAll(setOf("backend", "webui")), repo.remoteNames.toString())
-            assertTrue(
-                repo.refDatabase.getRefsByPrefix("refs/remotes/backend/").isNotEmpty(),
-                "backend refs were not fetched",
-            )
-            assertTrue(
-                repo.refDatabase.getRefsByPrefix("refs/remotes/webui/").isNotEmpty(),
-                "webui refs were not fetched",
-            )
+            for (name in listOf("backend", "webui")) {
+                val original = SourceRepository.open(tmp.resolve("$name.git"), name)
+                    .use { it.resolveBranch("main") }
+                assertEquals(
+                    original,
+                    repo.resolve("refs/remotes/$name/main"),
+                    "refs/remotes/$name/main should be $name's own commit, sha and all",
+                )
+            }
         }
+    }
+
+    @Test
+    fun `--keep-remotes stores no second copy of the inputs' content`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+
+        run(
+            "-o", out.toString(), "--keep-remotes",
+            tmp.resolve("backend.git").toString(),
+            tmp.resolve("webui.git").toString(),
+        )
+
+        // Every object the braid writes goes through one pack inserter, so a finished output is one
+        // pack and no loose objects. A fetch would break that either way: another pack for a history
+        // large enough to keep, loose objects for one small enough to explode -- and either way a
+        // second copy of trees and blobs that are already in that one pack.
+        val objects = out.resolve("objects")
+        assertEquals(
+            1,
+            objects.resolve("pack").listDirectoryEntries("*.pack").size,
+            "expected the output to be exactly one pack",
+        )
+        assertEquals(
+            emptyList<String>(),
+            objects.listDirectoryEntries()
+                .filter { it.isDirectory() && it.name.length == 2 }
+                .map { it.name },
+            "loose object directories mean objects arrived by some route other than the braid",
+        )
     }
 
     @Test
@@ -93,8 +126,10 @@ class MergeCommandOptionsTest {
         run("-o", out.toString(), "--keep-remotes", backend, webui)
 
         // git stores a remote's URL verbatim and resolves it against the repository holding it, so
-        // the relative path the caller typed has to be made absolute on the way in -- otherwise the
-        // fetch looks for the input underneath the output and the whole run fails.
+        // the relative path the caller typed has to be made absolute on the way in. The run itself
+        // no longer fetches, so nothing fails at merge time any more -- what a relative path would
+        // break is the `git fetch <name>` the remote exists for, later, from a directory that is
+        // not the one the caller typed it in.
         FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
             for (name in listOf("backend", "webui")) {
                 val url = repo.config.getString("remote", name, "url")

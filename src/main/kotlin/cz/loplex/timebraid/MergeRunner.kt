@@ -119,13 +119,25 @@ class MergeRunner(
     ): WriteSummary {
         progress.step("writing ${plan.commits.size} commits into $output")
         TargetRepository.create(output, braid.mainlineBranch, request.force, request.bare).use { target ->
-            return BraidWriter(target, sources, braid, plan, request.writeOptions).write()
+            return BraidWriter(
+                target = target,
+                sources = sources,
+                inputs = braid,
+                plan = plan,
+                options = request.writeOptions,
+                mirrorRemotes = request.keepRemotes,
+            ).write()
         }
     }
 
+    /**
+     * Records each input as a remote of the output. The remote-tracking refs themselves are written
+     * by [BraidWriter] along with everything else, so all that is left here is the configuration
+     * that lets a later `git fetch <name>` pick up what the input has gained since.
+     */
     private fun keepRemotes(output: Path, locations: List<LocalInput>) {
         for (input in locations) {
-            progress.step("adding remote ${input.name}")
+            progress.step("recording remote ${input.name}")
             git.addRemote(output, input.name, input.remote)
         }
     }

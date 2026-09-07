@@ -95,7 +95,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help("Write a bare output repository (--no-bare checks out a working tree).")
 
     private val keepRemotes by option("--keep-remotes").flag()
-        .help("Add each input as a remote of the output and fetch it under refs/remotes/<repo>/*.")
+        .help(
+            "Add each input as a remote of the output, its branches under refs/remotes/<repo>/* " +
+                "pointing at the original commits."
+        )
 
     private val dryRun by option("--dry-run").flag()
         .help("Compute and summarize the plan, write nothing.")
@@ -189,8 +192,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                     "${summary.contentObjects} content objects to $output",
                 err = true,
             )
+            val remotes =
+                if (summary.remoteBranches > 0) ", ${summary.remoteBranches} remote-tracking" else ""
             echo(
-                "refs: ${summary.branches} branches, ${summary.tags} tags, HEAD -> ${summary.head}",
+                "refs: ${summary.branches} branches, ${summary.tags} tags$remotes, " +
+                    "HEAD -> ${summary.head}",
                 err = true,
             )
         }

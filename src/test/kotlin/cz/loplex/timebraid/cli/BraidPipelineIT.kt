@@ -109,6 +109,42 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `--keep-remotes leaves the inputs' own history walkable in the output`() {
+        val ids = reference()
+        val out = tmp.resolve("merged.git")
+
+        braid("-o", out.toString(), "--keep-remotes", path("backend.git"), path("webui.git"))
+
+        GitCli.requireGit()
+        GitCli.fsck(out)
+
+        // Branches of both inputs, under their own name, at their own sha. Tags are not mirrored:
+        // the output carries every one of them already, under a prefixed name of its own.
+        assertEquals(
+            listOf(
+                "refs/remotes/backend/feature",
+                "refs/remotes/backend/main",
+                "refs/remotes/webui/esbuild-experiment",
+                "refs/remotes/webui/main",
+            ),
+            GitCli.run(out, "for-each-ref", "--format=%(refname)", "refs/remotes").lines().sorted(),
+        )
+        assertEquals(ids.getValue("a3").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/main"))
+        assertEquals(ids.getValue("f1").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/feature"))
+        assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/main"))
+
+        // The originals are complete, not just their tips: rev-list cannot count a history whose
+        // parent is missing, and `--objects` cannot list one whose trees are missing -- which is the
+        // point, because those trees were never transferred, only reused where the braid put them.
+        assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
+        assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
+        GitCli.run(out, "rev-list", "--objects", "--remotes")
+
+        // And the braid is untouched by any of it: the mainline is still the interleaving of both.
+        assertEquals(6, GitCli.run(out, "rev-list", "--count", "main").toInt())
+    }
+
+    @Test
     fun `a merge on the mainline is rewritten with three parents`() {
         val ids = reference()
         val out = tmp.resolve("merged.git")

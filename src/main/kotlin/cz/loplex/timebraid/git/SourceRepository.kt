@@ -132,6 +132,14 @@ class SourceRepository private constructor(
     }
 
     /**
+     * The raw bytes of one commit object, exactly as this repository stores them.
+     *
+     * Copying those bytes into another repository reproduces the commit's original sha, which is
+     * what lets an output carry the originals next to the braid's rewritten commits.
+     */
+    fun readCommitObject(id: ObjectId): ByteArray = reader().open(id, Constants.OBJ_COMMIT).bytes
+
+    /**
      * The top-level `.gitmodules` of [tree] read as text, or `null` when the tree has none.
      *
      * Only a regular file counts. A `.gitmodules` stored as a symlink is one git itself refuses to
