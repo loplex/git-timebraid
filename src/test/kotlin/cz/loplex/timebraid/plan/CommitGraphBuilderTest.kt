@@ -20,7 +20,7 @@ class CommitGraphBuilderTest {
 
         val graph = builder.build()
         assertEquals(3, graph.size)
-        assertEquals(2, graph.sourceCount)
+        assertEquals(2, graph.sources.size)
     }
 
     @Test
@@ -32,7 +32,7 @@ class CommitGraphBuilderTest {
         builder.addCommit(a, "a1", 10)
 
         val graph = builder.build()
-        assertEquals("a1", graph.idOf(graph.firstParentOf(builder.indexOf(a, "a2"))))
+        assertEquals("a1", graph.commits[builder.indexOf(a, "a2")].firstParent?.id)
     }
 
     @Test
@@ -58,7 +58,7 @@ class CommitGraphBuilderTest {
         val merge = builder.addCommit(a, "m", 20, listOf("a1", "f1", "a1"))
 
         val graph = builder.build()
-        assertEquals(listOf("a1", "f1"), graph.parentsOf(merge).map { graph.idOf(it) })
+        assertEquals(listOf("a1", "f1"), graph.commits[merge].parents.map { it.id })
     }
 
     @Test

@@ -41,7 +41,7 @@ class CommitGraphReaderTest {
 
             assertEquals("main", braid.mainlineBranch)
             assertEquals(3, braid.graph.size)
-            assertEquals(listOf("backend", "webui"), braid.graph.sourceNames)
+            assertEquals(listOf("backend", "webui"), braid.graph.sources.map { it.name })
             assertEquals(a2, braid.heads[0].id)
             assertEquals(b1, braid.heads[1].id)
 

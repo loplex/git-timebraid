@@ -14,6 +14,7 @@ package cz.loplex.timebraid.plan
  */
 class Braid internal constructor(
     private val graph: CommitGraph,
+    private val core: DenseGraph,
     private val order: IntArray,
 ) {
     /** The braid, in braid order. */
@@ -28,7 +29,7 @@ class Braid internal constructor(
      * @throws CyclicGraphException if the braid order contradicts ancestry.
      */
     fun reparent(): ReparentedGraph =
-        ReparentedGraph(graph, order, Reparenter.reparent(graph, order))
+        ReparentedGraph(graph, core, order, Reparenter.reparent(core, order))
 
     /**
      * The complete plan for the output history — [reparent] followed by [ReparentedGraph.plan].
@@ -47,10 +48,11 @@ class Braid internal constructor(
  */
 class ReparentedGraph internal constructor(
     private val graph: CommitGraph,
+    private val core: DenseGraph,
     private val braid: IntArray,
     private val parents: Array<IntArray>,
 ) {
-    private val order: IntArray by lazy { TopoOrder.compute(graph.withParents(parents)) }
+    private val order: IntArray by lazy { TopoOrder.compute(core.withParents(parents)) }
 
     /** Parents of [commit] after reparenting, first parent first. */
     fun parentsOf(commit: Commit): List<Commit> =
@@ -70,5 +72,5 @@ class ReparentedGraph internal constructor(
      * @param subdirs subdirectory per input repository, `null` for the one placed at the root.
      */
     fun plan(subdirs: List<String?>): MergePlan =
-        MergePlan.create(graph, braid, order, parents, subdirs)
+        MergePlan.create(graph, core, braid, order, parents, subdirs)
 }

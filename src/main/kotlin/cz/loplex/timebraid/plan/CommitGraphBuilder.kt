@@ -13,7 +13,7 @@ package cz.loplex.timebraid.plan
  * precisely the ones the braid adds later. Two repositories may therefore contain the same commit
  * id without interfering; they become two distinct commits.
  */
-class CommitGraphBuilder {
+internal class CommitGraphBuilder {
 
     private val sourceNames = ArrayList<String>()
     private val indexBySource = ArrayList<HashMap<String, Int>>()
@@ -79,14 +79,17 @@ class CommitGraphBuilder {
             "referenced as a parent but never added: $listed$more" +
                 " — the input history is incomplete (a shallow or partial clone?)"
         }
-        return CommitGraph(
-            parents = Array(size) { parents[it]!! },
-            sourceIndex = IntArray(size) { sourceOf[it] },
-            orderingTime = LongArray(size) { orderingTime[it] },
-            commitIds = Array(size) { ids[it] },
-            sourceNames = ArrayList(sourceNames),
-        )
+        return CommitGraph(dense())
     }
+
+    /** The same graph in the form the passes run on. Test scope reaches for this; production does not. */
+    fun dense(): DenseGraph = DenseGraph.of(
+        parents = Array(size) { parents[it]!! },
+        sourceIndex = IntArray(size) { sourceOf[it] },
+        orderingTime = LongArray(size) { orderingTime[it] },
+        commitIds = Array(size) { ids[it] },
+        sourceNames = ArrayList(sourceNames),
+    )
 
     private fun intern(source: Int, id: String): Int =
         indexBySource[source].getOrPut(id) {

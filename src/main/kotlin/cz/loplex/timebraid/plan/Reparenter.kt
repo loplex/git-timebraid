@@ -27,8 +27,8 @@ internal object Reparenter {
      * @return new parent lists for every commit, indexed exactly like the graph.
      * @throws CyclicGraphException if the braid order contradicts ancestry.
      */
-    fun reparent(graph: CommitGraph, braid: IntArray): Array<IntArray> {
-        val parents = Array(graph.size) { graph.parentsOf(it).copyOf() }
+    fun reparent(graph: DenseGraph, braid: IntArray): Array<IntArray> {
+        val parents = Array(graph.size) { graph.edges[it].copyOf() }
 
         for (i in 1 until braid.size) {
             val commit = braid[i]

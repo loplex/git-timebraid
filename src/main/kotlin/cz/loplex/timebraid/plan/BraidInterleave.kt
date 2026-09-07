@@ -61,7 +61,7 @@ internal object BraidInterleave {
      * @return the braid — the union of the heads' first-parent chains — in braid order.
      */
     fun compute(
-        graph: CommitGraph,
+        graph: DenseGraph,
         heads: IntArray,
         interleaveTips: IntArray = IntArray(0),
     ): IntArray {
@@ -89,7 +89,7 @@ internal object BraidInterleave {
             }
         }
         while (pending.isNotEmpty()) {
-            for (parent in graph.parentsOf(pending.removeLast())) {
+            for (parent in graph.edges[pending.removeLast()]) {
                 if (!inScope[parent]) {
                     inScope[parent] = true
                     scopeSize++
@@ -103,7 +103,7 @@ internal object BraidInterleave {
         val ready = PriorityQueue(maxOf(1, scopeSize), earliestFirst(graph))
         for (commit in 0 until graph.size) {
             if (!inScope[commit]) continue
-            unemitted[commit] = graph.parentsOf(commit).count { inScope[it] }
+            unemitted[commit] = graph.edges[commit].count { inScope[it] }
             if (unemitted[commit] == 0) ready.add(commit)
         }
 
@@ -122,7 +122,7 @@ internal object BraidInterleave {
 
         if (emitted != scopeSize) {
             // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(Array(graph.size) { graph.parentsOf(it) }, graph::describe)
+            requireAcyclic(graph.edges, graph::describe)
             error("$emitted of $scopeSize commits in scope were ordered, but no cycle was found")
         }
         return braid

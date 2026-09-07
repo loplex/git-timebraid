@@ -69,10 +69,10 @@ class BraidWriter(
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
 
     init {
-        require(sources.size == graph.sourceCount) {
-            "got ${sources.size} repositories for ${graph.sourceCount} strands"
+        require(sources.size == graph.sources.size) {
+            "got ${sources.size} repositories for ${graph.sources.size} strands"
         }
-        require(sources.map { it.name } == graph.sourceNames) {
+        require(sources.map { it.name } == graph.sources.map { it.name }) {
             "the repositories and the graph disagree about the strands"
         }
     }

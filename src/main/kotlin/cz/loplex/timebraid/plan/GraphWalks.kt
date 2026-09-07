@@ -11,17 +11,17 @@ package cz.loplex.timebraid.plan
 internal class ChildEdges(val starts: IntArray, val targets: IntArray) {
 
     companion object {
-        fun of(graph: CommitGraph): ChildEdges {
+        fun of(graph: DenseGraph): ChildEdges {
             val size = graph.size
             val starts = IntArray(size + 1)
             for (commit in 0 until size) {
-                for (parent in graph.parentsOf(commit)) starts[parent + 1]++
+                for (parent in graph.edges[commit]) starts[parent + 1]++
             }
             for (commit in 0 until size) starts[commit + 1] += starts[commit]
             val cursor = starts.copyOf(size)
             val targets = IntArray(starts[size])
             for (commit in 0 until size) {
-                for (parent in graph.parentsOf(commit)) targets[cursor[parent]++] = commit
+                for (parent in graph.edges[commit]) targets[cursor[parent]++] = commit
             }
             return ChildEdges(starts, targets)
         }
@@ -35,7 +35,7 @@ internal class ChildEdges(val starts: IntArray, val targets: IntArray) {
  * same graph gives byte-identical output in this run and in any other, and two distinct commits with
  * the same timestamp can never compare equal and collapse.
  */
-internal fun earliestFirst(graph: CommitGraph): Comparator<Int> = Comparator { a, b ->
-    val byTime = graph.timeOf(a).compareTo(graph.timeOf(b))
+internal fun earliestFirst(graph: DenseGraph): Comparator<Int> = Comparator { a, b ->
+    val byTime = graph.time[a].compareTo(graph.time[b])
     if (byTime != 0) byTime else a.compareTo(b)
 }

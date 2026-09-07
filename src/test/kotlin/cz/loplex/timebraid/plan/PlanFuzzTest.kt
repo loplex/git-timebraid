@@ -16,7 +16,7 @@ class PlanFuzzTest {
     fun `holds every invariant over a fuzz corpus with inverted timestamps`() {
         for (seed in 1..100) {
             val corpus = RandomGraphs.generate(seed, repositories = 3, commitsPerRepository = 70)
-            val subdirs = corpus.graph.sourceNames.toList()
+            val subdirs = corpus.graph.sources.map { it.name }
 
             val plan = corpus.graph.braid(corpus.heads).plan(subdirs)
 
@@ -30,7 +30,7 @@ class PlanFuzzTest {
         // useless, so check that the braid actually alternates.
         for (seed in 1..20) {
             val corpus = RandomGraphs.generate(seed, repositories = 3, commitsPerRepository = 70)
-            val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sourceNames.toList())
+            val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sources.map { it.name })
 
             val alternations = (1 until plan.braid.size).count {
                 plan.braid[it].source != plan.braid[it - 1].source
@@ -48,7 +48,7 @@ class PlanFuzzTest {
         // finish inside the timeout.
         val corpus = RandomGraphs.generate(seed = 7, repositories = 3, commitsPerRepository = 5_000)
 
-        val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sourceNames.toList())
+        val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sources.map { it.name })
 
         PlanInvariants.assertAll(plan, corpus.heads, "15k corpus")
     }
@@ -57,7 +57,7 @@ class PlanFuzzTest {
     fun `stays deterministic`() {
         for (seed in 1..20) {
             val corpus = RandomGraphs.generate(seed)
-            val subdirs = corpus.graph.sourceNames.toList()
+            val subdirs = corpus.graph.sources.map { it.name }
 
             val first = corpus.graph.braid(corpus.heads).plan(subdirs).render()
             val second = corpus.graph.braid(corpus.heads).plan(subdirs).render()

@@ -27,8 +27,8 @@ class ReparenterTest {
 
         assertEquals(listOf("a1"), spec.names(parents[spec.id("a2")]))
         assertEquals(listOf("a2"), spec.names(parents[spec.id("a3")]))
-        for (commit in 0 until spec.graph.size) {
-            assertEquals(spec.graph.parentsOf(commit).size, parents[commit].size)
+        for (commit in spec.graph.commits) {
+            assertEquals(commit.parents.size, parents[commit.index].size)
         }
     }
 
@@ -72,7 +72,7 @@ class ReparenterTest {
             assertEquals(
                 parents[commit].size,
                 parents[commit].toSet().size,
-                "duplicate parent on ${spec.graph.describe(commit)}",
+                "duplicate parent on ${spec.graph.commits[commit]}",
             )
         }
     }
@@ -84,7 +84,7 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = TopoOrder.compute(spec.graph.withParents(parents))
+        val order = TopoOrder.compute(spec.core.withParents(parents))
 
         assertEquals(spec.graph.size, order.size)
     }
@@ -97,7 +97,7 @@ class ReparenterTest {
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
         val braid = spec.ids("c", "g")
 
-        val failure = assertThrows<CyclicGraphException> { Reparenter.reparent(spec.graph, braid) }
+        val failure = assertThrows<CyclicGraphException> { Reparenter.reparent(spec.core, braid) }
 
         assertTrue(failure.message!!.contains("cycle in the parent chain"), failure.message)
         for (name in listOf("g", "p", "c")) {
@@ -106,16 +106,16 @@ class ReparenterTest {
     }
 
     private fun reparented(spec: GraphSpec, vararg heads: String): Array<IntArray> {
-        val braid = BraidInterleave.compute(spec.graph, spec.ids(*heads))
-        return Reparenter.reparent(spec.graph, braid)
+        val braid = BraidInterleave.compute(spec.core, spec.ids(*heads))
+        return Reparenter.reparent(spec.core, braid)
     }
 
     private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Array<IntArray>) {
-        for (commit in 0 until graph.size) {
-            for (parent in graph.parentsOf(commit)) {
+        for (commit in graph.commits) {
+            for (parent in commit.parents) {
                 assertTrue(
-                    parents[commit].any { it == parent },
-                    "${graph.describe(commit)} lost its original parent ${graph.describe(parent)}",
+                    parents[commit.index].any { it == parent.index },
+                    "$commit lost its original parent $parent",
                 )
             }
         }

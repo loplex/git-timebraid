@@ -55,13 +55,13 @@ class BraidCorpusPropertiesTest {
 
         // build() reparents and orders, and fails loudly on a braid that contradicts ancestry, so
         // getting a plan back at all is already part of what is being checked here.
-        val plan = graph.braid(braidInputs.heads).plan(graph.sourceNames.toList())
+        val plan = graph.braid(braidInputs.heads).plan(graph.sources.map { it.name })
         val wholeGraph = WholeGraphBraid.compute(graph, braidInputs.heads)
 
         val futureEdges = futureBraidEdges(plan.braid)
         val report = buildString {
             appendLine("corpus: $dir")
-            appendLine("repositories: ${graph.sourceNames}")
+            appendLine("repositories: ${graph.sources}")
             appendLine("commits: ${graph.size}, braid: ${plan.braid.size}")
             appendLine("write order is topological: ${isTopological(plan)}")
             appendLine("braid edges pointing into the future: ${futureEdges.size}")

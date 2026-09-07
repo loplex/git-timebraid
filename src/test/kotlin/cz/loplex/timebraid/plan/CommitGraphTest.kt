@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.plan
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -10,12 +11,11 @@ class CommitGraphTest {
     @Test
     fun `rejects a parent index outside the graph`() {
         val failure = assertThrows<IllegalArgumentException> {
-            CommitGraph(
+            graphOf(
                 parents = arrayOf(intArrayOf(), intArrayOf(7)),
                 sourceIndex = intArrayOf(0, 0),
                 orderingTime = longArrayOf(1, 2),
                 commitIds = arrayOf("a1", "a2"),
-                sourceNames = listOf("A"),
             )
         }
         assertTrue(failure.message!!.contains("parent index 7"))
@@ -24,12 +24,11 @@ class CommitGraphTest {
     @Test
     fun `rejects a commit that is its own parent`() {
         assertThrows<IllegalArgumentException> {
-            CommitGraph(
+            graphOf(
                 parents = arrayOf(intArrayOf(0)),
                 sourceIndex = intArrayOf(0),
                 orderingTime = longArrayOf(1),
                 commitIds = arrayOf("a1"),
-                sourceNames = listOf("A"),
             )
         }
     }
@@ -37,12 +36,11 @@ class CommitGraphTest {
     @Test
     fun `rejects the same parent listed twice`() {
         val failure = assertThrows<IllegalArgumentException> {
-            CommitGraph(
+            graphOf(
                 parents = arrayOf(intArrayOf(), intArrayOf(0, 0)),
                 sourceIndex = intArrayOf(0, 0),
                 orderingTime = longArrayOf(1, 2),
                 commitIds = arrayOf("a1", "a2"),
-                sourceNames = listOf("A"),
             )
         }
         assertTrue(failure.message!!.contains("twice"))
@@ -52,33 +50,36 @@ class CommitGraphTest {
     fun `copies the arrays it is given`() {
         val parents = arrayOf(intArrayOf(), intArrayOf(0))
         val times = longArrayOf(1, 2)
-        val graph = CommitGraph(parents, intArrayOf(0, 0), times, arrayOf("a1", "a2"), listOf("A"))
+        val graph = graphOf(parents, intArrayOf(0, 0), times, arrayOf("a1", "a2"))
 
         parents[1][0] = 1
         times[0] = 99
 
-        assertEquals(0, graph.firstParentOf(1))
-        assertEquals(1L, graph.timeOf(0))
+        assertEquals(graph.commits[0], graph.commits[1].firstParent)
+        assertEquals(1L, graph.commits[0].time)
     }
 
     @Test
-    fun `first parent of a root commit is NO_COMMIT`() {
+    fun `a root commit has no first parent`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@20")
-        assertEquals(CommitGraph.NO_COMMIT, spec.graph.firstParentOf(spec.id("a1")))
-        assertEquals(spec.id("a1"), spec.graph.firstParentOf(spec.id("a2")))
+        assertNull(spec.commit("a1").firstParent)
+        assertEquals(spec.commit("a1"), spec.commit("a2").firstParent)
     }
 
     @Test
     fun `withParents keeps identity and timestamps and replaces only the edges`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 | B: b1@15")
-        val braided = spec.graph.withParents(
-            arrayOf(intArrayOf(), intArrayOf(spec.id("b1"), spec.id("a1")), intArrayOf(spec.id("a1")))
+        val braided = CommitGraph(
+            spec.core.withParents(
+                arrayOf(intArrayOf(), intArrayOf(spec.id("b1"), spec.id("a1")), intArrayOf(spec.id("a1")))
+            )
         )
 
-        assertEquals("a2", braided.idOf(spec.id("a2")))
-        assertEquals(20L, braided.timeOf(spec.id("a2")))
+        val a2 = braided.commits[spec.id("a2")]
+        assertEquals("a2", a2.id)
+        assertEquals(20L, a2.time)
         assertEquals("B", braided.commits[spec.id("b1")].source.name)
-        assertEquals(listOf("b1", "a1"), spec.names(braided.parentsOf(spec.id("a2"))))
+        assertEquals(listOf("b1", "a1"), a2.parents.map { it.id })
     }
 
     @Test
@@ -102,4 +103,12 @@ class CommitGraphTest {
 
         requireAcyclic(parents)
     }
+
+    private fun graphOf(
+        parents: Array<IntArray>,
+        sourceIndex: IntArray,
+        orderingTime: LongArray,
+        commitIds: Array<String>,
+        sourceNames: List<String> = listOf("A"),
+    ) = CommitGraph(DenseGraph.of(parents, sourceIndex, orderingTime, commitIds, sourceNames))
 }

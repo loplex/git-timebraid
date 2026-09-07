@@ -31,10 +31,10 @@ internal object TopoOrder {
      * @return every commit index exactly once, parents before children.
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun compute(graph: CommitGraph): IntArray {
+    fun compute(graph: DenseGraph): IntArray {
         val size = graph.size
         val children = ChildEdges.of(graph)
-        val unemittedParents = IntArray(size) { graph.parentsOf(it).size }
+        val unemittedParents = IntArray(size) { graph.edges[it].size }
 
         val ready = PriorityQueue(maxOf(1, size), earliestFirst(graph))
         for (commit in 0 until size) {
@@ -54,7 +54,7 @@ internal object TopoOrder {
 
         if (emitted != size) {
             // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(Array(size) { graph.parentsOf(it) }, graph::describe)
+            requireAcyclic(graph.edges, graph::describe)
             error("$emitted of $size commits ordered, but no cycle was found")
         }
         return order

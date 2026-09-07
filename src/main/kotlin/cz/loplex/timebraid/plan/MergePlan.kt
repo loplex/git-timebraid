@@ -29,6 +29,7 @@ class PlannedCommit internal constructor(
  */
 class MergePlan private constructor(
     val graph: CommitGraph,
+    private val core: DenseGraph,
     private val braidOrder: IntArray,
     private val order: IntArray,
     private val subdirs: List<String?>,
@@ -44,7 +45,7 @@ class MergePlan private constructor(
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
             commit = graph.commitAt(commit),
-            subdir = subdirs[graph.sourceOf(commit)],
+            subdir = subdirs[core.source[commit]],
             parents = graph.commitsAt(newParents[commit]),
         )
     }
@@ -76,7 +77,7 @@ class MergePlan private constructor(
      */
     fun contentOf(commit: Commit): Map<Source, Commit> {
         val row = content[commit.index]
-        val map = LinkedHashMap<Source, Commit>(graph.sourceCount)
+        val map = LinkedHashMap<Source, Commit>(graph.sources.size)
         for (source in graph.sources) {
             val holder = row[source.index]
             if (holder != CommitGraph.NO_COMMIT) map[source] = graph.commitAt(holder)
@@ -111,15 +112,15 @@ class MergePlan private constructor(
         for ((position, commit) in order.withIndex()) {
             append(position.toString().padStart(6, '0'))
             append(if (onBraid[commit]) " * " else "   ")
-            append(graph.describe(commit))
-            append(" @").append(graph.timeOf(commit))
+            append(core.describe(commit))
+            append(" @").append(core.time[commit])
             append(" parents=[")
-            append(newParents[commit].joinToString(", ") { graph.describe(it) })
+            append(newParents[commit].joinToString(", ") { core.describe(it) })
             append("] content=[")
             append(
-                (0 until graph.sourceCount)
-                    .filter { content[commit][it] != CommitGraph.NO_COMMIT }
-                    .joinToString(", ") { "${graph.sourceNames[it]}=${graph.idOf(content[commit][it])}" }
+                graph.sources
+                    .filter { content[commit][it.index] != CommitGraph.NO_COMMIT }
+                    .joinToString(", ") { "${it.name}=${core.ids[content[commit][it.index]]}" }
             )
             appendLine("]")
         }
@@ -135,6 +136,7 @@ class MergePlan private constructor(
          */
         fun create(
             graph: CommitGraph,
+            core: DenseGraph,
             braidOrder: IntArray,
             order: IntArray,
             newParents: Array<IntArray>,
@@ -147,11 +149,12 @@ class MergePlan private constructor(
 
             return MergePlan(
                 graph = graph,
+                core = core,
                 braidOrder = braidOrder,
                 order = order,
                 subdirs = subdirs,
                 newParents = newParents,
-                content = accumulate(graph, order, newParents),
+                content = accumulate(core, order, newParents),
                 onBraid = onBraid,
             )
         }
@@ -166,7 +169,7 @@ class MergePlan private constructor(
          * parent, a side branch keeps the other repositories frozen at the point it was cut.
          */
         private fun accumulate(
-            graph: CommitGraph,
+            graph: DenseGraph,
             order: IntArray,
             newParents: Array<IntArray>,
         ): Array<IntArray> {
@@ -184,7 +187,7 @@ class MergePlan private constructor(
                         )
                     parentContent.copyOf()
                 }
-                inherited[graph.sourceOf(commit)] = commit
+                inherited[graph.source[commit]] = commit
                 content[commit] = inherited
             }
             @Suppress("UNCHECKED_CAST")
@@ -192,8 +195,8 @@ class MergePlan private constructor(
         }
 
         private fun validateSubdirs(graph: CommitGraph, subdirs: List<String?>) {
-            require(subdirs.size == graph.sourceCount) {
-                "got ${subdirs.size} subdirectories for ${graph.sourceCount} repositories"
+            require(subdirs.size == graph.sources.size) {
+                "got ${subdirs.size} subdirectories for ${graph.sources.size} repositories"
             }
             require(subdirs.count { it == null } <= 1) {
                 "at most one repository can be placed at the root"
@@ -202,7 +205,7 @@ class MergePlan private constructor(
             for ((source, subdir) in subdirs.withIndex()) {
                 if (subdir == null) continue
                 require(subdir.isNotBlank() && !subdir.contains('/') && subdir != "." && subdir != "..") {
-                    "'$subdir' is not a usable subdirectory name for ${graph.sourceNames[source]}"
+                    "'$subdir' is not a usable subdirectory name for ${graph.sources[source]}"
                 }
                 require(seen.add(subdir)) {
                     "two repositories would be placed in the same subdirectory '$subdir'"

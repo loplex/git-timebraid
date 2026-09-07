@@ -16,7 +16,12 @@ package cz.loplex.timebraid.plan
  *
  * Commit names are unique across the whole fixture, so a test can refer to a commit by name alone.
  */
-class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
+class GraphSpec internal constructor(
+    val graph: CommitGraph,
+    /** The same graph the passes see — for the tests that drive one directly. */
+    internal val core: DenseGraph,
+    private val byName: Map<String, Int>,
+) {
 
     /** Index of the commit named [name]. */
     fun id(name: String): Int =
@@ -32,13 +37,13 @@ class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
     fun commits(vararg names: String): List<Commit> = names.map { commit(it) }
 
     /** Names of the given commits, in the order given — the readable form of an order or a braid. */
-    fun names(commits: IntArray): List<String> = commits.map { graph.idOf(it) }
+    fun names(commits: IntArray): List<String> = commits.map { graph.commits[it].id }
 
     /** Names of the given commits, in the order given. */
     fun names(commits: List<Commit>): List<String> = commits.map { it.id }
 
     /** One subdirectory per repository, named after the repository. */
-    fun subdirs(): List<String?> = graph.sourceNames
+    fun subdirs(): List<String?> = graph.sources.map { it.name }
 
     companion object {
 
@@ -72,7 +77,8 @@ class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
                     }
                 }
             }
-            return GraphSpec(builder.build(), byName)
+            val core = builder.dense()
+            return GraphSpec(CommitGraph(core), core, byName)
         }
     }
 }
