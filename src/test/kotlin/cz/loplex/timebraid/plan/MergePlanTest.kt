@@ -55,7 +55,7 @@ class MergePlanTest {
 
         val plan = spec.graph.braid(heads).plan(spec.subdirs())
 
-        assertEquals(listOf("a2", "b2", "f1"), spec.names(plan.parentsOf(spec.id("b3"))))
+        assertEquals(listOf("a2", "b2", "f1"), spec.names(plan.parentsOf(spec.commit("b3"))))
         PlanInvariants.assertAll(plan, heads, "merge on the braid")
         assertTrue(plan.summary().contains("3 -> 1"), plan.summary())
     }
@@ -65,8 +65,8 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
         val plan = spec.graph.braid(spec.commits("a2", "b1")).plan(listOf(null, "webui"))
 
-        assertNull(plan.subdirOf(spec.id("a1")))
-        assertEquals("webui", plan.subdirOf(spec.id("b1")))
+        assertNull(plan.subdirOf(spec.commit("a1")))
+        assertEquals("webui", plan.subdirOf(spec.commit("b1")))
         assertTrue(plan.summary().contains("A -> <root>"), plan.summary())
     }
 
@@ -143,7 +143,5 @@ class MergePlanTest {
     }
 
     private fun contentNames(spec: GraphSpec, plan: MergePlan, name: String): List<String> =
-        plan.contentOf(spec.id(name))
-            .filter { it != CommitGraph.NO_COMMIT }
-            .map { spec.graph.idOf(it) }
+        plan.contentOf(spec.commit(name)).values.map { it.id }
 }

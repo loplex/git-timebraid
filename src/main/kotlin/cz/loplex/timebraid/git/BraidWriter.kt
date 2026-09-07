@@ -1,7 +1,8 @@
 package cz.loplex.timebraid.git
 
-import cz.loplex.timebraid.plan.CommitGraph
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.MergePlan
+import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
@@ -98,16 +99,16 @@ class BraidWriter(
 
     private fun writeCommits() {
         for (planned in plan.commits) {
-            val commit = planned.commit.index
-            val original = inputs.commits[commit]
+            val commit = planned.commit
+            val original = inputs.commits[commit.index]
             val parents = planned.parents.map { parent ->
-                written[parent]
+                written[parent.index]
                     ?: error(
-                        "${graph.describe(commit)} is written before its parent " +
-                            "${graph.describe(parent)} — the plan's order is not a write order"
+                        "$commit is written before its parent $parent — " +
+                            "the plan's order is not a write order"
                     )
             }
-            written[commit] = target.writeCommit(
+            written[commit.index] = target.writeCommit(
                 tree = treeOf(commit),
                 parents = parents,
                 author = original.author,
@@ -120,22 +121,20 @@ class BraidWriter(
     /**
      * The root tree of [commit]: every repository that already has content, each at whatever the
      * plan says it last committed. [MergePlan.contentOf] has done the accumulating; all that is left
-     * here is to turn commit indices into the trees those commits carried.
+     * here is to turn those commits into the trees they carried.
      */
-    private fun treeOf(commit: Int): ObjectId {
+    private fun treeOf(commit: Commit): ObjectId {
         val content = plan.contentOf(commit)
         val subdirEntries = ArrayList<TreeEntry>(content.size)
         val parts = ArrayList<RewiredGitmodules>(content.size)
         var root: List<TreeEntry> = emptyList()
-        val at = { graph.describe(commit) }
+        val at = { commit.toString() }
 
-        for (source in content.indices) {
-            val holder = content[source]
-            if (holder == CommitGraph.NO_COMMIT) continue
-            val tree = inputs.commits[holder].tree
-            val subdir = plan.subdirs[source]
+        for ((source, holder) in content) {
+            val tree = inputs.commits[holder.index].tree
+            val subdir = plan.subdirOf(source)
             if (subdir == null) {
-                root = rootEntries.getOrPut(tree) { sources[source].topLevelEntries(tree) }
+                root = rootEntries.getOrPut(tree) { sources[source.index].topLevelEntries(tree) }
             } else {
                 subdirEntries += TreeEntry(subdir, FileMode.TREE, tree)
             }
@@ -146,10 +145,11 @@ class BraidWriter(
     }
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
-    private fun wiringOf(source: Int, tree: ObjectId, at: () -> String): RewiredGitmodules =
-        wiring[source].getOrPut(tree) {
-            val text = sources[source].gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
-            SubmoduleWiring.rewire(text, plan.subdirs[source], sources[source].name, at)
+    private fun wiringOf(source: Source, tree: ObjectId, at: () -> String): RewiredGitmodules =
+        wiring[source.index].getOrPut(tree) {
+            val repo = sources[source.index]
+            val text = repo.gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
+            SubmoduleWiring.rewire(text, plan.subdirOf(source), repo.name, at)
         }
 
     /**
@@ -207,7 +207,7 @@ class BraidWriter(
 
         val braidTip = plan.braid.lastOrNull()
             ?: error("the braid is empty — there is nothing to point a branch at")
-        refs[Constants.R_HEADS + inputs.mainlineBranch] = idOf(braidTip)
+        refs[Constants.R_HEADS + inputs.mainlineBranch] = idOf(braidTip.index)
         var branches = 1
 
         val shared = HashMap<String, Int>()
@@ -299,7 +299,7 @@ class BraidWriter(
     }
 
     private fun idOf(commit: Int): ObjectId =
-        written[commit] ?: error("${graph.describe(commit)} was never written")
+        written[commit] ?: error("${graph.commits[commit]} was never written")
 
     companion object {
 

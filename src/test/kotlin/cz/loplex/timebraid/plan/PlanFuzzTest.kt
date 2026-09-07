@@ -33,7 +33,7 @@ class PlanFuzzTest {
             val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sourceNames.toList())
 
             val alternations = (1 until plan.braid.size).count {
-                corpus.graph.sourceOf(plan.braid[it]) != corpus.graph.sourceOf(plan.braid[it - 1])
+                plan.braid[it].source != plan.braid[it - 1].source
             }
 
             assertTrue(alternations > plan.braid.size / 10, "seed $seed braids too little: $alternations")

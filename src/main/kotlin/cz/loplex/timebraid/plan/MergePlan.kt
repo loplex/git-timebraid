@@ -13,11 +13,8 @@ class PlannedCommit internal constructor(
     val commit: Commit,
     /** Subdirectory this commit's repository occupies, or `null` for the repository placed at the root. */
     val subdir: String?,
-    /** Parents after the braid edge was applied, first parent first; must not be modified. */
-    val parents: IntArray,
-    /** Whether this commit lies on the braid. */
-    @Suppress("unused") // Part of the plan's description of a commit; nothing reads it yet.
-    val onBraid: Boolean,
+    /** Parents after the braid edge was applied, first parent first. */
+    val parents: List<Commit>,
 )
 
 /**
@@ -32,47 +29,60 @@ class PlannedCommit internal constructor(
  */
 class MergePlan private constructor(
     val graph: CommitGraph,
-    /** The braid, in braid order. */
-    val braid: IntArray,
-    /** Write order: a topological order of the reparented history. */
-    val order: IntArray,
-    /** Subdirectory per input repository; exactly one may be `null`, meaning the repository root. */
-    val subdirs: List<String?>,
+    private val braidOrder: IntArray,
+    private val order: IntArray,
+    private val subdirs: List<String?>,
     private val newParents: Array<IntArray>,
     private val content: Array<IntArray>,
     private val onBraid: BooleanArray,
 ) {
+
+    /** The braid, in braid order. */
+    val braid: List<Commit> = graph.commitsAt(braidOrder)
 
     /** Every commit to be written, in write order. */
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
             commit = graph.commitAt(commit),
             subdir = subdirs[graph.sourceOf(commit)],
-            parents = newParents[commit],
-            onBraid = onBraid[commit],
+            parents = graph.commitsAt(newParents[commit]),
         )
     }
 
-    /** Parents of [commit] after reparenting. The returned array must not be modified. */
-    fun parentsOf(commit: Int): IntArray = newParents[commit]
+    /** Parents of [commit] after reparenting, first parent first. */
+    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(newParents[commit.index])
 
     /** Whether [commit] lies on the braid. */
-    fun isOnBraid(commit: Int): Boolean = onBraid[commit]
+    fun isOnBraid(commit: Commit): Boolean = onBraid[commit.index]
 
     /** Subdirectory of the repository [commit] came from, `null` for the root repository. */
-    fun subdirOf(commit: Int): String? = subdirs[graph.sourceOf(commit)]
+    fun subdirOf(commit: Commit): String? = subdirs[commit.source.index]
+
+    /** Subdirectory [source] occupies in the output, `null` for the repository placed at the root. */
+    fun subdirOf(source: Source): String? = subdirs[source.index]
 
     /**
-     * The tree rule in symbolic form: for each input repository, the commit whose original tree is
-     * that repository's content at [commit], or [CommitGraph.NO_COMMIT] if the repository has no
-     * content there yet. Indexed by source index; the returned array must not be modified.
+     * The tree rule in symbolic form: for each input repository that has content at [commit], the
+     * commit whose original tree is that content. A repository that has committed nothing by this
+     * point in the braid is absent from the map rather than present as a blank.
      *
-     * The written tree of [commit] follows from this directly — one entry per repository that has
-     * content, each pointing at that commit's original tree — and so does the promise the whole tool
-     * is built on: whatever repository a commit came from, the other repositories are present at
-     * whatever they had last committed at that point in the braid.
+     * The written tree of [commit] follows from this directly — one entry per repository in the map,
+     * each pointing at that commit's original tree — and so does the promise the whole tool is built
+     * on: whatever repository a commit came from, the other repositories are present at whatever they
+     * had last committed at that point in the braid.
+     *
+     * Iterates in the order the repositories were read, which is what keeps the assembled tree and
+     * the merged `.gitmodules` a deterministic function of the inputs.
      */
-    fun contentOf(commit: Int): IntArray = content[commit]
+    fun contentOf(commit: Commit): Map<Source, Commit> {
+        val row = content[commit.index]
+        val map = LinkedHashMap<Source, Commit>(graph.sourceCount)
+        for (source in graph.sources) {
+            val holder = row[source.index]
+            if (holder != CommitGraph.NO_COMMIT) map[source] = graph.commitAt(holder)
+        }
+        return map
+    }
 
     /** Counts, for `--dry-run`. */
     fun summary(): String {
@@ -86,7 +96,7 @@ class MergePlan private constructor(
             for (source in graph.sources) {
                 appendLine("  ${source.name} -> ${subdirs[source.index]?.plus("/") ?: "<root>"}")
             }
-            appendLine("commits: ${graph.size} (braid: ${braid.size})")
+            appendLine("commits: ${graph.size} (braid: ${braidOrder.size})")
             appendLine("parent counts: $counts")
         }
     }
@@ -125,7 +135,7 @@ class MergePlan private constructor(
          */
         fun create(
             graph: CommitGraph,
-            braid: IntArray,
+            braidOrder: IntArray,
             order: IntArray,
             newParents: Array<IntArray>,
             subdirs: List<String?>,
@@ -133,11 +143,11 @@ class MergePlan private constructor(
             validateSubdirs(graph, subdirs)
 
             val onBraid = BooleanArray(graph.size)
-            for (commit in braid) onBraid[commit] = true
+            for (commit in braidOrder) onBraid[commit] = true
 
             return MergePlan(
                 graph = graph,
-                braid = braid,
+                braidOrder = braidOrder,
                 order = order,
                 subdirs = subdirs,
                 newParents = newParents,
