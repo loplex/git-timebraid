@@ -2,6 +2,7 @@ package cz.loplex.timebraid.git
 
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
 /** Which of a commit's two timestamps interleaves the strands. */
@@ -21,6 +22,12 @@ class BraidInputs(
     val commits: List<SourceCommit>,
     /** Per input repository, in the order they were given to [CommitGraphReader.read]. */
     val sources: List<SourceInputs>,
+    /**
+     * Commits whose ancestry may delay a braid commit — the refs matched by `--interleave-ref`,
+     * across every input. Empty unless the option was given, which is the default scope: the
+     * mainline chains alone (see `BraidInterleave`).
+     */
+    val interleaveTips: IntArray = IntArray(0),
 )
 
 /** What was read out of one input repository, with every ref resolved to a graph index. */
@@ -58,12 +65,17 @@ object CommitGraphReader {
     /**
      * @param branches short branch names to load (and later recreate); `null` loads them all. The
      *   resolved mainline branch is always loaded even if it is not in this set — the braid needs it.
+     * @param interleaveRefs glob patterns matched against full ref names — `refs/tags/v1.*` for a
+     *   release series, a star alone for every ref — applied in every input repository. A matched
+     *   ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that
+     *   trades away.
      */
     fun read(
         repositories: List<SourceRepository>,
         orderBy: OrderBy,
         mainlineBranch: String? = null,
         branches: Set<String>? = null,
+        interleaveRefs: List<String> = emptyList(),
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
         require(repositories.map { it.name }.toSet().size == repositories.size) {
@@ -119,7 +131,14 @@ object CommitGraphReader {
         }
 
         @Suppress("UNCHECKED_CAST")
-        return BraidInputs(graph, heads, mainline, commits as List<SourceCommit>, inputs)
+        return BraidInputs(
+            graph = graph,
+            heads = heads,
+            mainlineBranch = mainline,
+            commits = commits as List<SourceCommit>,
+            sources = inputs,
+            interleaveTips = interleaveTips(interleaveRefs, inputs),
+        )
     }
 
     /**
@@ -135,6 +154,35 @@ object CommitGraphReader {
         val index = builder.indexOf(source, target.name)
         return if (index == CommitGraph.NO_COMMIT) null else BraidRef(name, index)
     }
+
+    /**
+     * The refs the patterns match, as graph indices, deduplicated.
+     *
+     * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
+     * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
+     * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
+     * and a bare star is every ref — which puts the whole loaded graph in scope.
+     */
+    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): IntArray {
+        if (patterns.isEmpty()) return IntArray(0)
+        val matchers = patterns.map { glob(it) }
+        val tips = LinkedHashSet<Int>()
+        for (input in inputs) {
+            for (branch in input.branches) {
+                if (matchers.any { it.matches("${Constants.R_HEADS}${branch.name}") }) {
+                    tips += branch.commit
+                }
+            }
+            for (tag in input.tags) {
+                if (matchers.any { it.matches("${Constants.R_TAGS}${tag.name}") }) tips += tag.commit
+            }
+        }
+        return tips.toIntArray()
+    }
+
+    /** A glob over ref names: `*` is the only metacharacter and it spans path separators. */
+    private fun glob(pattern: String): Regex =
+        Regex(pattern.split('*').joinToString(".*") { Regex.escape(it) })
 
     private fun resolveMainline(repositories: List<SourceRepository>, requested: String?): String {
         if (requested != null) {

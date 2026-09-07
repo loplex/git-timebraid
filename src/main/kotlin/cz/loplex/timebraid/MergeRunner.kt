@@ -10,6 +10,7 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
+import cz.loplex.timebraid.plan.BraidInterleave
 import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
@@ -37,6 +38,11 @@ class MergeRequest(
     val orderBy: OrderBy,
     val mainlineBranch: String?,
     val branches: Set<String>?,
+    /**
+     * Glob patterns over full ref names whose ancestry may delay a braid commit. Empty means the
+     * default scope, the mainline chains alone.
+     */
+    val interleaveRefs: List<String>,
     val writeOptions: WriteOptions,
     val dryRun: Boolean,
 )
@@ -73,10 +79,22 @@ class MergeRunner(
                 orderBy = request.orderBy,
                 mainlineBranch = request.mainlineBranch,
                 branches = request.branches,
+                interleaveRefs = request.interleaveRefs,
             )
 
             progress.step("planning the braid over ${braid.graph.size} commits")
-            val plan = MergePlan.build(braid.graph, braid.heads, request.inputs.map { it.subdir })
+            if (braid.interleaveTips.isNotEmpty()) {
+                progress.detail(
+                    "${braid.interleaveTips.size} refs opted into the interleave, so a merge can " +
+                        "wait for them"
+                )
+            }
+            val plan = MergePlan.build(
+                graph = braid.graph,
+                heads = braid.heads,
+                subdirs = request.inputs.map { it.subdir },
+                braid = BraidInterleave.compute(braid.graph, braid.heads, braid.interleaveTips),
+            )
 
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null)

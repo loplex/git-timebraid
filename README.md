@@ -205,6 +205,13 @@ from the future is only what `m`'s own tree already carried, and what any later 
 it. "The state of the world at this moment" is exact precisely when every commit's timestamp is
 consistent with all of its parents', not only its first one.
 
+That guarantee is the default's, and `--interleave-ref` is how you trade it away deliberately. Name a
+ref and its commits may delay a mainline merge that merges them in: the merge then lands by *their*
+time rather than by its own, which is arguably the more honest position for a merge whose content
+reaches later than its own date — and which does let the merge acquire a braid predecessor younger
+than itself. Off by default, because a branch nobody considers significant should not get to move where
+two other repositories meet.
+
 ---
 
 ## Branches
@@ -318,6 +325,8 @@ git-timebraid -o <dir> [OPTIONS] <repo>[=<subdir>]...
                                 timestamp used to interleave the strands
                                 (default: committer)
   -b, --branch NAME             recreate only these branches (repeatable; default: all)
+      --interleave-ref PATTERN  let this ref's commits delay a mainline merge that merges
+                                them in (repeatable; glob over full ref names; default: none)
       --tag-prefix FMT          default "{repo}/"
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)

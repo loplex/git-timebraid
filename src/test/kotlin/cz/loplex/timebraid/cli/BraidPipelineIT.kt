@@ -161,14 +161,12 @@ class BraidPipelineIT {
         }
     }
 
-    @Test
-    fun `a merge whose merged-in branch is timestamped late still lands at its own time`() {
-        // backend's m (12:00) merges in f, whose own commit is at 20:00 -- a slow review, or a clock
-        // skewed the other way, produces exactly this. The braid is interleaved over the mainline
-        // first-parent chains alone, so m takes its place by its own 12:00, between b1 (11:00) and
-        // b2 (13:00). Waiting for f as well would push m past b2 and give it a braid predecessor
-        // timestamped *after* it, which is what checking out m below would then show: webui/ as of
-        // 13:00 at a commit recorded at 12:00.
+    /**
+     * `backend`'s `m` (12:00) merges in `f`, timestamped 20:00 -- a slow review, or a clock skewed the
+     * other way. `webui` has commits at 11:00 and 13:00, so whether `f` is allowed to delay `m`
+     * decides which of them becomes `m`'s braid predecessor.
+     */
+    private fun lateMergeFixture(): Map<String, ObjectId> {
         val ids = HashMap<String, ObjectId>()
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
@@ -185,6 +183,16 @@ class BraidPipelineIT {
             r.branch("main", b2)
             ids += mapOf("b1" to b1, "b2" to b2)
         }
+        return ids
+    }
+
+    @Test
+    fun `a merge whose merged-in branch is timestamped late still lands at its own time`() {
+        // Only the mainlines decide where the strands interleave, so m takes its place by its own
+        // 12:00, between b1 (11:00) and b2 (13:00). Waiting for f as well would push m past b2 and
+        // give it a braid predecessor timestamped after itself -- which the checkout would then show
+        // as webui/ at 13:00 under a commit recorded at 12:00.
+        val ids = lateMergeFixture()
         val out = tmp.resolve("merged.git")
 
         braid("-o", out.toString(), path("backend.git"), path("webui.git"))
@@ -205,6 +213,54 @@ class BraidPipelineIT {
 
         OutputRepo.assertEveryOriginalEdgePreserved(out)
         if (GitCli.available) GitCli.fsck(out)
+    }
+
+    @Test
+    fun `--interleave-ref lets that branch delay the merge that brings it in`() {
+        // The same fixture with f opted in: m now waits for f, so it lands after webui's whole
+        // history and its braid predecessor becomes b2 -- later than m's own timestamp. That is the
+        // trade the option exists to make available, and it is the behaviour the tool had before the
+        // braid and the write order were separated.
+        val ids = lateMergeFixture()
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--interleave-ref", "refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        val written = OutputRepo.read(out)
+        fun rewritten(name: String) = written.byOriginalSha.getValue(ids.getValue(name).name)
+        val m = rewritten("m")
+        assertEquals(3, m.parents.size, "the parent rule is unchanged by the interleave scope")
+        assertEquals(rewritten("b2").id, m.parents[0], "m should now follow b2, not b1")
+
+        SourceRepository.open(out).use { repo ->
+            fun webuiTreeOf(name: String): ObjectId =
+                repo.topLevelEntries(rewritten(name).tree).single { it.name == "webui" }.id
+            assertEquals(webuiTreeOf("b2"), webuiTreeOf("m"))
+        }
+
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+        if (GitCli.available) GitCli.fsck(out)
+    }
+
+    @Test
+    fun `--interleave-ref matching nothing leaves the braid exactly as it was`() {
+        val ids = lateMergeFixture()
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--interleave-ref", "refs/heads/does-not-exist",
+            path("backend.git"), path("webui.git"),
+        )
+
+        val written = OutputRepo.read(out)
+        val m = written.byOriginalSha.getValue(ids.getValue("m").name)
+        val b1 = written.byOriginalSha.getValue(ids.getValue("b1").name)
+        assertEquals(b1.id, m.parents[0], "an unmatched pattern must not widen the scope")
     }
 
     @Test

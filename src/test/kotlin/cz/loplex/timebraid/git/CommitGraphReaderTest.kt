@@ -136,4 +136,40 @@ class CommitGraphReaderTest {
             assertEquals("webui", firstOnBraid(OrderBy.COMMITTER))
         }
     }
+
+    @Test
+    fun `--interleave-ref patterns match full ref names, tags included`() {
+        lateinit var f: org.eclipse.jgit.lib.ObjectId
+        lateinit var tagged: org.eclipse.jgit.lib.ObjectId
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1")
+            tagged = repo.commit("a2", parents = listOf(a1))
+            f = repo.commit("f", parents = listOf(a1))
+            repo.branch("main", tagged)
+            repo.branch("feature/x", f)
+            repo.lightweightTag("v1.0", tagged)
+        }
+
+        open("backend").useAll { repos ->
+            fun idsFor(vararg patterns: String): Set<String> {
+                val inputs = CommitGraphReader.read(
+                    repos,
+                    OrderBy.COMMITTER,
+                    interleaveRefs = patterns.toList(),
+                )
+                return inputs.interleaveTips.map { inputs.graph.idOf(it) }.toSet()
+            }
+
+            // A star spans path separators, so a prefix pattern reaches a nested branch name.
+            assertEquals(setOf(f.name), idsFor("refs/heads/feature/*"))
+            // Tags are refs too, and are matched under their own prefix.
+            assertEquals(setOf(tagged.name), idsFor("refs/tags/v1.*"))
+            // A short name matches nothing: patterns are against the full ref name on purpose.
+            assertEquals(emptySet<String>(), idsFor("feature/x"))
+            // A bare star is every ref, which puts the whole loaded graph in scope.
+            assertEquals(setOf(f.name, tagged.name), idsFor("*"))
+            // No pattern means the default scope, and nothing to resolve.
+            assertEquals(emptySet<String>(), idsFor())
+        }
+    }
 }

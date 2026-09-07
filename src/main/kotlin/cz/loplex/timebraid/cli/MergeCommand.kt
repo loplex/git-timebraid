@@ -70,6 +70,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     private val branches by option("-b", "--branch").multiple()
         .help("Recreate only these branches (repeatable; default: all).")
 
+    private val interleaveRefs by option("--interleave-ref").multiple()
+        .help(
+            "Let this ref's commits delay a mainline merge that merges them in, so the merge lands " +
+                "by their time rather than by its own (repeatable; glob over full ref names, e.g. " +
+                "refs/heads/release/*; '*' opts in everything). Off by default: only the mainlines " +
+                "themselves decide where the strands interleave."
+        )
+
     private val tagPrefix by option("--tag-prefix").default("{repo}/")
         .help("Prefix prepended to every recreated tag; {repo} is substituted.")
 
@@ -138,6 +146,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             orderBy = orderBy,
             mainlineBranch = mainlineBranch,
             branches = branches.toSet().ifEmpty { null },
+            interleaveRefs = interleaveRefs,
             writeOptions = WriteOptions(subjectPrefix, tagPrefix, provenance),
             dryRun = dryRun,
         )
