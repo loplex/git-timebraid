@@ -103,6 +103,8 @@ moment" is not computed on demand, it is simply what the commit's tree contains.
 
 [**doc/how-it-works.md**](doc/how-it-works.md) works the construction out properly — the exact parent
 rule, why a merge on the braid can end up with three parents, and what happens to side branches.
+[**doc/examples/**](doc/examples/README.md) is the same thing on four small histories you can build
+and walk yourself.
 
 ---
 

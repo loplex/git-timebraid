@@ -164,3 +164,7 @@ That guarantee is the default's, and `--interleave-ref` is how you give it up de
   predecessor younger than itself.
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
+
+[Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a five-commit
+history you can build and inspect: one input, braided both ways, with the merge landing before the
+other repository's last commit by default and after it once every ref is opted in.

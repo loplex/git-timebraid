@@ -1,0 +1,10 @@
+repositories:
+  A -> A/
+  B -> B/
+commits: 4 (braid: 4)
+parent counts: 0 -> 1, 1 -> 3
+
+000000 * B/7d18959ab19de5d1fa153f99b4eb4559eb9838b8 @1700072000 parents=[] content=[B=7d18959ab19de5d1fa153f99b4eb4559eb9838b8]
+000001 * B/f1ca3cfa49340fdc812818af96dcbcd1f2899ea0 @1700144000 parents=[B/7d18959ab19de5d1fa153f99b4eb4559eb9838b8] content=[B=f1ca3cfa49340fdc812818af96dcbcd1f2899ea0]
+000002 * A/b7b8e9282f44a4d87ee6e8a796f33a3cde61d073 @1700180000 parents=[B/f1ca3cfa49340fdc812818af96dcbcd1f2899ea0] content=[A=b7b8e9282f44a4d87ee6e8a796f33a3cde61d073, B=f1ca3cfa49340fdc812818af96dcbcd1f2899ea0]
+000003 * A/3aab175eeb78f92c552f2a8a4bf13d1bd1c06403 @1700036000 parents=[A/b7b8e9282f44a4d87ee6e8a796f33a3cde61d073] content=[A=3aab175eeb78f92c552f2a8a4bf13d1bd1c06403, B=f1ca3cfa49340fdc812818af96dcbcd1f2899ea0]
