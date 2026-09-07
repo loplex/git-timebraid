@@ -159,7 +159,7 @@ class BraidWriter(
      */
     private fun gitmodulesOf(parts: List<RewiredGitmodules>, at: () -> String): ObjectId? {
         val text = SubmoduleWiring.merge(parts, at) ?: return null
-        return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text.toByteArray(Charsets.UTF_8)) }
+        return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text) }
     }
 
     /**

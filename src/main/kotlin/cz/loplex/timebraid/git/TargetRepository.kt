@@ -118,12 +118,15 @@ class TargetRepository private constructor(
     }
 
     /**
-     * Writes a blob and returns its id.
+     * Writes [text] as a blob and returns its id.
      *
      * The output's content is otherwise copied from the inputs object for object, so this exists for
-     * the one file the braid has to invent: the root `.gitmodules` of [SubmoduleWiring].
+     * the one file the braid has to invent: the root `.gitmodules` of [SubmoduleWiring]. Git stores a
+     * blob as bytes and this one is text, so the encoding is settled here rather than at the call
+     * site — UTF-8, which is what git itself assumes of a `.gitmodules`.
      */
-    fun writeBlob(content: ByteArray): ObjectId = inserter.insert(Constants.OBJ_BLOB, content)
+    fun writeBlob(text: String): ObjectId =
+        inserter.insert(Constants.OBJ_BLOB, text.toByteArray(Charsets.UTF_8))
 
     /** Writes a commit object and returns its id. */
     fun writeCommit(
