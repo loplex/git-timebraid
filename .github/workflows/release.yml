@@ -1,0 +1,169 @@
+name: Release
+
+# Tagging is the trigger, and the tag is the single source of truth for the version -- the build
+# refuses to run unless the pom at that commit agrees with it. That refusal is the point: the
+# version is baked into the jar manifest and reported by `git-timebraid --version`, so a tag that
+# disagreed with the pom would ship an archive whose name and whose output tell different stories.
+#
+# To cut a release:
+#
+#     <set <version> in pom.xml to 1.2.3, commit>
+#     git tag -a v1.2.3 -m 'git-timebraid 1.2.3'
+#     git push origin main v1.2.3
+#
+# What comes out is a *draft* release holding one portable archive, one archive per platform, the
+# standalone jar, and a SHA256SUMS file. Nothing is published to anyone until a human opens that
+# draft and presses the button.
+on:
+  push:
+    tags: ["v*"]
+
+# The draft release and its assets; nothing else.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The release is built on 21 throughout, so jlink's compression is spelled the way 21 spells it.
+  # CI covers the JDK 17 spelling on every push; here one JDK keeps the platform archives
+  # comparable to each other.
+  JAVA_VERSION: "21"
+
+jobs:
+  portable:
+    name: portable archive
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Check the tag against the pom version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=${GITHUB_REF_NAME#v}
+          pom=$(mvn -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)
+          echo "tag: $tag, pom: $pom"
+          if [ "$tag" != "$pom" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} says $tag but pom.xml says $pom" >&2
+              exit 1
+          fi
+          case "$pom" in
+              *-SNAPSHOT) echo "::error::refusing to release a snapshot version ($pom)" >&2; exit 1 ;;
+          esac
+          echo "version=$pom" >> "$GITHUB_OUTPUT"
+
+      # The tag gets its own test run rather than trusting the branch build: a tag can be moved,
+      # and what is released has to be what was tested.
+      - name: mvn verify
+        run: mvn -B -ntp verify
+
+      - name: Smoke-test the portable archive
+        shell: bash
+        run: .github/scripts/smoke-distribution.sh target/git-timebraid-${{ steps.version.outputs.version }}.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable
+          path: |
+            target/git-timebraid-*.tar.gz
+            target/git-timebraid-*.zip
+            target/git-timebraid.jar
+          if-no-files-found: error
+
+  bundled:
+    name: ${{ matrix.label }} archive
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # One leg per platform a jlink image can be built for. The two macOS entries are not a
+        # typo: macos-latest is Apple silicon and macos-13 is the last Intel runner, and an image
+        # built on one does not run on the other.
+        #
+        # ubuntu-24.04-arm is free for public repositories and billed for private ones -- if this
+        # repository ever goes private, that leg is the one to drop.
+        include:
+          - { os: ubuntu-latest,    label: linux-x64 }
+          - { os: ubuntu-24.04-arm, label: linux-aarch64 }
+          - { os: macos-13,         label: macos-x64 }
+          - { os: macos-latest,     label: macos-aarch64 }
+          - { os: windows-latest,   label: windows-x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # A jlink image is built by and for one platform, which is why this job exists once per
+      # platform rather than once. The tests ran in the portable job; this is the archive itself.
+      - name: Build the bundled-runtime archive
+        run: mvn -B -ntp -DskipTests -Pbundled-runtime package
+
+      - name: Merge two repositories with the unpacked archive
+        shell: bash
+        run: .github/scripts/smoke-distribution.sh
+
+      # The portable archive is built alongside and would arrive once per leg; the platform one is
+      # the only thing this job has to contribute. Naming the platform rather than globbing for
+      # it also checks the matrix against the pom: `if-no-files-found: error` fires if the six
+      # os/arch profiles ever name a runner something other than what this matrix calls it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundled-${{ matrix.label }}
+          path: |
+            target/git-timebraid-*-${{ matrix.label }}.tar.gz
+            target/git-timebraid-*-${{ matrix.label }}.zip
+          if-no-files-found: error
+
+  release:
+    name: draft release
+    needs: [portable, bundled]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        shell: bash
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          ls -la
+          sha256sum git-timebraid-* git-timebraid.jar > SHA256SUMS
+          cat SHA256SUMS
+
+      # `gh` is preinstalled on the runners, so the upload needs no third-party action -- one less
+      # thing holding a token. The notes are a file in the repository rather than a heredoc here,
+      # so they can be read and edited without picking them out of a YAML string.
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.portable.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+              --draft \
+              --title "git-timebraid $VERSION" \
+              --generate-notes \
+              --notes "$(cat .github/release-notes.md)" \
+              artifacts/*

@@ -16,6 +16,20 @@
         commits across repositories in timestamp order.
     </description>
 
+    <url>https://github.com/loplex/git-timebraid</url>
+
+    <scm>
+        <connection>scm:git:https://github.com/loplex/git-timebraid.git</connection>
+        <developerConnection>scm:git:git@github.com:loplex/git-timebraid.git</developerConnection>
+        <url>https://github.com/loplex/git-timebraid</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/loplex/git-timebraid/issues</url>
+    </issueManagement>
+
     <licenses>
         <license>
             <name>Apache-2.0</name>

@@ -208,15 +208,24 @@ it off with `--no-provenance`.
 
 ### Install
 
-No release has been published yet, so build the distribution from source:
+Download an archive from [Releases](https://github.com/loplex/git-timebraid/releases), unpack it, and
+put its `bin/` on `PATH`:
 
 ```bash
-mvn -q package                       # builds target/git-timebraid-<version>.tar.gz (and .zip)
-tar xzf target/git-timebraid-*.tar.gz -C ~/opt
+tar xzf git-timebraid-<version>.tar.gz -C ~/opt
 export PATH="$HOME/opt/git-timebraid-<version>/bin:$PATH"
 
 git-timebraid --help
 git timebraid --help                 # the same thing: git runs any git-<name> found on PATH
+```
+
+Each release carries a `SHA256SUMS`; `sha256sum --check --ignore-missing SHA256SUMS` verifies what
+you downloaded against it.
+
+Building from source produces the same archive:
+
+```bash
+mvn -q package                       # builds target/git-timebraid-<version>.tar.gz (and .zip)
 ```
 
 The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside
@@ -337,15 +346,16 @@ Verification:
 - An opt-in smoke run against a real corpus. On a three-repository history of 14 000 commits the
   result passes `git fsck --strict`, and walking the provenance trailers finds every original parent
   edge present in the output.
-- CI runs `mvn verify` on Linux and Windows against JDK 17 and 21.
+- CI runs `mvn verify` on Linux and Windows against JDK 17 and 21, and on each of those also
+  builds the bundled-runtime archive and merges two repositories with the launcher inside it.
 
 `mvn package` produces the runnable artifacts: a self-contained jar and a `tar.gz`/`zip` holding it
 together with the `git-timebraid` launcher, plus, under `-Pbundled-runtime`, a platform-specific
 archive with a `jlink` runtime for machines without a JVM (see Install).
 
-Not there yet:
-
-- **A published release.** The archives are built locally; nothing is uploaded anywhere yet.
+Releases are cut by tagging: CI builds the portable archive, the jar, and one archive per platform
+(Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with each one
+to check it runs, and uploads them with a `SHA256SUMS`.
 
 ## Limitations
 
