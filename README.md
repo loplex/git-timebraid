@@ -2,13 +2,13 @@
 
 Merge several independent git repositories into one — **braided together along the time axis**.
 
-Every commit of every input repository is recreated, every original parent edge is kept, and on top of
-that the tool inserts artificial edges that chain commits across repositories in chronological order —
-by committer date, unless you ask for author date. The result is a single mainline — *the braid* — that
-interleaves the histories of all inputs.
+- Every commit of every input repository is recreated.
+- Every original parent edge is kept.
+- On top of that, artificial edges chain commits *across* repositories in chronological order — by
+  committer date, unless you ask for author date.
 
-Check out any commit on the braid and you see the state that **all** input repositories had at that
-moment in time.
+The result is a single mainline — *the braid* — that interleaves the histories of all inputs. Check
+out any commit on it and you see the state that **all** input repositories had at that moment.
 
 ---
 
@@ -18,13 +18,15 @@ You have three repositories that were always developed together — a backend, a
 generator. They were released together, they broke together, and the interesting question is almost
 always *"what did the whole system look like on the day that bug appeared?"*
 
-Git's usual answers do not give you that. `git subtree`, `git read-tree`, `git filter-repo
---to-subdirectory-filter`, and the plain `git merge --allow-unrelated-histories` recipe all join the
-repositories at a **single point**: from the merge commit onwards you have one repository, but every
-commit *before* it still belongs to exactly one original repository and shows only that repository's
-files. Your history is preserved but it is not usable as a joint history. (Tools like
-[josh](https://github.com/josh-project/josh) solve a different problem again — projecting
-subdirectories in and out as workspace views.)
+Git's usual answers do not give you that:
+
+- `git subtree`, `git read-tree`, `git filter-repo --to-subdirectory-filter` and the plain
+  `git merge --allow-unrelated-histories` recipe all join the repositories at a **single point**.
+- From the merge commit onwards you have one repository — but every commit *before* it still belongs
+  to exactly one original repository and shows only that repository's files.
+- Your history is preserved, but it is not usable as a joint history.
+- [josh](https://github.com/josh-project/josh) solves a different problem again — projecting
+  subdirectories in and out as workspace views.
 
 git-timebraid joins them **at every commit**.
 
@@ -61,8 +63,9 @@ flowchart LR
   b1 -.-> b2
 ```
 
-Solid arrows are the braided edges the tool adds. Dotted arrows are the original edges, all of them
-still there. Arrows point from parent to child, so time flows left to right.
+- Solid arrows: the braided edges the tool adds.
+- Dotted arrows: the original edges, all of them still there.
+- Arrows point from parent to child, so time flows left to right.
 
 Checking out `b2` gives you `backend/` as of `a2` and `webui/` as of `b2` — the state of the world at
 13:00.
@@ -71,15 +74,18 @@ Checking out `b2` gives you `backend/` as of `a2` and `webui/` as of `b2` — th
 
 ## The parent rule
 
-The braid is built from the **first-parent chain** of each input repository's mainline branch. Those
-chains are merged into one sequence by always taking whichever chain's next commit is oldest — a k-way
-merge, the same idea as merging sorted lists. A chain's own order never changes regardless of what its
-timestamps say, so ancestry on the mainline holds by construction; across repositories, the earlier
-timestamp comes first. Which timestamp that is — the committer date, or the author date with
-`--order-by author` — is settled once when the input is read, and the rest of this document calls it
-the **ordering timestamp**.
+How the sequence is built:
 
-For every commit `c`, writing `pred` for the commit preceding it in that sequence:
+- The braid is built from the **first-parent chain** of each input repository's mainline branch.
+- Those chains are merged into one sequence by always taking whichever chain's next commit is oldest
+  — a k-way merge, the same idea as merging sorted lists.
+- A chain's own order never changes regardless of what its timestamps say, so ancestry on the
+  mainline holds by construction; across repositories, the earlier timestamp comes first.
+- Which timestamp that is — the committer date, or the author date with `--order-by author` — is
+  settled once when the input is read. The rest of this document calls it the **ordering timestamp**.
+
+How parents are rewritten. For every commit `c`, writing `pred` for the commit preceding it in that
+sequence:
 
 ```
 c is not on the braid          →  parents'(c) = parents(c)             unchanged
@@ -87,9 +93,11 @@ pred is already a parent of c  →  parents'(c) = parents(c)             unchang
 otherwise                      →  parents'(c) = [pred] + parents(c)    braided edge prepended
 ```
 
-That is the whole rule. Note what it does **not** do: it never removes a parent. The braided edge is
-*prepended*, so it becomes the first parent — which is what makes `git log --first-parent` walk the
-braid — while every original edge stays exactly where it was.
+That is the whole rule. Note what it does **not** do:
+
+- It never removes a parent — every original edge stays exactly where it was.
+- The braided edge is *prepended*, so it becomes the first parent. That is what makes
+  `git log --first-parent` walk the braid.
 
 The arithmetic follows:
 
@@ -98,6 +106,8 @@ The arithmetic follows:
 | ordinary commit | same repo (i.e. already its parent) | **1** — unchanged |
 | ordinary commit | a different repo | **2** — braided edge + original parent |
 | merge commit | a different repo | **3** — braided edge + both original parents |
+
+### Why three parents
 
 The three-parent case is not a curiosity, it is the price of the guarantee. Suppose `webui` merged a
 feature branch, and the commit immediately preceding that merge in time came from `backend`:
@@ -110,9 +120,9 @@ braid:      parents'(b3) = [a4, b2, f1]
                                     preceding b3 in time
 ```
 
-Drop `b2` here and you would have a tidier graph and a false history: `git merge-base`, `git log
---first-parent webui-side`, and every "when did this diverge" question would start lying. So it keeps
-all three.
+Drop `b2` here and you would have a tidier graph and a false history: `git merge-base`,
+`git log --first-parent webui-side`, and every "when did this diverge" question would start lying.
+So it keeps all three.
 
 ---
 
@@ -126,8 +136,10 @@ A commit's tree in the braid is derived from its first parent:
 For the very first commit on the braid there is no parent, so the tree is just that one subdirectory.
 
 Because the first parent is the time predecessor, the map of *subdirectory → content* accumulates as
-you walk forward. Each subdirectory holds whatever its repository last committed at or before this
-point, and a repository that did not exist yet simply is not there:
+you walk forward:
+
+- Each subdirectory holds whatever its repository last committed at or before this point.
+- A repository that did not exist yet simply is not there.
 
 ```
 $ git ls-tree HEAD                    # today
@@ -153,9 +165,10 @@ Say the nightly integration run was green on Tuesday and red on Friday. In betwe
 forty commits and `webui` gained twelve. The failure shows up in the UI, but nobody knows which side
 actually caused it.
 
-With separate repositories you cannot bisect that. You can bisect `backend` alone, but at each step you
-have to decide by hand which `webui` commit was current at the time, check that one out too, and hope
-you paired them correctly. Six bisect steps, and every one of them needs that pairing rebuilt by hand.
+With separate repositories you cannot bisect that. You can bisect `backend` alone, but at each step
+you have to decide by hand which `webui` commit was current at the time, check that one out too, and
+hope you paired them correctly. Six bisect steps, and every one of them needs that pairing rebuilt by
+hand.
 
 In the braid it is the ordinary command:
 
@@ -167,8 +180,8 @@ git bisect run ./ci/integration-test.sh
 
 Every commit git offers you is a real historical state of the whole system: `backend/` holds whatever
 backend had last committed at that instant, `webui/` likewise. Not an approximation and not a
-reconstruction — that combination is what existed. The pairing is no longer something you maintain, and
-the commit bisect lands on tells you both *which repository* and *which change*.
+reconstruction — that combination is what existed. The pairing is no longer something you maintain,
+and the commit bisect lands on tells you both *which repository* and *which change*.
 
 The same property answers the other questions of that shape without any tooling at all:
 
@@ -183,34 +196,49 @@ git log --first-parent --since=2024-03-01
 git diff release-2.1 release-2.2 -- backend/
 ```
 
-**One caveat worth stating plainly.** "That instant" means *the mainline branches at that instant*, as
-dated by the ordering timestamp — not what was deployed. If work is authored long before it is merged,
-author dates and integration order diverge; `--order-by committer` is usually the better choice for
-"what did the system look like" questions, and `--order-by author` for "what was being written".
+### Caveat: "that instant" is the mainline, not the deployment
 
-**A second, sharper caveat: a merge can carry — and pass on — a repository's future.** A merge commit's
-tree already reflects everything it merged in, including a branch whose last commit is timestamped
-after the merge itself; nothing about braiding changes that tree, and every later commit that inherits
-it forward (the ordinary accumulation rule, not a choice this tool makes) shows that same "future"
-content too. This is a fact about the input history — a branch merged back in later than it was last
-committed to, the everyday case — not something any interleaving of the braid can undo.
+- It means *the mainline branches at that instant*, as dated by the ordering timestamp — not what was
+  deployed.
+- If work is authored long before it is merged, author dates and integration order diverge.
+- `--order-by committer` is usually the better choice for "what did the system look like" questions,
+  `--order-by author` for "what was being written".
+
+### Caveat: a merge can carry — and pass on — a repository's future
+
+This one is sharper:
+
+- A merge commit's tree already reflects everything it merged in, including a branch whose last
+  commit is timestamped *after* the merge itself.
+- Nothing about braiding changes that tree, and every later commit inherits it forward — the ordinary
+  accumulation rule, not a choice this tool makes — so those commits show that same "future" content
+  too.
+- This is a fact about the input history — a branch merged back in later than it was last committed
+  to, the everyday case — not something any interleaving of the braid can undo.
 
 The braid itself adds nothing to this. Every braid edge — the artificial one this tool inserts — runs
-from a commit back to one no younger than itself: a braid predecessor from another repository won a
-direct comparison of timestamps against it, and a predecessor from the commit's *own* repository is
-already its first parent, so no edge is added there at all. Suppose `backend`'s `m` merges in a
-long-lived feature branch whose last commit is timestamped after `m` itself. Checking out `m` shows
-`webui/` as of a moment at or before `m`'s own — the braid places nothing later beside it. What you see
-from the future is only what `m`'s own tree already carried, and what any later commit inherits from
-it. "The state of the world at this moment" is exact precisely when every commit's timestamp is
+from a commit back to one **no younger than itself**:
+
+- A braid predecessor from another repository won a direct comparison of timestamps against it.
+- A predecessor from the commit's *own* repository is already its first parent, so no edge is added
+  there at all.
+
+So suppose `backend`'s `m` merges in a long-lived feature branch whose last commit is timestamped
+after `m` itself. Checking out `m` shows `webui/` as of a moment at or before `m`'s own — the braid
+places nothing later beside it. What you see from the future is only what `m`'s own tree already
+carried, and what any later commit inherits from it.
+
+"The state of the world at this moment" is exact precisely when every commit's timestamp is
 consistent with all of its parents', not only its first one.
 
-That guarantee is the default's, and `--interleave-ref` is how you trade it away deliberately. Name a
-ref and its commits may delay a mainline merge that merges them in: the merge then lands by *their*
-time rather than by its own, which is arguably the more honest position for a merge whose content
-reaches later than its own date — and which does let the merge acquire a braid predecessor younger
-than itself. Off by default, because a branch nobody considers significant should not get to move where
-two other repositories meet.
+That guarantee is the default's, and `--interleave-ref` is how you trade it away deliberately:
+
+- Name a ref and its commits may delay a mainline merge that merges them in.
+- The merge then lands by *their* time rather than by its own — arguably the more honest position for
+  a merge whose content reaches later than its own date, and which does let the merge acquire a braid
+  predecessor younger than itself.
+- Off by default, because a branch nobody considers significant should not get to move where two
+  other repositories meet.
 
 ---
 
@@ -218,9 +246,11 @@ two other repositories meet.
 
 Branches need no special handling, which is worth explaining because it looks like they should.
 
-Only commits on the braid get reparented. Everything else keeps its original parents, and branches are
-just refs pointing at the recreated commits. So a side branch forks off wherever its base commit landed
-— and if that base is on the braid, it already carries the accumulated content of every repository.
+- Only commits on the braid get reparented.
+- Everything else keeps its original parents, and branches are just refs pointing at the recreated
+  commits.
+- So a side branch forks off wherever its base commit landed — and if that base is on the braid, it
+  already carries the accumulated content of every repository.
 
 The consequence is that a branch which exists in **one** input repository still gives you a working
 checkout of the whole system:
@@ -239,32 +269,40 @@ follows the branch. Which is exactly what you want, and it costs no configuratio
 
 ## What ends up in the output repository
 
-- **One subdirectory per input repository**, named after the input's own name, which in turn
-  defaults to the last segment of its path. The two are set separately:
-  `repo.git::name` is the repository's identity — the tag prefix, the provenance label, what
-  `--root-repo` matches, and what has to be unique, so it is how two inputs whose directories happen
-  to share a name are told apart — while `repo.git=subdir` only says where the content lands. One
-  repository may be placed at the root instead, with `--root-repo <name>`.
-- **All branches**, recreated at the corresponding new commits. Restrict with `-b`. The mainline
-  branch collapses into one: every input contributed its own to the same braid, so the output has a
-  single branch of that name, at the braid's tip. Any other branch keeps its own name, unless two
-  inputs happen to have used that name — then both are qualified as `<repo>/<branch>`.
-- **All tags**, prefixed with the repository name by default (`v1.2` from `webui` becomes
-  `webui/v1.2`), so tags from different repositories cannot collide. An annotated tag stays
-  annotated, keeping its tagger and its message.
-- **The original repositories as remotes** (with `--keep-remotes`), their branches fetched under
-  `refs/remotes/<repo>/*`. Nothing is lost and the originals stay one `git log` away.
-- **A provenance trailer** on every commit message:
+**One subdirectory per input repository**, named after the input's own name, which in turn defaults to
+the last segment of its path. Name and placement are set separately:
 
-  ```
-  webui: fix the date picker on the summary page
+- `repo.git::name` is the repository's **identity** — the tag prefix, the provenance label, what
+  `--root-repo` matches, and what has to be unique. It is how two inputs whose directories happen to
+  share a name are told apart.
+- `repo.git=subdir` only says **where the content lands**.
+- One repository may be placed at the root instead, with `--root-repo <name>`.
 
-  [timebraid: repo="webui" commit=5c1a9f2… parents=b2c91f4…,a0d3e11…]
-  ```
+**All branches**, recreated at the corresponding new commits (restrict with `-b`):
 
-  This is what makes the guarantee checkable rather than merely claimed: the original identity and the
-  original parents of every commit are recorded, so a script can verify that no edge went missing.
-  Turn it off with `--no-provenance`.
+- The mainline branch collapses into one: every input contributed its own to the same braid, so the
+  output has a single branch of that name, at the braid's tip.
+- Any other branch keeps its own name — unless two inputs happen to have used that name, in which
+  case both are qualified as `<repo>/<branch>`.
+
+**All tags**, prefixed with the repository name by default (`v1.2` from `webui` becomes `webui/v1.2`),
+so tags from different repositories cannot collide. An annotated tag stays annotated, keeping its
+tagger and its message.
+
+**The original repositories as remotes** (with `--keep-remotes`), their branches fetched under
+`refs/remotes/<repo>/*`. Nothing is lost and the originals stay one `git log` away.
+
+**A provenance trailer** on every commit message:
+
+```
+webui: fix the date picker on the summary page
+
+[timebraid: repo="webui" commit=5c1a9f2… parents=b2c91f4…,a0d3e11…]
+```
+
+This is what makes the guarantee checkable rather than merely claimed: the original identity and the
+original parents of every commit are recorded, so a script can verify that no edge went missing. Turn
+it off with `--no-provenance`.
 
 ---
 
@@ -289,11 +327,17 @@ git timebraid --help                 # the same thing: git runs any git-<name> f
 ```
 
 The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside
-`lib/git-timebraid.jar`; the launcher finds the jar relative to itself, through symlinks, so linking
+`lib/git-timebraid.jar`. The launcher finds the jar relative to itself, through symlinks, so linking
 `bin/git-timebraid` into a directory already on `PATH` works too.
 
-`JAVA_HOME` selects the JVM if set and `java` from `PATH` otherwise, while `TIMEBRAID_JAVA` names one
-outright. `JAVA_OPTS` goes to the JVM, which is where a larger heap belongs for a large history:
+The JVM is picked in this order, first hit wins:
+
+1. `TIMEBRAID_JAVA` — names a java binary outright
+2. `runtime/` beside the launcher — present only in the bundled-runtime archive (see below)
+3. `JAVA_HOME`
+4. `java` from `PATH`
+
+`JAVA_OPTS` goes to the JVM, which is where a larger heap belongs for a large history:
 
 ```bash
 JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged ~/repos/backend.git ~/repos/webui.git
@@ -314,14 +358,14 @@ where installing Java is not on the table:
 mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>.tar.gz (and .zip)
 ```
 
-It unpacks and runs the same way; the launcher notices `runtime/` beside it and uses that JVM in
-preference to `JAVA_HOME`, which is the point of the archive. `TIMEBRAID_JAVA=/path/to/java` overrides
-that when you would rather it ran on yours.
-
-The bundle is roughly 46 MB unpacked against 9 MB for the plain jar, and unlike the plain archive it
-only runs on the platform that built it — hence the platform in the file name. It is the JDK running
-Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer; on JDK 17 build it with
-`-Djlink.compress=2`.
+- It unpacks and runs the same way; the launcher notices `runtime/` beside it and uses that JVM in
+  preference to `JAVA_HOME`, which is the point of the archive.
+- `TIMEBRAID_JAVA=/path/to/java` overrides that when you would rather it ran on yours.
+- Roughly 46 MB unpacked against 9 MB for the plain jar.
+- Unlike the plain archive it only runs on the platform that built it — hence the platform in the
+  file name.
+- It is the JDK running Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer; on
+  JDK 17 build it with `-Djlink.compress=2`.
 
 ### Examples
 
@@ -382,17 +426,24 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
 ## Status
 
-**Usable from the command line end to end.** Cloning the inputs (a local path or a URL), reading them,
-planning the interleaving, writing the output — bare or with a working tree — recreating every branch
-and prefixed tag, the provenance trailer, keeping the inputs as remotes, and progress on stderr: all
-implemented and tested. The pipeline is covered by a matrix of end-to-end fixtures — a three-parent
-merge on the mainline, `--root-repo`, side branches, committer-clock skew, tree dedup, `a.txt` vs
-`a/` ordering, CRLF and non-ASCII content, the error paths — each run through `git fsck --strict`,
-plus an opt-in smoke run against a real corpus. On a three-repository history of 14 000 commits the
-result passes `git fsck --strict`, and walking the provenance trailers finds every original parent
-edge present in the output. CI runs `mvn verify` on Linux and Windows against JDK 17 and 21. A URL
-input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
-refreshes that clone instead of downloading it again.
+**Usable from the command line end to end.** Implemented and tested:
+
+- Cloning the inputs — a local path or a URL — reading them, and planning the interleaving.
+- Writing the output, bare or with a working tree.
+- Recreating every branch and prefixed tag, the provenance trailer, keeping the inputs as remotes,
+  and progress on stderr.
+- A URL input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
+  refreshes that clone instead of downloading it again.
+
+Verification:
+
+- A matrix of end-to-end fixtures — a three-parent merge on the mainline, `--root-repo`, side
+  branches, committer-clock skew, tree dedup, `a.txt` vs `a/` ordering, CRLF and non-ASCII content,
+  the error paths — each run through `git fsck --strict`.
+- An opt-in smoke run against a real corpus. On a three-repository history of 14 000 commits the
+  result passes `git fsck --strict`, and walking the provenance trailers finds every original parent
+  edge present in the output.
+- CI runs `mvn verify` on Linux and Windows against JDK 17 and 21.
 
 `mvn package` produces the runnable artifacts: a self-contained jar and a `tar.gz`/`zip` holding it
 together with the `git-timebraid` launcher, plus, under `-Pbundled-runtime`, a platform-specific
