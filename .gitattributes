@@ -5,3 +5,8 @@
 # The tool takes the same position about the repositories it writes, where
 # it sets core.autocrlf=false and core.eol=lf.
 * text=auto eol=lf
+
+# The exception, because cmd.exe is the only thing that runs it. The
+# assembly re-applies the line endings when it packages the launchers, so
+# this line covers the checkout rather than the archive.
+*.bat text eol=crlf

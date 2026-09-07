@@ -277,15 +277,33 @@ follows the branch. Which is exactly what you want, and it costs no configuratio
 
 ### Install
 
-Not released yet — build from source and run the jar:
+No release has been published yet, so build the distribution from source:
 
 ```bash
-mvn -q package                    # builds target/git-timebraid.jar
-java -jar target/git-timebraid.jar --help
+mvn -q package                       # builds target/git-timebraid-<version>.tar.gz (and .zip)
+tar xzf target/git-timebraid-*.tar.gz -C ~/opt
+export PATH="$HOME/opt/git-timebraid-<version>/bin:$PATH"
+
+git-timebraid --help
+git timebraid --help                 # the same thing: git runs any git-<name> found on PATH
 ```
 
-A shaded jar and a `git-timebraid` launcher script (so `git timebraid …` works as a subcommand once
-it is on `PATH`) are the last piece still to come; see Status.
+The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside
+`lib/git-timebraid.jar`; the launcher finds the jar relative to itself, through symlinks, so linking
+`bin/git-timebraid` into a directory already on `PATH` works too.
+
+`JAVA_HOME` selects the JVM if set, `java` from `PATH` otherwise. `JAVA_OPTS` goes to the JVM, which
+is where a larger heap belongs for a large history:
+
+```bash
+JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged ~/repos/backend.git ~/repos/webui.git
+```
+
+The jar is self-contained (all dependencies shaded in), so skipping the archive works as well:
+
+```bash
+java -jar target/git-timebraid.jar --help
+```
 
 ### Examples
 
@@ -358,10 +376,13 @@ edge present in the output. CI runs `mvn verify` on Linux and Windows against JD
 input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
 refreshes that clone instead of downloading it again.
 
+`mvn package` produces the runnable artifacts: a self-contained jar and a `tar.gz`/`zip` holding it
+together with the `git-timebraid` launcher (see Install).
+
 Not there yet:
 
-- **A released build.** Build from source and run `java -jar target/git-timebraid.jar`; the shaded jar
-  and the `git-timebraid` launcher script are still to come.
+- **A published release.** The archives exist but are built locally; nothing is uploaded anywhere yet,
+  and there is no native binary — running the tool needs a JVM.
 
 ## Limitations
 

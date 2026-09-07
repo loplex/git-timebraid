@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# git-timebraid launcher.
+#
+# Expects the layout of the distribution archive:
+#
+#     bin/git-timebraid   <- this script
+#     lib/git-timebraid.jar
+#
+# Put bin/ on PATH and both `git-timebraid …` and `git timebraid …` work, the latter because git
+# runs any `git-<name>` it finds on PATH as a subcommand.
+#
+# Environment:
+#     JAVA_HOME   the JVM to use; `java` from PATH when unset
+#     JAVA_OPTS   passed to the JVM, typically a larger heap for a large graph:
+#                 JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged repo-a.git repo-b.git
+
+set -e
+
+# Resolve this script through any symlinks — an entry on PATH is usually one, and the jar is found
+# relative to the real location, not to the link. Plain `readlink` reads one link and is portable
+# enough; `readlink -f`, which would resolve the whole chain, is not, hence the loop.
+script=$0
+while [ -h "$script" ]; do
+    target=$(readlink -- "$script")
+    case $target in
+        /*) script=$target ;;
+        *)  script=$(dirname -- "$script")/$target ;;
+    esac
+done
+home=$(cd -- "$(dirname -- "$script")/.." > /dev/null && pwd)
+
+jar=$home/lib/git-timebraid.jar
+if [ ! -f "$jar" ]; then
+    echo "git-timebraid: jar not found at $jar" >&2
+    echo "git-timebraid: expected bin/ and lib/ side by side, as laid out by the distribution archive" >&2
+    exit 1
+fi
+
+if [ -n "${JAVA_HOME:-}" ]; then
+    java=$JAVA_HOME/bin/java
+else
+    java=java
+fi
+
+# JAVA_OPTS is deliberately unquoted: it holds several JVM options and has to word-split.
+# shellcheck disable=SC2086
+exec "$java" ${JAVA_OPTS} -jar "$jar" "$@"

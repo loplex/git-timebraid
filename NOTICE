@@ -3,3 +3,58 @@ Copyright 2026 Martin Lopatář
 
 Licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
+
+
+THIRD-PARTY SOFTWARE
+
+The distributable jar has its dependencies compiled into it, so every
+distribution of this program redistributes them. Each is listed below
+under the license it is used under. Where a dependency ships its own
+license text, the file carrying it inside the jar is named; the rest
+declare their license in their published POM and ship no text of their
+own.
+
+Eclipse Distribution License, Version 1.0 (BSD 3-clause)
+
+    org.eclipse.jgit:org.eclipse.jgit
+        Copyright (c) 2007, Eclipse Foundation, Inc. and its licensors.
+        Full text in the jar as about.html.
+
+MIT License
+
+    org.slf4j:slf4j-api
+    org.slf4j:slf4j-simple
+        Copyright (c) 2004-2022 QOS.ch Sarl (Switzerland)
+        All rights reserved.
+        Full text in the jar as META-INF/LICENSE.txt.
+
+    com.github.ajalt.colormath:colormath-jvm
+        Copyright (c) AJ Alt -- https://github.com/ajalt/colormath
+        Full text at https://opensource.org/licenses/MIT.
+
+Apache License, Version 2.0
+
+    com.github.ajalt.clikt:clikt-jvm
+    com.github.ajalt.clikt:clikt-core-jvm
+    com.github.ajalt.mordant:mordant-jvm
+    com.github.ajalt.mordant:mordant-core-jvm
+    com.github.ajalt.mordant:mordant-jvm-ffm-jvm
+    com.github.ajalt.mordant:mordant-jvm-graal-ffi-jvm
+    com.github.ajalt.mordant:mordant-jvm-jna-jvm
+    com.googlecode.javaewah:JavaEWAH
+    org.jetbrains.kotlin:kotlin-stdlib
+    org.jetbrains:annotations
+
+    commons-codec:commons-codec
+        Apache Commons Codec
+        Copyright 2002-2026 The Apache Software Foundation
+
+        This product includes software developed at
+        The Apache Software Foundation (https://www.apache.org/).
+
+Apache License, Version 2.0, elected from a dual license
+
+    net.java.dev.jna:jna is offered under either the Apache License,
+    Version 2.0 or the LGPL, version 2.1 or later. It is used here under
+    the Apache License, Version 2.0. The jar carries both of its
+    notices, as META-INF/LICENSE and META-INF/LGPL2.1.

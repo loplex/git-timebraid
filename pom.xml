@@ -167,33 +167,107 @@
                         <manifest>
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                             <mainClass>${main.class}</mainClass>
-                            <addClasspath>true</addClasspath>
-                            <classpathPrefix>lib/</classpathPrefix>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
 
             <!--
-                Copies runtime dependencies next to the jar so `java -jar target/git-timebraid.jar`
-                works straight after `mvn package`. This is a development convenience, not the
-                distributable artifact: the shaded fat jar and the `git-timebraid` launcher script
-                are not built yet.
+                The distributable jar. Shade rather than assembly: JGit registers its transports and
+                repository builders through META-INF/services entries, and assembly's jar-with-dependencies
+                overwrites same-named resources instead of merging them, so half the providers would be
+                lost. ServicesResourceTransformer concatenates them instead.
+
+                The shaded jar replaces the main artifact, so `java -jar target/git-timebraid.jar` needs
+                nothing beside it; the thin jar stays as target/original-git-timebraid.jar.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.11.0</version>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
                 <executions>
                     <execution>
-                        <id>copy-runtime-dependencies</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>copy-dependencies</goal>
+                            <goal>shade</goal>
                         </goals>
                         <configuration>
-                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
-                            <includeScope>runtime</includeScope>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <!--
+                                            JGit and friends ship signed jars. A signature covers the
+                                            original jar's contents, so after repackaging the JVM would
+                                            reject the entries it still describes with
+                                            "Invalid signature file digest".
+                                        -->
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <!-- Module descriptors of the parts, meaningless once merged. -->
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!-- Concatenates META-INF/services/* rather than letting one jar win. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!--
+                                    Keeps Main-Class in the merged manifest. Implementation-Version comes
+                                    with it, which is what the version option reads at runtime.
+                                -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>${main.class}</mainClass>
+                                </transformer>
+                                <!--
+                                    Both archives ship LICENSE and NOTICE beside the jar, but the jar is a release
+                                    asset on its own too, and shading the dependencies in is what makes it the thing
+                                    that redistributes them: JGit's EDL and slf4j's and colormath's MIT all ask for
+                                    their notice to travel with the binary. Under META-INF/git-timebraid/ rather
+                                    than at META-INF/LICENSE, because JNA already occupies that path with its own
+                                    dual-license notice and shade has no merge rule for it, so one of the two would
+                                    win silently.
+                                -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                                    <resource>META-INF/git-timebraid/LICENSE</resource>
+                                    <file>LICENSE</file>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                                    <resource>META-INF/git-timebraid/NOTICE</resource>
+                                    <file>NOTICE</file>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+                The downloadable archive: bin/git-timebraid (plus .bat) beside lib/git-timebraid.jar, so
+                that putting bin/ on PATH makes both `git-timebraid …` and `git timebraid …` work. Runs
+                after shade, which is why it is declared below it: both bind to `package`, and Maven runs
+                same-phase executions in pom order.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <executions>
+                    <execution>
+                        <id>distribution</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/main/assembly/distribution.xml</descriptor>
+                            </descriptors>
+                            <appendAssemblyId>false</appendAssemblyId>
+                            <finalName>${project.artifactId}-${project.version}</finalName>
                         </configuration>
                     </execution>
                 </executions>
