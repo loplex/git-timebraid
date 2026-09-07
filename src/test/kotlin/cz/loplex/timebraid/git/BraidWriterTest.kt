@@ -78,7 +78,12 @@ class BraidWriterTest {
                 names.map { if (it == rootRepo) null else subdirs[it] ?: it },
             )
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
-                BraidWriter(target, opened, inputs, plan, options).write()
+                // The same order the runner uses: the inputs' objects arrive by fetch, the braid is
+                // written on top of them, and the refs the fetch needed are dropped afterwards.
+                opened.forEachIndexed { i, repo -> target.fetchFrom(repo, inputs.sources[i].readRefs) }
+                val summary = BraidWriter(target, opened, inputs, plan, options).write()
+                target.dropFetchRefs()
+                summary
             }
         } finally {
             opened.forEach { it.close() }
@@ -326,10 +331,17 @@ class BraidWriterTest {
         assertEquals("", fsck(out))
     }
 
-    /** Runs `git fsck --strict` and returns its output; the test is skipped when git is absent. */
+    /**
+     * Runs `git fsck --strict` and returns its output; the test is skipped when git is absent.
+     *
+     * `--no-dangling` because a braided output is expected to hold unreferenced objects: the inputs
+     * arrive whole, their own commits included, and the braid points no ref at those — see
+     * [TargetRepository.dropFetchRefs]. `git gc --prune=now` reclaims them; corruption is what this
+     * is looking for.
+     */
     private fun fsck(dir: Path): String {
         val process = try {
-            ProcessBuilder("git", "fsck", "--strict", "--no-progress")
+            ProcessBuilder("git", "fsck", "--strict", "--no-progress", "--no-dangling")
                 .directory(dir.toFile())
                 .redirectErrorStream(true)
                 .start()

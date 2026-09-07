@@ -178,12 +178,12 @@ the last segment of its path. Name and placement are set separately:
 so tags from different repositories cannot collide. An annotated tag stays annotated, keeping its
 tagger and its message.
 
-**The original repositories as remotes** (with `--keep-remotes`), their branches under
-`refs/remotes/<repo>/*` — pointing at the original commits, which the output carries next to the
-rewritten ones with their own shas intact. Nothing is fetched to arrive there: every tree and blob of
-every input is in the output already, because that is what the braid reuses, so only the commit
-objects have to be added. The mirror covers the branches that were recreated, so `-b` narrows it too.
-Nothing is lost and the originals stay one `git log` away.
+**The original commits**, with their own shas intact, next to the rewritten ones. The output is
+filled by fetching each input into it whole — that is what puts the inputs' trees and blobs there,
+which the braid then reuses — and a fetch cannot leave the commits out. Nothing points at them by
+default, so they are invisible to `git log` and `git gc --prune=now` reclaims them; `--keep-remotes`
+points `refs/remotes/<repo>/*` at each input's branches instead, so the originals stay one `git log`
+away. Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
 
 **A provenance trailer** on every commit message:
 
@@ -204,7 +204,8 @@ it off with `--no-provenance`.
 ### Requirements
 
 - Java 17 or newer
-- `git` on `PATH` (used for cloning and fetching; all object writing is done in-process)
+- `git` on `PATH` — only to clone a remote input and to check out a `--no-bare` output; reading the
+  inputs, transferring their objects and writing the braid all happen in-process
 
 ### Install
 
@@ -368,9 +369,10 @@ to check it runs, and uploads them with a `SHA256SUMS`.
 - **Subdirectory names must not collide** with entries of the `--root-repo` at its top level.
 - **The whole commit graph is held in memory.** Hundreds of thousands of commits will want a larger
   heap. This is a batch tool run once per merge, not a daemon.
-- **The output is written as one uncompressed pack** and comes out larger than the inputs, because
-  objects are copied whole rather than as deltas. `git gc` in the output repository recovers the
-  difference; nothing is missing either way.
+- **The output holds the inputs' original commits unreferenced.** They arrive with everything else
+  the fetch brings and nothing points at them unless `--keep-remotes` does, so `git fsck` reports
+  them as `dangling commit` until a `git gc --prune=now` reclaims them. On a 139 MB corpus they are
+  3 MB of the 97 the output takes.
 - **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
   output gets a root `.gitmodules` whose paths point at where each gitlink landed, so
   `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).

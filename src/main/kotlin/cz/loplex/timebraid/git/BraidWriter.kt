@@ -6,7 +6,6 @@ import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
-import java.util.BitSet
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
 class WriteOptions(
@@ -22,7 +21,6 @@ class WriteOptions(
 class WriteSummary(
     val commits: Int,
     val trees: Int,
-    val contentObjects: Int,
     val branches: Int,
     val tags: Int,
     /** Remote-tracking refs written for the inputs, zero unless the inputs were kept as remotes. */
@@ -33,12 +31,12 @@ class WriteSummary(
 /**
  * Turns a [MergePlan] into a real repository.
  *
- * The order of the three passes is forced by git itself. Content objects first, because the commits
- * about to be written point at them. Then the commits, in the plan's write order, which guarantees
- * that a parent already has a new identity by the time its child needs it — the planner works in
- * indices precisely because it cannot know a sha that does not exist yet. Refs last, after the
- * objects have been flushed, because a ref pointing at an object no reader can see is a broken
- * repository.
+ * Everything the inputs themselves hold is in [target] before this runs — [TargetRepository.fetchFrom]
+ * put it there — so what is left is what the braid invents, and the order of the two passes is forced
+ * by git itself. The commits first, in the plan's write order, which guarantees that a parent already
+ * has a new identity by the time its child needs it: the planner works in indices precisely because
+ * it cannot know a sha that does not exist yet. Refs last, after the objects have been flushed,
+ * because a ref pointing at an object no reader can see is a broken repository.
  */
 class BraidWriter(
     private val target: TargetRepository,
@@ -69,9 +67,6 @@ class BraidWriter(
     /** Root `.gitmodules` blobs written so far, keyed by their text. */
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
 
-    /** Commits whose original object has been copied in for [mirrorInputs]. */
-    private val mirrored = BitSet(graph.size)
-
     init {
         require(sources.size == graph.sourceCount) {
             "got ${sources.size} repositories for ${graph.sourceCount} strands"
@@ -82,7 +77,6 @@ class BraidWriter(
     }
 
     fun write(): WriteSummary {
-        val contentObjects = importContent()
         writeCommits()
         val refs = resolveRefs()
 
@@ -95,20 +89,11 @@ class BraidWriter(
         return WriteSummary(
             commits = plan.commits.size,
             trees = target.trees.treesWritten,
-            contentObjects = contentObjects,
             branches = refs.branches,
             tags = refs.tags,
             remoteBranches = refs.remoteBranches,
             head = inputs.mainlineBranch,
         )
-    }
-
-    private fun importContent(): Int {
-        var objects = 0
-        for ((index, source) in sources.withIndex()) {
-            objects += target.importContentObjects(source, inputs.sources[index].tips)
-        }
-        return objects
     }
 
     private fun writeCommits() {
@@ -256,26 +241,22 @@ class BraidWriter(
 
     /**
      * Adds `refs/remotes/<repo>/<branch>` for every branch of every input, pointing at that input's
-     * *original* commit, and copies in the original commit objects those refs need.
+     * *original* commit.
      *
-     * Deliberately not a fetch. Every tree and blob of every input is in the output already — the
-     * braid reuses them rather than rewriting them — so fetching the inputs would transfer all of
-     * that content again and, above `transfer.unpackLimit`, store a second copy of it: measured on a
-     * three-repository history of 14 387 commits, 123 676 objects and 92 MB stored twice, against
-     * 13 458 objects that were genuinely new. Those 13 458 were commits, every one of them, which is
-     * exactly what this copies. A reader cannot tell the result from a fetched one.
+     * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
+     * every input across whole, commits included, with their shas intact — that is what a fetch
+     * moves. All that was missing is a ref of the output's own that outlives
+     * [TargetRepository.dropFetchRefs], and that is what this writes.
      *
      * The mirror covers the branches that were read, so `-b` narrows it the same way it narrows the
-     * output. That is a feature of doing it this way rather than a shortcut: a fetch brings every
-     * branch the input has, including ones whose content this run never copied, and a ref pointing
-     * at an object that is not there is a broken repository.
+     * output, and for the same reason: the fetch was narrowed to those branches too, and a ref
+     * pointing at an object that is not there is a broken repository.
      *
      * @return how many remote-tracking refs were added.
      */
     private fun mirrorInputs(refs: MutableMap<String, ObjectId>): Int {
         var added = 0
         for (source in inputs.sources) {
-            copyOriginals(source.branches.map { it.commit })
             for (branch in source.branches) {
                 refs[Constants.R_REMOTES + source.name + "/" + branch.name] =
                     inputs.commits[branch.commit].id
@@ -283,24 +264,6 @@ class BraidWriter(
             }
         }
         return added
-    }
-
-    /**
-     * Copies the original commit object of every commit reachable from [tips] — graph indices, so
-     * the walk follows the *original* parents rather than the braid's.
-     */
-    private fun copyOriginals(tips: List<Int>) {
-        val pending = ArrayDeque(tips)
-        while (pending.isNotEmpty()) {
-            val commit = pending.removeLast()
-            if (mirrored.get(commit)) continue
-            mirrored.set(commit)
-
-            val original = inputs.commits[commit]
-            val source = sources[graph.sourceOf(commit)]
-            target.copyCommit(original.id, source.readCommitObject(original.id))
-            for (parent in graph.parentsOf(commit)) pending.addLast(parent)
-        }
     }
 
     /**

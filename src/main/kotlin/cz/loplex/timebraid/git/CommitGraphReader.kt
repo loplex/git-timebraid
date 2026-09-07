@@ -36,10 +36,12 @@ class SourceInputs(
     val branches: List<BraidRef>,
     val tags: List<BraidTag>,
     /**
-     * The objects the commits were walked from. The writer copies the trees and blobs reachable from
-     * these into the output, so the set has to be exactly the one the graph was built from.
+     * Full names of the refs this repository was read from, mainline first. The output fetches
+     * exactly these (see [TargetRepository.fetchFrom]), so the set has to be the one the graph was
+     * built from — anything less and the output would be missing objects it points at, anything
+     * more and it would carry history the run never read.
      */
-    val tips: List<ObjectId>,
+    val readRefs: List<String>,
 )
 
 /** A branch resolved to the commit it points at. */
@@ -97,10 +99,21 @@ object CommitGraphReader {
             val selectedBranches = repo.branches().filter { branches == null || it.name in branches }
             val selectedTags = repo.tags()
 
+            // The refs the graph is read from, and the objects they point at. Both are needed and
+            // they are not the same thing: the walk starts from objects, while the fetch that later
+            // fills the output has to name refs.
+            val readRefs = LinkedHashSet<String>()
             val tips = LinkedHashSet<ObjectId>()
+            readRefs += Constants.R_HEADS + mainline
             tips += mainlineTip
-            selectedBranches.forEach { tips += it.target }
-            selectedTags.forEach { tips += it.target }
+            for (branch in selectedBranches) {
+                readRefs += Constants.R_HEADS + branch.name
+                tips += branch.target
+            }
+            for (tag in selectedTags) {
+                readRefs += Constants.R_TAGS + tag.name
+                tips += tag.target
+            }
 
             for (commit in repo.readReachable(tips)) {
                 val index = builder.addCommit(
@@ -121,7 +134,7 @@ object CommitGraphReader {
                     resolve(builder, source, tag.name, tag.target)
                         ?.let { BraidTag(it.name, it.commit, tag.annotation) }
                 },
-                tips = tips.toList(),
+                readRefs = readRefs.toList(),
             )
         }
 

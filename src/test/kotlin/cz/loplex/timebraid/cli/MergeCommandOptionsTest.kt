@@ -3,6 +3,7 @@ package cz.loplex.timebraid.cli
 import com.github.ajalt.clikt.testing.test
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
+import org.eclipse.jgit.internal.storage.file.ObjectDirectory
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.FS
@@ -82,7 +83,7 @@ class MergeCommandOptionsTest {
     }
 
     @Test
-    fun `--keep-remotes stores no second copy of the inputs' content`() {
+    fun `every object of every input is transferred exactly once`() {
         corpus()
         val out = tmp.resolve("merged.git")
 
@@ -92,23 +93,47 @@ class MergeCommandOptionsTest {
             tmp.resolve("webui.git").toString(),
         )
 
-        // Every object the braid writes goes through one pack inserter, so a finished output is one
-        // pack and no loose objects. A fetch would break that either way: another pack for a history
-        // large enough to keep, loose objects for one small enough to explode -- and either way a
-        // second copy of trees and blobs that are already in that one pack.
-        val objects = out.resolve("objects")
+        // The inputs arrive by one fetch each and the braid is written on top, so the output holds
+        // the union of the inputs' objects plus what the braid invented -- and holds each of them
+        // once. A second copy is the failure this pins: it is what an object-by-object import
+        // followed by a fetch produced, and what a fetch of something already imported would produce
+        // again. Counting is enough to see it, because every object here is reachable from a ref of
+        // the output's: --keep-remotes puts the inputs' own commits under refs/remotes.
+        val inputObjects = listOf("backend.git", "webui.git")
+            .flatMap { objectIdsOf(tmp.resolve(it)) }
+            .toSet()
+        // Three braid commits over three root trees; every blob and subtree came from an input.
+        val invented = 3 + 3
+
         assertEquals(
-            1,
-            objects.resolve("pack").listDirectoryEntries("*.pack").size,
-            "expected the output to be exactly one pack",
+            inputObjects.size + invented,
+            objectIdsOf(out).size,
+            "the output should hold every input object once, plus the braid's own",
         )
-        assertEquals(
-            emptyList<String>(),
-            objects.listDirectoryEntries()
-                .filter { it.isDirectory() && it.name.length == 2 }
-                .map { it.name },
-            "loose object directories mean objects arrived by some route other than the braid",
+        assertTrue(
+            objectIdsOf(out).containsAll(inputObjects),
+            "an input object went missing, so the transfer was not complete",
         )
+    }
+
+    /**
+     * Every object id the bare repository at [dir] holds, packed and loose alike.
+     *
+     * Both halves are needed and neither is optional: a fixture built object by object is loose,
+     * where a fetch and the braid's own inserter both write packs. Counting the union is what makes
+     * "exactly once" a statement about objects rather than about pack files.
+     */
+    private fun objectIdsOf(dir: Path): Set<String> {
+        val objects = dir.resolve("objects")
+        val loose = objects.listDirectoryEntries()
+            .filter { it.isDirectory() && it.name.length == 2 }
+            .flatMap { fanout -> fanout.listDirectoryEntries().map { fanout.name + it.name } }
+
+        FileRepositoryBuilder().setGitDir(dir.toFile()).build().use { repo ->
+            val packed = (repo.objectDatabase as ObjectDirectory).packs
+                .flatMap { pack -> pack.map { it.toObjectId().name } }
+            return (loose + packed).toSet()
+        }
     }
 
     @Test

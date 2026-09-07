@@ -41,9 +41,10 @@ object GitCli {
 
     /**
      * `git fsck --strict` — asserts no corruption in [dir]. `--no-dangling` is passed because a
-     * braided output legitimately leaves the inputs' own top-level trees unreferenced once
-     * `--root-repo` splices their entries into a fresh root tree; that is bloat `git gc` reclaims,
-     * not damage.
+     * braided output legitimately leaves objects unreferenced, and two things put them there: the
+     * inputs arrive whole, so their own commits are present with no ref of the output's pointing at
+     * them, and `--root-repo` splices an input's top-level entries into a fresh root tree, leaving
+     * the tree they came from unused. Both are bloat `git gc` reclaims, not damage.
      */
     fun fsck(dir: Path) =
         assertEquals("", run(dir, "fsck", "--strict", "--no-progress", "--no-dangling"), "git fsck found problems")

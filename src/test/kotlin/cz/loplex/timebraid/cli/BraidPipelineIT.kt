@@ -145,6 +145,59 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `-b keeps the objects of an unselected branch out of the output entirely`() {
+        val ids = HashMap<String, ObjectId>()
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            val a2 = r.commit("a2", parents = listOf(a1), at = at("11:00"))
+            // x1 hangs off a1 and is never merged, so `experiment` is the only way to reach it.
+            val x1 = r.commit("x1", parents = listOf(a1), at = at("12:00"))
+            r.branch("main", a2)
+            r.branch("experiment", x1)
+            ids += mapOf("a1" to a1, "a2" to a2, "x1" to x1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("merged.git")
+
+        braid("-o", out.toString(), "-b", "main", path("backend.git"), path("webui.git"))
+
+        GitCli.requireGit()
+        GitCli.fsck(out)
+
+        // -b says which branches are read, and the output is filled by fetching exactly those, so a
+        // commit only that branch could reach is not merely unreferenced -- its object is not there.
+        // The check is on the *original* sha: a rewritten x1 would be a different object, and the
+        // originals do arrive, which is what makes this worth asserting rather than assuming.
+        assertEquals(
+            listOf("refs/heads/main"),
+            GitCli.run(out, "for-each-ref", "--format=%(refname)").lines(),
+        )
+        assertTrue(
+            objectMissing(out, ids.getValue("x1")),
+            "x1 came across even though `experiment` was not read",
+        )
+        for (name in listOf("a1", "a2")) {
+            assertTrue(
+                !objectMissing(out, ids.getValue(name)),
+                "$name is on the mainline and should have been transferred",
+            )
+        }
+    }
+
+    /** Whether [id] is absent from the repository at [dir], asked the way git itself answers it. */
+    private fun objectMissing(dir: Path, id: ObjectId): Boolean {
+        GitCli.requireGit()
+        val process = ProcessBuilder("git", "cat-file", "-e", id.name)
+            .directory(dir.toFile())
+            .redirectErrorStream(true)
+            .start()
+        process.inputStream.readAllBytes()
+        return process.waitFor() != 0
+    }
+
+    @Test
     fun `a merge on the mainline is rewritten with three parents`() {
         val ids = reference()
         val out = tmp.resolve("merged.git")
@@ -352,7 +405,7 @@ class BraidPipelineIT {
         val result = braid("-o", out.toString(), path("backend.git"), path("webui.git"))
 
         // The report states how many trees were written; it is well below one per commit.
-        val trees = Regex("(\\d+) trees").find(result.output)?.groupValues?.get(1)?.toInt()
+        val trees = Regex("(\\d+) root trees").find(result.output)?.groupValues?.get(1)?.toInt()
             ?: error("no tree count in:\n${result.output}")
         assertTrue(trees < 3, "expected tree reuse, wrote $trees trees for 3 commits")
         if (GitCli.available) GitCli.fsck(out)

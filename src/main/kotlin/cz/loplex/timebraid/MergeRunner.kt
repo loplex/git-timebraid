@@ -47,17 +47,22 @@ class MergeRequest(
     val dryRun: Boolean,
 )
 
-/** What a run produced. [write] is `null` for a dry run. */
+/** What the transfer that fills the output brought into it. */
+class FetchSummary(val repositories: Int, val refs: Int)
+
+/** What a run produced. [fetch] and [write] are `null` for a dry run. */
 class MergeResult(
     val braid: BraidInputs,
     val plan: MergePlan,
+    val fetch: FetchSummary?,
     val write: WriteSummary?,
 )
 
 /**
  * Ties the whole pipeline together: make every input a local repository (cloning the remote ones),
- * read them into one graph, plan the braid, and — unless this is a dry run — write it out, optionally
- * keeping the inputs as remotes and checking out a working tree.
+ * read them into one graph, plan the braid, and — unless this is a dry run — fetch the inputs into
+ * the output and write the braid on top, optionally keeping the inputs as remotes and checking out a
+ * working tree.
  *
  * This is the only place that knows the order of those steps. Everything it calls is either pure
  * (the planner) or a narrow git wrapper ([SourceRepository], [TargetRepository], [GitCommand]).
@@ -97,29 +102,39 @@ class MergeRunner(
             )
 
             val output = request.output
-            if (request.dryRun || output == null) return MergeResult(braid, plan, null)
+            if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
 
-            val summary = writeOutput(output, sources, braid, plan)
+            val written = writeOutput(output, sources, braid, plan)
             if (request.keepRemotes) keepRemotes(output, locations)
             if (!request.bare) {
                 progress.step("checking out ${braid.mainlineBranch}")
                 git.checkout(output, braid.mainlineBranch)
             }
-            return MergeResult(braid, plan, summary)
+            return MergeResult(braid, plan, written.fetch, written.write)
         } finally {
             sources.forEach { it.close() }
         }
     }
 
+    /**
+     * Fills the output: every input's objects first, then the braid on top of them.
+     *
+     * The order is the one git forces. A commit cannot be written before the tree it points at
+     * exists, and every tree the braid points at is an input's — so the transfer has to come first
+     * and be complete. What it leaves behind, the refs it needed to name what to fetch, is dropped
+     * once the output has refs of its own.
+     */
     private fun writeOutput(
         output: Path,
         sources: List<SourceRepository>,
         braid: BraidInputs,
         plan: MergePlan,
-    ): WriteSummary {
-        progress.step("writing ${plan.commits.size} commits into $output")
+    ): Written {
         TargetRepository.create(output, braid.mainlineBranch, request.force, request.bare).use { target ->
-            return BraidWriter(
+            val fetch = fetchInputs(target, sources, braid)
+
+            progress.step("writing ${plan.commits.size} commits into $output")
+            val write = BraidWriter(
                 target = target,
                 sources = sources,
                 inputs = braid,
@@ -127,7 +142,25 @@ class MergeRunner(
                 options = request.writeOptions,
                 mirrorRemotes = request.keepRemotes,
             ).write()
+
+            target.dropFetchRefs()
+            return Written(fetch, write)
         }
+    }
+
+    /** Fetches each input into [target], narrowed to the refs its strand was read from. */
+    private fun fetchInputs(
+        target: TargetRepository,
+        sources: List<SourceRepository>,
+        braid: BraidInputs,
+    ): FetchSummary {
+        var refs = 0
+        for ((index, source) in sources.withIndex()) {
+            val wanted = braid.sources[index].readRefs
+            progress.step("fetching ${wanted.size} refs from ${source.name}")
+            refs += target.fetchFrom(source, wanted)
+        }
+        return FetchSummary(sources.size, refs)
     }
 
     /**
@@ -187,6 +220,9 @@ class MergeRunner(
 
     /** An input resolved to a local repository, plus the location to record if `--keep-remotes`. */
     private class LocalInput(val path: Path, val name: String, val remote: String)
+
+    /** The two halves of filling an output: what was fetched in, and what the braid wrote on top. */
+    private class Written(val fetch: FetchSummary, val write: WriteSummary)
 
     private companion object {
         const val CLONE_DIR = ".timebraid-clones"

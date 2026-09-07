@@ -66,7 +66,9 @@ esac
 timebraid --version
 timebraid -o "$work/out" "$work/alpha" "$work/beta"
 
-git -C "$work/out" fsck --strict
+# --no-dangling because the inputs arrive in the output whole, their own commits included, and the
+# braid points no ref at those; `git gc --prune=now` reclaims them. Corruption is what this checks.
+git -C "$work/out" fsck --strict --no-dangling
 git -C "$work/out" log --oneline --all
 
 # The non-ASCII subjects are the point of the fixture, so assert on them rather than trusting that

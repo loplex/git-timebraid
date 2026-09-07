@@ -3,12 +3,10 @@ package cz.loplex.timebraid.git
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
-import org.eclipse.jgit.lib.ObjectLoader
 import org.eclipse.jgit.lib.ObjectReader
 import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.lib.RepositoryCache
-import org.eclipse.jgit.revwalk.ObjectWalk
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.revwalk.RevTag
 import org.eclipse.jgit.revwalk.RevWalk
@@ -23,8 +21,8 @@ import java.nio.file.Path
  *
  * The class exists to keep every JGit type on this side of the boundary: it hands back plain data
  * ([GitRef], [TagRef], [SourceCommit], [TreeEntry]) and the planner never sees an [ObjectId], a
- * [RevWalk] or a [Repository]. Nothing here writes, and network operations (clone, fetch) are a
- * separate concern, handled through the git CLI in [GitCommand].
+ * [RevWalk] or a [Repository]. Nothing here writes, and nothing here moves objects: the output pulls
+ * them across itself, by fetching from [location] (see [TargetRepository.fetchFrom]).
  */
 class SourceRepository private constructor(
     /** Short name of the repository, used as the default subdirectory and the tag prefix. */
@@ -103,41 +101,6 @@ class SourceRepository private constructor(
         }
         return commits
     }
-
-    /**
-     * Feeds every tree and blob reachable from [tips] to [sink] — the *content* of the history, as
-     * opposed to the commits, which the writer recreates rather than copies.
-     *
-     * These objects are what the output repository needs in order to stand on its own: the braid's
-     * new root trees point straight at the original subtrees, so those subtrees and everything below
-     * them have to be present. The loader is only valid for the duration of the call.
-     */
-    fun forEachContentObject(tips: Collection<ObjectId>, sink: (type: Int, loader: ObjectLoader) -> Unit) {
-        ObjectWalk(repository).use { walk ->
-            walk.isRetainBody = false
-            for (tip in tips) {
-                val obj = walk.peel(walk.parseAny(tip))
-                if (obj is RevCommit) walk.markStart(walk.parseCommit(obj.id))
-            }
-            // The commit walk has to be drained first; only then does the walk hand out the trees
-            // and blobs those commits reference.
-            while (walk.next() != null) continue
-            val objectReader = walk.objectReader
-            var obj = walk.nextObject()
-            while (obj != null) {
-                sink(obj.type, objectReader.open(obj, obj.type))
-                obj = walk.nextObject()
-            }
-        }
-    }
-
-    /**
-     * The raw bytes of one commit object, exactly as this repository stores them.
-     *
-     * Copying those bytes into another repository reproduces the commit's original sha, which is
-     * what lets an output carry the originals next to the braid's rewritten commits.
-     */
-    fun readCommitObject(id: ObjectId): ByteArray = reader().open(id, Constants.OBJ_COMMIT).bytes
 
     /**
      * The top-level `.gitmodules` of [tree] read as text, or `null` when the tree has none.

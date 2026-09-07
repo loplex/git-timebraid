@@ -186,10 +186,16 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             echo("plan written to $file", err = true)
         }
 
+        result.fetch?.let { fetch ->
+            echo(
+                "fetched ${fetch.refs} refs from ${fetch.repositories} repositories into $output",
+                err = true,
+            )
+        }
+
         result.write?.let { summary ->
             echo(
-                "wrote ${summary.commits} commits, ${summary.trees} trees and " +
-                    "${summary.contentObjects} content objects to $output",
+                "wrote ${summary.commits} commits and ${summary.trees} root trees on top",
                 err = true,
             )
             val remotes =

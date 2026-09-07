@@ -36,9 +36,9 @@ class GitCommand(private val log: (String) -> Unit = {}) {
     /**
      * Records [url] as remote [name] of the repository at [repo], and nothing more.
      *
-     * No fetch follows, because there is nothing left to fetch: the objects the input holds are in
-     * the output already, and the `refs/remotes/<name>/<branch>` that would point at them are written
-     * directly (see `BraidWriter.mirrorInputs`). What this leaves behind is the configuration, so a
+     * No fetch follows, because the merge has already done it: `TargetRepository.fetchFrom` pulled
+     * every input into the output, and the `refs/remotes/<name>/<branch>` pointing at what arrived
+     * are written by `BraidWriter.mirrorInputs`. What this leaves behind is the configuration, so a
      * later `git fetch <name>` picks up whatever the input has gained since the merge.
      *
      * `--no-tags` is set on the remote for when that day comes: the output already carries every tag
