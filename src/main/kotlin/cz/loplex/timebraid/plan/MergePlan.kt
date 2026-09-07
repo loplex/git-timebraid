@@ -51,10 +51,10 @@ class MergePlan private constructor(
     }
 
     /** Parents of [commit] after reparenting, first parent first. */
-    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(newParents[commit.index])
+    fun parentsOf(commit: Commit): List<Commit> = graph.commitsAt(newParents[commit.indexIn(graph)])
 
     /** Whether [commit] lies on the braid. */
-    fun isOnBraid(commit: Commit): Boolean = onBraid[commit.index]
+    fun isOnBraid(commit: Commit): Boolean = onBraid[commit.indexIn(graph)]
 
     /** Subdirectory of the repository [commit] came from, `null` for the root repository. */
     fun subdirOf(commit: Commit): String? = subdirs.getValue(commit.source)
@@ -76,10 +76,10 @@ class MergePlan private constructor(
      * the merged `.gitmodules` a deterministic function of the inputs.
      */
     fun contentOf(commit: Commit): Map<Source, Commit> {
-        val row = content[commit.index]
+        val row = content[commit.indexIn(graph)]
         val map = LinkedHashMap<Source, Commit>(graph.sources.size)
         for (source in graph.sources) {
-            val holder = row[source.index]
+            val holder = row[source.indexIn(graph)]
             if (holder != CommitGraph.NO_COMMIT) map[source] = graph.commitAt(holder)
         }
         return map
@@ -119,8 +119,8 @@ class MergePlan private constructor(
             append("] content=[")
             append(
                 graph.sources
-                    .filter { content[commit][it.index] != CommitGraph.NO_COMMIT }
-                    .joinToString(", ") { "${it.name}=${core.ids[content[commit][it.index]]}" }
+                    .filter { content[commit][it.indexIn(graph)] != CommitGraph.NO_COMMIT }
+                    .joinToString(", ") { "${it.name}=${core.ids[content[commit][it.indexIn(graph)]]}" }
             )
             appendLine("]")
         }

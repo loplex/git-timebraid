@@ -19,8 +19,8 @@ class BraidInputs(
     val heads: List<Commit>,
     /** The branch name resolved as the mainline in every repository. */
     val mainlineBranch: String,
-    /** The original commit behind every graph index, indexed exactly like [graph]. */
-    val commits: List<SourceCommit>,
+    /** The original commit behind every commit of [graph]. */
+    val commits: Map<Commit, SourceCommit>,
     /** Per input repository, in the order they were given to [CommitGraphReader.read]. */
     val sources: List<SourceInputs>,
     /**
@@ -168,12 +168,16 @@ object CommitGraphReader {
             )
         }
 
-        @Suppress("UNCHECKED_CAST")
+        // The rows were filled by graph index and graph.commits is in exactly that order, so pairing
+        // the two here is what turns a table addressed by position into one keyed by the commit
+        // itself. Past this point nothing outside the planner's package needs an index at all.
+        val original = graph.commits.withIndex().associate { (index, commit) -> commit to commits[index]!! }
+
         return BraidInputs(
             graph = graph,
             heads = heads.map { graph.commits[it] },
             mainlineBranch = mainline,
-            commits = commits as List<SourceCommit>,
+            commits = original,
             sources = inputs,
             interleaveTips = interleaveTips(interleaveRefs, inputs),
         )

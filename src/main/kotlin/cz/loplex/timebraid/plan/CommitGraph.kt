@@ -10,16 +10,24 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * so two sources are the same repository precisely when they are the same object.
  */
 class Source internal constructor(
-    /**
-     * Position of this repository among the inputs, in the order they were read.
-     *
-     * Public because a caller that keeps one entry per repository — a subdirectory, a tree, an open
-     * handle — wants an array rather than a map, and this is the index into it.
-     */
-    val index: Int,
+    private val graph: CommitGraph,
+    private val index: Int,
     /** Name of the input repository. */
     val name: String,
 ) {
+    /**
+     * Position of this repository among [graph]'s inputs, in the order they were read.
+     *
+     * Only obtainable by naming the graph it is meant for, and only from inside this module. An
+     * index is a coordinate into one graph's tables and means nothing without that graph — and
+     * means the wrong thing, silently, against another. Requiring the graph makes that pairing the
+     * caller states rather than assumes.
+     */
+    internal fun indexIn(graph: CommitGraph, what: String = "repository"): Int {
+        require(graph === this.graph) { "$what $this does not belong to this graph" }
+        return index
+    }
+
     override fun toString(): String = name
 }
 
@@ -38,15 +46,20 @@ class Source internal constructor(
 class Commit internal constructor(
     private val graph: CommitGraph,
     private val core: DenseGraph,
-    /**
-     * Position of this commit in the graph, in `0 until graph.size`.
-     *
-     * Public because it is the join key between the graph and anything indexed alongside it: the git
-     * payload the reader kept, the identities the writer hands out, the bitmap it marks progress in.
-     * A side table of `graph.size` entries is addressed by this, and cheaply.
-     */
-    val index: Int,
+    private val index: Int,
 ) {
+    /**
+     * Position of this commit in [graph], in `0 until graph.size`.
+     *
+     * Only obtainable by naming the graph it is meant for, and only from inside this module — see
+     * [Source.indexIn] for why. A caller outside the package keeps one entry per commit in a map
+     * keyed by the commit itself, which cannot be paired with the wrong graph at all.
+     */
+    internal fun indexIn(graph: CommitGraph, what: String = "commit"): Int {
+        require(graph === this.graph) { "$what $this is not a commit of this graph" }
+        return index
+    }
+
     /** Original commit sha in production, a short name in tests. */
     val id: String get() = core.ids[index]
 
@@ -79,15 +92,15 @@ class Commit internal constructor(
  */
 class CommitGraph internal constructor(private val core: DenseGraph) {
 
-    /** Number of commits; every [Commit.index] falls in `0 until size`. */
+    /** Number of commits; every commit's index falls in `0 until size`. */
     val size: Int get() = core.size
 
     /** The input repositories, in the order they were read. */
-    val sources: List<Source> = core.sourceNames.mapIndexed { index, name -> Source(index, name) }
+    val sources: List<Source> = core.sourceNames.mapIndexed { index, name -> Source(this, index, name) }
 
     private val handles: Array<Commit> = Array(core.size) { Commit(this, core, it) }
 
-    /** Every commit of every input repository. Position in this list is [Commit.index]. */
+    /** Every commit of every input repository. Position in this list is that commit's index. */
     val commits: List<Commit> = handles.asList()
 
     /**
@@ -125,19 +138,9 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
 
     internal fun commitsAt(indices: IntArray): List<Commit> = indices.map { handles[it] }
 
-    /**
-     * Indices of [commits], checking on the way that each one really is a commit of this graph.
-     *
-     * Identity is the check, not the bare index: a commit of another graph would otherwise be read as
-     * whatever this graph happens to hold at the same position.
-     */
-    internal fun indicesOf(commits: List<Commit>, what: String): IntArray = IntArray(commits.size) {
-        val commit = commits[it]
-        require(commit.index in handles.indices && handles[commit.index] === commit) {
-            "$what $commit is not a commit of this graph"
-        }
-        commit.index
-    }
+    /** Indices of [commits], each checked to be a commit of this graph — see [Commit.indexIn]. */
+    internal fun indicesOf(commits: List<Commit>, what: String): IntArray =
+        IntArray(commits.size) { commits[it].indexIn(this, what) }
 
     companion object {
         /** Returned where a commit index is expected but there is none (no parent, no content yet). */

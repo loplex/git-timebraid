@@ -52,7 +52,7 @@ class BraidWriter(
     private val graph = inputs.graph
 
     /** New identity of every original commit, filled in write order. */
-    private val written = arrayOfNulls<ObjectId>(graph.size)
+    private val written = HashMap<Commit, ObjectId>(graph.size)
 
     /** Top-level entries of the root repository's trees, which repeat across the whole braid. */
     private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
@@ -63,10 +63,17 @@ class BraidWriter(
      * braid, so the same tree is asked about at as many braid positions as the input stood still
      * for — without this the answer would be recomputed at every one of them.
      */
-    private val wiring = Array(sources.size) { HashMap<ObjectId, RewiredGitmodules>() }
+    private val wiring = graph.sources.associateWith { HashMap<ObjectId, RewiredGitmodules>() }
 
     /** Root `.gitmodules` blobs written so far, keyed by their text. */
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
+
+    /**
+     * The open repository behind each strand. The two lists arrive in the same order and are paired
+     * here, once: every later lookup is by [Source], so nothing downstream has to know the order or
+     * be trusted to get it right.
+     */
+    private val repoOf: Map<Source, SourceRepository>
 
     init {
         require(sources.size == graph.sources.size) {
@@ -75,7 +82,18 @@ class BraidWriter(
         require(sources.map { it.name } == graph.sources.map { it.name }) {
             "the repositories and the graph disagree about the strands"
         }
+        repoOf = graph.sources.zip(sources).toMap()
     }
+
+    /**
+     * The commit an input originally made, as the reader read it.
+     *
+     * Missing means the commit is not one of these inputs' — which can only happen if the plan and
+     * the inputs were built from different graphs, and is worth saying rather than reading whatever
+     * happens to be at hand.
+     */
+    private fun originalOf(commit: Commit): SourceCommit =
+        inputs.commits[commit] ?: error("$commit is not a commit of these inputs")
 
     fun write(): WriteSummary {
         writeCommits()
@@ -100,15 +118,15 @@ class BraidWriter(
     private fun writeCommits() {
         for (planned in plan.commits) {
             val commit = planned.commit
-            val original = inputs.commits[commit.index]
+            val original = originalOf(commit)
             val parents = planned.parents.map { parent ->
-                written[parent.index]
+                written[parent]
                     ?: error(
                         "$commit is written before its parent $parent — " +
                             "the plan's order is not a write order"
                     )
             }
-            written[commit.index] = target.writeCommit(
+            written[commit] = target.writeCommit(
                 tree = treeOf(commit),
                 parents = parents,
                 author = original.author,
@@ -131,10 +149,10 @@ class BraidWriter(
         val at = { commit.toString() }
 
         for ((source, holder) in content) {
-            val tree = inputs.commits[holder.index].tree
+            val tree = originalOf(holder).tree
             val subdir = plan.subdirOf(source)
             if (subdir == null) {
-                root = rootEntries.getOrPut(tree) { sources[source.index].topLevelEntries(tree) }
+                root = rootEntries.getOrPut(tree) { repoOf.getValue(source).topLevelEntries(tree) }
             } else {
                 subdirEntries += TreeEntry(subdir, FileMode.TREE, tree)
             }
@@ -146,8 +164,8 @@ class BraidWriter(
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
     private fun wiringOf(source: Source, tree: ObjectId, at: () -> String): RewiredGitmodules =
-        wiring[source.index].getOrPut(tree) {
-            val repo = sources[source.index]
+        wiring.getValue(source).getOrPut(tree) {
+            val repo = repoOf.getValue(source)
             val text = repo.gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
             SubmoduleWiring.rewire(text, plan.subdirOf(source), repo.name, at)
         }
@@ -207,7 +225,7 @@ class BraidWriter(
 
         val braidTip = plan.braid.lastOrNull()
             ?: error("the braid is empty — there is nothing to point a branch at")
-        refs[Constants.R_HEADS + inputs.mainlineBranch] = idOf(braidTip.index)
+        refs[Constants.R_HEADS + inputs.mainlineBranch] = idOf(braidTip)
         var branches = 1
 
         val shared = HashMap<String, Int>()
@@ -223,7 +241,7 @@ class BraidWriter(
             for (branch in source.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
                 val name = if (shared[branch.name] == 1) branch.name else "${source.name}/${branch.name}"
-                refs[Constants.R_HEADS + name] = idOf(branch.commit.index)
+                refs[Constants.R_HEADS + name] = idOf(branch.commit)
                 branches++
             }
             for (tag in source.tags) {
@@ -270,11 +288,11 @@ class BraidWriter(
         for (source in inputs.sources) {
             val prefix = Constants.R_REMOTES + source.name + "/"
             for (branch in source.branches) {
-                refs[prefix + branch.name] = inputs.commits[branch.commit.index].id
+                refs[prefix + branch.name] = originalOf(branch.commit).id
                 added++
             }
             for (tag in source.tags) {
-                refs[prefix + "tags/" + tag.name] = inputs.commits[tag.commit.index].id
+                refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
                 added++
             }
         }
@@ -288,7 +306,7 @@ class BraidWriter(
      * longer exists under that name.
      */
     private fun tagTarget(name: String, tag: BraidTag): ObjectId {
-        val commit = idOf(tag.commit.index)
+        val commit = idOf(tag.commit)
         val annotation = tag.annotation ?: return commit
         return target.writeAnnotatedTag(
             name = name,
@@ -298,8 +316,8 @@ class BraidWriter(
         )
     }
 
-    private fun idOf(commit: Int): ObjectId =
-        written[commit] ?: error("${graph.commits[commit]} was never written")
+    private fun idOf(commit: Commit): ObjectId =
+        written[commit] ?: error("$commit was never written")
 
     companion object {
 

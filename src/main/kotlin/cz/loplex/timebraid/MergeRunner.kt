@@ -95,7 +95,13 @@ class MergeRunner(
             }
             val plan = braid.graph
                 .braid(braid.heads, braid.interleaveTips)
-                .plan(braid.graph.sources.associateWith { request.inputs[it.index].subdir })
+                .plan(
+                    // The strands are in the order the inputs were given, so the two are paired by
+                    // position here rather than by asking a Source where it sits.
+                    braid.graph.sources
+                        .mapIndexed { index, source -> source to request.inputs[index].subdir }
+                        .toMap()
+                )
 
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)

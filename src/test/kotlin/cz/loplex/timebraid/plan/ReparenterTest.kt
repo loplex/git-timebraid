@@ -27,8 +27,8 @@ class ReparenterTest {
 
         assertEquals(listOf("a1"), spec.names(parents[spec.id("a2")]))
         assertEquals(listOf("a2"), spec.names(parents[spec.id("a3")]))
-        for (commit in spec.graph.commits) {
-            assertEquals(commit.parents.size, parents[commit.index].size)
+        for ((index, commit) in spec.graph.commits.withIndex()) {
+            assertEquals(commit.parents.size, parents[index].size)
         }
     }
 
@@ -111,10 +111,10 @@ class ReparenterTest {
     }
 
     private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Array<IntArray>) {
-        for (commit in graph.commits) {
+        for ((index, commit) in graph.commits.withIndex()) {
             for (parent in commit.parents) {
                 assertTrue(
-                    parents[commit.index].any { it == parent.index },
+                    parents[index].any { it == parent.indexIn(graph) },
                     "$commit lost its original parent $parent",
                 )
             }
