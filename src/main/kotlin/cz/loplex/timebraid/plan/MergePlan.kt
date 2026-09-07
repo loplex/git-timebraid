@@ -1,16 +1,6 @@
 package cz.loplex.timebraid.plan
 
 /**
- * A column of the content table with nothing in it yet — a repository that has committed
- * nothing by that point in the braid.
- *
- * The table is the one dense structure the plan keeps, so it needs a blank, and this is it.
- * Nothing outside this file sees one: [MergePlan.contentOf] leaves such a repository out of the
- * map it hands back rather than reporting it as a commit that is not there.
- */
-private const val NO_COMMIT: Int = -1
-
-/**
  * One commit to be written, as the planner decided it.
  *
  * [parents] are the original commits, not shas: the planner has never seen a sha and cannot know the
@@ -29,8 +19,8 @@ class PlannedCommit internal constructor(
 
 /**
  * The complete, deterministic description of the output repository's history — and the seam between
- * the planner and everything that touches git. Everything above this line is arithmetic on indices;
- * everything below it is objects and refs.
+ * the planner and everything that touches git. Everything above this line is commits and the
+ * decisions taken over them; everything below it is objects and refs.
  *
  * Reached through [CommitGraph.braid] and [Braid.plan], which run the algorithm in the order the two
  * decisions actually depend on each other: interleave the mainlines into the braid, apply the parent
@@ -44,7 +34,8 @@ class MergePlan private constructor(
     private val order: List<Commit>,
     private val subdirs: Map<Source, String?>,
     private val newParents: Map<Commit, List<Commit>>,
-    private val content: Array<IntArray>,
+    private val columns: Map<Source, Int>,
+    private val content: Map<Commit, Array<Commit?>>,
     private val onBraid: Set<Commit>,
 ) {
 
@@ -69,6 +60,9 @@ class MergePlan private constructor(
     /** Subdirectory [source] occupies in the output, `null` for the repository placed at the root. */
     fun subdirOf(source: Source): String? = subdirs.getValue(source)
 
+    private fun rowOf(commit: Commit): Array<Commit?> =
+        content[commit] ?: error("$commit is not a commit of this plan")
+
     /**
      * The tree rule in symbolic form: for each input repository that has content at [commit], the
      * commit whose original tree is that content. A repository that has committed nothing by this
@@ -83,11 +77,10 @@ class MergePlan private constructor(
      * the merged `.gitmodules` a deterministic function of the inputs.
      */
     fun contentOf(commit: Commit): Map<Source, Commit> {
-        val row = content[commit.indexIn(graph)]
+        val row = rowOf(commit)
         val map = LinkedHashMap<Source, Commit>(graph.sources.size)
         for (source in graph.sources) {
-            val holder = row[source.indexIn(graph)]
-            if (holder != NO_COMMIT) map[source] = graph.commitAt(holder)
+            row[columns.getValue(source)]?.let { map[source] = it }
         }
         return map
     }
@@ -117,7 +110,7 @@ class MergePlan private constructor(
         append(summary())
         appendLine()
         for ((position, commit) in order.withIndex()) {
-            val row = content[commit.indexIn(graph)]
+            val row = rowOf(commit)
             append(position.toString().padStart(6, '0'))
             append(if (commit in onBraid) " * " else "   ")
             append(commit)
@@ -127,8 +120,8 @@ class MergePlan private constructor(
             append("] content=[")
             append(
                 graph.sources
-                    .filter { row[it.indexIn(graph)] != NO_COMMIT }
-                    .joinToString(", ") { "${it.name}=${graph.commitAt(row[it.indexIn(graph)]).id}" }
+                    .mapNotNull { source -> row[columns.getValue(source)]?.let { "${source.name}=${it.id}" } }
+                    .joinToString(", ")
             )
             appendLine("]")
         }
@@ -151,13 +144,20 @@ class MergePlan private constructor(
         ): MergePlan {
             validateSubdirs(graph, subdirs)
 
+            // The content table is addressed by repository, so it needs a column per repository —
+            // the one numbering this class derives, the way every pass of the package derives its
+            // own. A repository of another graph is simply not in it.
+            val columns = HashMap<Source, Int>(graph.sources.size * 2)
+            graph.sources.forEachIndexed { column, source -> columns[source] = column }
+
             return MergePlan(
                 graph = graph,
                 braid = braid,
                 order = order,
                 subdirs = subdirs,
                 newParents = newParents,
-                content = accumulate(graph, order, newParents),
+                columns = columns,
+                content = accumulate(graph, order, newParents, columns),
                 onBraid = braid.toHashSet(),
             )
         }
@@ -175,29 +175,29 @@ class MergePlan private constructor(
             graph: CommitGraph,
             order: List<Commit>,
             newParents: Map<Commit, List<Commit>>,
-        ): Array<IntArray> {
-            // One row per commit, one column per repository, both addressed by index: this is the
-            // largest thing the plan holds, and a map of maps over a corpus-sized history would cost
-            // far more than the rows are worth. It stays behind contentOf, which hands out commits.
-            val content = arrayOfNulls<IntArray>(graph.size)
+            columns: Map<Source, Int>,
+        ): Map<Commit, Array<Commit?>> {
+            // One row per commit, one column per repository: this is the largest thing the plan
+            // holds, and a map per commit over a corpus-sized history would cost far more than the
+            // rows are worth. It stays behind contentOf, which hands out a map of what is there.
+            val content = HashMap<Commit, Array<Commit?>>(order.size * 2)
             for (commit in order) {
                 val parents = newParents.getValue(commit)
                 val inherited = if (parents.isEmpty()) {
-                    IntArray(graph.sources.size) { NO_COMMIT }
+                    arrayOfNulls(graph.sources.size)
                 } else {
                     val firstParent = parents[0]
-                    val parentContent = content[firstParent.indexIn(graph)]
+                    val parentContent = content[firstParent]
                         ?: error(
                             "commit $commit is written before its first parent $firstParent — " +
                                 "the write order is not topological"
                         )
                     parentContent.copyOf()
                 }
-                inherited[commit.source.indexIn(graph)] = commit.indexIn(graph)
-                content[commit.indexIn(graph)] = inherited
+                inherited[columns.getValue(commit.source)] = commit
+                content[commit] = inherited
             }
-            @Suppress("UNCHECKED_CAST")
-            return content as Array<IntArray>
+            return content
         }
 
         private fun validateSubdirs(graph: CommitGraph, subdirs: Map<Source, String?>) {

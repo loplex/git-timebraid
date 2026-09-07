@@ -3,8 +3,6 @@ package cz.loplex.timebraid.git
 import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
-import cz.loplex.timebraid.plan.Node
-import cz.loplex.timebraid.plan.Strand
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
@@ -54,20 +52,6 @@ class BraidRef(val name: String, val commit: Commit)
 class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotation?)
 
 /**
- * A ref while the graph is still being built, when the commits it will be expressed in do not exist
- * yet. Turned into a [BraidRef] or a [BraidTag] once [CommitGraphBuilder.build] has run.
- */
-private class UnresolvedRef(val name: String, val commit: Node, val annotation: TagAnnotation?)
-
-/** One repository's refs, still as nodes, for the same reason. */
-private class UnresolvedSource(
-    val name: String,
-    val branches: List<UnresolvedRef>,
-    val tags: List<UnresolvedRef>,
-    val readRefs: List<String>,
-)
-
-/**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
  *
  * The model is deliberately global: load *every* commit of *every* strand at once — reachable from
@@ -103,9 +87,9 @@ object CommitGraphReader {
 
         val mainline = resolveMainline(repositories, mainlineBranch)
         val builder = CommitGraphBuilder()
-        val heads = ArrayList<Node>(repositories.size)
-        val original = HashMap<Node, SourceCommit>()
-        val unresolved = ArrayList<UnresolvedSource>(repositories.size)
+        val heads = ArrayList<Commit>(repositories.size)
+        val original = HashMap<Commit, SourceCommit>()
+        val inputs = ArrayList<SourceInputs>(repositories.size)
 
         for (repo in repositories) {
             val source = builder.addSource(repo.name)
@@ -132,70 +116,52 @@ object CommitGraphReader {
                 tips += tag.target
             }
 
-            for (commit in repo.readReachable(tips)) {
-                val node = builder.addCommit(
+            for (sourceCommit in repo.readReachable(tips)) {
+                val commit = builder.addCommit(
                     source = source,
-                    id = commit.id.name,
-                    orderingTime = commit.time(orderBy),
-                    parentIds = commit.parents.map { it.name },
+                    id = sourceCommit.id.name,
+                    orderingTime = sourceCommit.time(orderBy),
+                    parentIds = sourceCommit.parents.map { it.name },
                 )
-                original[node] = commit
+                original[commit] = sourceCommit
             }
 
             heads += builder.find(source, mainlineTip.name)
                 ?: error("repository '${repo.name}' did not read its own mainline tip")
-            unresolved += UnresolvedSource(
+
+            // A ref whose target never made it into the graph is dropped rather than rejected: it
+            // points at something that is not a commit, which is a fact about the input, not an
+            // error in the run.
+            inputs += SourceInputs(
                 name = repo.name,
-                branches = selectedBranches.mapNotNull {
-                    resolve(builder, source, it.name, it.target, annotation = null)
+                branches = selectedBranches.mapNotNull { branch ->
+                    builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
                 },
-                tags = selectedTags.mapNotNull {
-                    resolve(builder, source, it.name, it.target, it.annotation)
+                tags = selectedTags.mapNotNull { tag ->
+                    builder.find(source, tag.target.name)
+                        ?.let { BraidTag(tag.name, it, tag.annotation) }
                 },
                 readRefs = readRefs.toList(),
             )
         }
 
-        val built = builder.build()
-        val graph = built.graph
+        val graph = builder.build()
         check(original.size == graph.size) {
             "the graph has ${graph.size} commits but ${original.size} were read"
         }
 
-        val inputs = unresolved.map { source ->
-            SourceInputs(
-                name = source.name,
-                branches = source.branches.map { BraidRef(it.name, built.commitOf(it.commit)) },
-                tags = source.tags.map { BraidTag(it.name, built.commitOf(it.commit), it.annotation) },
-                readRefs = source.readRefs,
-            )
-        }
-
         return BraidInputs(
             graph = graph,
-            heads = heads.map { built.commitOf(it) },
+            heads = heads,
             mainlineBranch = mainline,
-            commits = original.entries.associate { (node, commit) -> built.commitOf(node) to commit },
+            commits = original,
             sources = inputs,
             interleaveTips = interleaveTips(interleaveRefs, inputs),
         )
     }
 
     /**
-     * A ref whose target never made it into the graph is dropped rather than rejected: it points at
-     * something that is not a commit, which is a fact about the input, not an error in the run.
-     */
-    private fun resolve(
-        builder: CommitGraphBuilder,
-        source: Strand,
-        name: String,
-        target: ObjectId,
-        annotation: TagAnnotation?,
-    ): UnresolvedRef? =
-        builder.find(source, target.name)?.let { UnresolvedRef(name, it, annotation) }
-
-    /**
-     * The refs the patterns match, as graph indices, deduplicated.
+     * The refs the patterns match, as the commits they name, deduplicated.
      *
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
      * branch or a tag, and a pattern that cannot express the difference would be a trap. The star

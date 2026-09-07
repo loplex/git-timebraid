@@ -44,7 +44,7 @@ class GraphSpec internal constructor(
 
         fun parse(spec: String): GraphSpec {
             val builder = CommitGraphBuilder()
-            val byName = LinkedHashMap<String, Node>()
+            val byName = LinkedHashMap<String, Commit>()
 
             for (strand in spec.split('|')) {
                 val parts = strand.split(':', limit = 2)
@@ -70,8 +70,7 @@ class GraphSpec internal constructor(
                     }
                 }
             }
-            val built = builder.build()
-            return GraphSpec(built.graph, byName.mapValues { built.commitOf(it.value) })
+            return GraphSpec(builder.build(), byName)
         }
     }
 }

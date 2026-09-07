@@ -25,48 +25,45 @@ object RandomGraphs {
     ): RandomGraph {
         val random = Random(seed)
         val builder = CommitGraphBuilder()
-        val heads = ArrayList<Node>(repositories)
-        val times = HashMap<Node, Long>()
+        val heads = ArrayList<Commit>(repositories)
 
         for (repository in 0 until repositories) {
             val name = ('A' + repository).toString()
             val source = builder.addSource(name)
-            val ids = ArrayList<String>()
+            val added = ArrayList<Commit>()
             var clock = random.nextLong(0, 100)
-            var head: Node? = null
+            var head: Commit? = null
 
             for (position in 0 until commitsPerRepository) {
                 val id = "$name$position"
-                val parents = ArrayList<String>()
+                val parents = ArrayList<Commit>()
                 if (position > 0) {
                     // Mostly extend the chain; occasionally fork off an older commit.
                     val firstParent =
-                        if (random.nextInt(100) < 75) ids.size - 1
-                        else random.nextInt(ids.size)
-                    parents.add(ids[firstParent])
+                        if (random.nextInt(100) < 75) added.size - 1
+                        else random.nextInt(added.size)
+                    parents.add(added[firstParent])
                     if (position > 2 && random.nextInt(100) < 15) {
-                        val second = random.nextInt(ids.size)
-                        if (ids[second] != parents[0]) parents.add(ids[second])
+                        val second = random.nextInt(added.size)
+                        if (added[second] != parents[0]) parents.add(added[second])
                     }
                 }
 
                 clock += random.nextLong(0, 11)
                 val time = if (ancestryMonotoneTime) {
-                    val newest = parents.maxOfOrNull { times.getValue(builder.find(source, it)!!) } ?: -1L
+                    val newest = parents.maxOfOrNull { it.time } ?: -1L
                     maxOf(clock, newest + 1) + random.nextLong(0, 5)
                 } else {
                     clock + random.nextLong(-30, 31)
                 }
 
-                val node = builder.addCommit(source, id, time, parents)
-                times[node] = time
-                ids.add(id)
-                head = node
+                val commit = builder.addCommit(source, id, time, parents.map { it.id })
+                added.add(commit)
+                head = commit
             }
             heads += head ?: error("repository $name has no commits")
         }
 
-        val built = builder.build()
-        return RandomGraph(built.graph, heads.map { built.commitOf(it) })
+        return RandomGraph(builder.build(), heads)
     }
 }

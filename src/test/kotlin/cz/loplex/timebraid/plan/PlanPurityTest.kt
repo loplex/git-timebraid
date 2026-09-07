@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * The planner is pure: it knows nothing about git and touches nothing outside its own arrays. That
+ * The planner is pure: it knows nothing about git and touches nothing outside its own commits. That
  * is what makes the algorithm testable in milliseconds without a repository, and it is a property
  * that erodes the moment one convenient import slips in — so it is checked, not merely intended.
  *
