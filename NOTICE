@@ -58,3 +58,16 @@ Apache License, Version 2.0, elected from a dual license
     Version 2.0 or the LGPL, version 2.1 or later. It is used here under
     the Apache License, Version 2.0. The jar carries both of its
     notices, as META-INF/LICENSE and META-INF/LGPL2.1.
+
+
+THE BUNDLED RUNTIME
+
+The archives whose name carries an operating system and an architecture
+also contain a trimmed OpenJDK build, under runtime/. That is a
+redistribution of OpenJDK, which is licensed under the GNU General
+Public License, Version 2, with the OpenJDK Assembly Exception. Its own
+license files travel with it, under runtime/legal/, one directory per
+module.
+
+The portable archive and the standalone jar contain no runtime and are
+unaffected by this.

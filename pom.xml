@@ -37,6 +37,36 @@
         <junit.version>5.14.4</junit.version>
 
         <main.class>cz.loplex.timebraid.MainKt</main.class>
+
+        <!--
+            The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of
+            this file). Derived from `jdeps` with `print-module-deps` over the shaded jar, minus one module
+            and plus two, each deviation for a reason jdeps cannot see:
+
+            - java.desktop is dropped. jdeps reports it because com.sun.jna.Native declares methods
+              taking java.awt.Window; the JVM resolves a method descriptor when the method is called,
+              not when the class initialises, and nothing here calls those. Verified against a real
+              terminal: mordant still detects the terminal size through JNA. Saves ~11 MB of ~57.
+            - jdk.charsets is added. Charsets arrive through ServiceLoader, so jdeps never sees them;
+              without it, anything outside the default charset fails, which on Windows is most of
+              cp1250.
+            - jdk.unsupported is added for sun.misc.Unsafe, reached reflectively by libraries that
+              probe for it rather than linking against it.
+        -->
+        <jlink.modules>java.base,java.logging,java.management,java.security.jgss,java.sql,jdk.charsets,jdk.unsupported</jlink.modules>
+
+        <!--
+            jlink's compression. `zip-6` needs JDK 21; on JDK 17 build with `-Djlink.compress=2`.
+        -->
+        <jlink.compress>zip-6</jlink.compress>
+
+        <!--
+            Platform of the bundled-runtime archive, set by the platform-* profiles below. A runtime
+            image only runs on the platform that built it, so it has to show in the file name; the
+            plain archive carries no runtime and stays portable, hence no suffix there.
+        -->
+        <dist.os>${os.name}</dist.os>
+        <dist.arch>${os.arch}</dist.arch>
     </properties>
 
     <dependencyManagement>
@@ -284,4 +314,138 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <!--
+            Platform naming for the bundled-runtime archive. Hand-rolled rather than pulled from
+            os-maven-plugin: three operating systems and two architectures is the whole matrix, and a
+            build extension for it would cost more than it saves.
+        -->
+        <profile>
+            <id>platform-linux</id>
+            <activation><os><name>linux</name></os></activation>
+            <properties><dist.os>linux</dist.os></properties>
+        </profile>
+        <profile>
+            <id>platform-macos</id>
+            <activation><os><family>mac</family></os></activation>
+            <properties><dist.os>macos</dist.os></properties>
+        </profile>
+        <profile>
+            <id>platform-windows</id>
+            <activation><os><family>windows</family></os></activation>
+            <properties><dist.os>windows</dist.os></properties>
+        </profile>
+        <profile>
+            <id>platform-x64</id>
+            <activation><os><arch>amd64</arch></os></activation>
+            <properties><dist.arch>x64</dist.arch></properties>
+        </profile>
+        <profile>
+            <!-- Same architecture, spelled the other way by macOS JDKs. -->
+            <id>platform-x64-alias</id>
+            <activation><os><arch>x86_64</arch></os></activation>
+            <properties><dist.arch>x64</dist.arch></properties>
+        </profile>
+        <profile>
+            <id>platform-aarch64</id>
+            <activation><os><arch>aarch64</arch></os></activation>
+            <properties><dist.arch>aarch64</dist.arch></properties>
+        </profile>
+
+        <!--
+            `mvn -Pbundled-runtime package` adds a second archive that carries a trimmed JVM, for
+            people who would rather not install one. It is opt-in and produced in addition to the
+            portable archive, never instead of it: a runtime image is built by and for one platform,
+            so producing it by default would quietly make the release platform-specific.
+
+            jlink, not GraalVM native-image: the bundle is a real JVM, so no reflection metadata has
+            to be maintained for JGit, and nothing can fail at a user's machine that did not already
+            fail here. The cost is size (~46 MB against ~9 MB) and one build per platform.
+        -->
+        <profile>
+            <id>bundled-runtime</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <!-- jlink refuses to write into a directory that already exists. -->
+                                <id>clear-runtime-image</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                                <configuration>
+                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                                    <filesets>
+                                        <fileset>
+                                            <directory>${project.build.directory}/runtime</directory>
+                                        </fileset>
+                                    </filesets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>jlink-runtime</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- The JDK running Maven is the one that gets bundled. -->
+                                    <executable>${java.home}/bin/jlink</executable>
+                                    <arguments>
+                                        <argument>--add-modules</argument>
+                                        <argument>${jlink.modules}</argument>
+                                        <argument>--strip-debug</argument>
+                                        <argument>--no-header-files</argument>
+                                        <argument>--no-man-pages</argument>
+                                        <argument>--compress=${jlink.compress}</argument>
+                                        <argument>--output</argument>
+                                        <argument>${project.build.directory}/runtime</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>distribution-with-runtime</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>single</goal>
+                                </goals>
+                                <configuration>
+                                    <descriptors>
+                                        <descriptor>src/main/assembly/distribution-with-runtime.xml</descriptor>
+                                    </descriptors>
+                                    <appendAssemblyId>false</appendAssemblyId>
+                                    <finalName>${project.artifactId}-${project.version}-${dist.os}-${dist.arch}</finalName>
+                                    <!--
+                                        Two paths under runtime/conf/security exceed tar's 100-character
+                                        limit. The default already writes them as GNU long entries, it
+                                        just warns each time; saying so explicitly keeps the build quiet.
+                                    -->
+                                    <tarLongFileMode>gnu</tarLongFileMode>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

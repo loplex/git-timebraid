@@ -30,35 +30,7 @@
         </file>
     </files>
 
-    <fileSets>
-        <!-- The POSIX launcher has to arrive executable; zip and tar both carry the mode. -->
-        <fileSet>
-            <directory>src/main/scripts</directory>
-            <outputDirectory>bin</outputDirectory>
-            <includes>
-                <include>git-timebraid</include>
-            </includes>
-            <fileMode>0755</fileMode>
-            <lineEnding>unix</lineEnding>
-        </fileSet>
-        <fileSet>
-            <directory>src/main/scripts</directory>
-            <outputDirectory>bin</outputDirectory>
-            <includes>
-                <include>git-timebraid.bat</include>
-            </includes>
-            <fileMode>0644</fileMode>
-            <lineEnding>dos</lineEnding>
-        </fileSet>
-        <fileSet>
-            <directory>${project.basedir}</directory>
-            <outputDirectory></outputDirectory>
-            <includes>
-                <include>README.md</include>
-                <include>LICENSE</include>
-                <include>NOTICE</include>
-            </includes>
-            <fileMode>0644</fileMode>
-        </fileSet>
-    </fileSets>
+    <componentDescriptors>
+        <componentDescriptor>src/main/assembly/component-common.xml</componentDescriptor>
+    </componentDescriptors>
 </assembly>

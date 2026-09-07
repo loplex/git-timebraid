@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    What both distribution archives carry regardless of whether a JVM is bundled: the two launchers
+    and the files that have to travel with the program for legal reasons.
+
+    Kept apart from the descriptors that include it so the portable and the platform-specific archive
+    cannot drift into laying these out differently — the launcher's mode in particular, which is what
+    makes `git-timebraid` runnable at all once unpacked.
+-->
+<component xmlns="http://maven.apache.org/ASSEMBLY-COMPONENT/2.2.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://maven.apache.org/ASSEMBLY-COMPONENT/2.2.0 https://maven.apache.org/xsd/assembly-component-2.2.0.xsd">
+    <fileSets>
+        <!-- The POSIX launcher has to arrive executable; zip and tar both carry the mode. -->
+        <fileSet>
+            <directory>src/main/scripts</directory>
+            <outputDirectory>bin</outputDirectory>
+            <includes>
+                <include>git-timebraid</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+        <fileSet>
+            <directory>src/main/scripts</directory>
+            <outputDirectory>bin</outputDirectory>
+            <includes>
+                <include>git-timebraid.bat</include>
+            </includes>
+            <fileMode>0644</fileMode>
+            <lineEnding>dos</lineEnding>
+        </fileSet>
+        <fileSet>
+            <directory>${project.basedir}</directory>
+            <outputDirectory>/</outputDirectory>
+            <includes>
+                <include>README.md</include>
+                <include>LICENSE</include>
+                <include>NOTICE</include>
+            </includes>
+            <fileMode>0644</fileMode>
+        </fileSet>
+    </fileSets>
+</component>

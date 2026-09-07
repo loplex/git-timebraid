@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    The distribution archive with a JVM inside, built by the `bundled-runtime` profile. Same layout
+    as distribution.xml plus the jlink image, which the launcher picks up automatically:
+
+        git-timebraid-<version>-<os>-<arch>/
+            bin/git-timebraid
+            bin/git-timebraid.bat
+            lib/git-timebraid.jar
+            runtime/                 the jlink image; bin/java is what the launcher runs
+            README.md LICENSE NOTICE
+
+    Platform-specific by construction, which is why the name says which platform it is for.
+-->
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.2.0 https://maven.apache.org/xsd/assembly-2.2.0.xsd">
+    <id>distribution-with-runtime</id>
+
+    <formats>
+        <format>tar.gz</format>
+        <format>zip</format>
+    </formats>
+
+    <includeBaseDirectory>true</includeBaseDirectory>
+
+    <files>
+        <file>
+            <source>${project.build.directory}/${project.build.finalName}.jar</source>
+            <outputDirectory>lib</outputDirectory>
+        </file>
+    </files>
+
+    <fileSets>
+        <!--
+            The runtime image in two halves, because the assembly plugin applies one mode per fileSet
+            and the image needs two. Everything that has to keep the executable bit is listed here:
+            bin/ for the launchers themselves, and lib/jspawnhelper, which is how a JVM on Linux
+            spawns a subprocess — without it every `git clone` and `git fetch` this tool runs would
+            fail.
+        -->
+        <fileSet>
+            <directory>${project.build.directory}/runtime</directory>
+            <outputDirectory>runtime</outputDirectory>
+            <includes>
+                <include>bin/**</include>
+                <include>lib/jspawnhelper</include>
+            </includes>
+            <fileMode>0755</fileMode>
+            <directoryMode>0755</directoryMode>
+        </fileSet>
+        <fileSet>
+            <directory>${project.build.directory}/runtime</directory>
+            <outputDirectory>runtime</outputDirectory>
+            <excludes>
+                <exclude>bin/**</exclude>
+                <exclude>lib/jspawnhelper</exclude>
+            </excludes>
+            <fileMode>0644</fileMode>
+            <directoryMode>0755</directoryMode>
+        </fileSet>
+    </fileSets>
+
+    <componentDescriptors>
+        <componentDescriptor>src/main/assembly/component-common.xml</componentDescriptor>
+    </componentDescriptors>
+</assembly>

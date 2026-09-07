@@ -10,10 +10,22 @@
 # Put bin/ on PATH and both `git-timebraid …` and `git timebraid …` work, the latter because git
 # runs any `git-<name>` it finds on PATH as a subcommand.
 #
+# The JVM is looked for in this order, first hit wins:
+#
+#     $TIMEBRAID_JAVA        an explicit java binary
+#     <install>/runtime/     the bundled runtime, present only in the platform-specific archive
+#     $JAVA_HOME/bin/java
+#     java on PATH
+#
+# The bundled runtime outranks JAVA_HOME on purpose: the point of that archive is to run on a
+# machine whose Java is absent, old, or not the one this was tested against. TIMEBRAID_JAVA is the
+# way out when you do want your own.
+#
 # Environment:
-#     JAVA_HOME   the JVM to use; `java` from PATH when unset
-#     JAVA_OPTS   passed to the JVM, typically a larger heap for a large graph:
-#                 JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged repo-a.git repo-b.git
+#     TIMEBRAID_JAVA   java binary to run, overriding everything below it
+#     JAVA_HOME        the JVM to use when there is no bundled runtime
+#     JAVA_OPTS        passed to the JVM, typically a larger heap for a large graph:
+#                      JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged repo-a.git repo-b.git
 
 set -e
 
@@ -37,7 +49,11 @@ if [ ! -f "$jar" ]; then
     exit 1
 fi
 
-if [ -n "${JAVA_HOME:-}" ]; then
+if [ -n "${TIMEBRAID_JAVA:-}" ]; then
+    java=$TIMEBRAID_JAVA
+elif [ -x "$home/runtime/bin/java" ]; then
+    java=$home/runtime/bin/java
+elif [ -n "${JAVA_HOME:-}" ]; then
     java=$JAVA_HOME/bin/java
 else
     java=java

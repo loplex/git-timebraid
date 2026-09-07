@@ -10,9 +10,21 @@
 @rem Put bin\ on PATH and both `git-timebraid ...` and `git timebraid ...` work, the latter because
 @rem git runs any `git-<name>` it finds on PATH as a subcommand.
 @rem
+@rem The JVM is looked for in this order, first hit wins:
+@rem
+@rem     %TIMEBRAID_JAVA%       an explicit java executable
+@rem     <install>\runtime\     the bundled runtime, present only in the platform-specific archive
+@rem     %JAVA_HOME%\bin\java.exe
+@rem     java on PATH
+@rem
+@rem The bundled runtime outranks JAVA_HOME on purpose: the point of that archive is to run on a
+@rem machine whose Java is absent, old, or not the one this was tested against. TIMEBRAID_JAVA is
+@rem the way out when you do want your own.
+@rem
 @rem Environment:
-@rem     JAVA_HOME   the JVM to use; `java` from PATH when unset
-@rem     JAVA_OPTS   passed to the JVM, typically a larger heap for a large graph
+@rem     TIMEBRAID_JAVA   java executable to run, overriding everything below it
+@rem     JAVA_HOME        the JVM to use when there is no bundled runtime
+@rem     JAVA_OPTS        passed to the JVM, typically a larger heap for a large graph
 @rem
 
 setlocal
@@ -26,7 +38,11 @@ if not exist "%TIMEBRAID_JAR%" (
     exit /b 1
 )
 
-if defined JAVA_HOME (
+if defined TIMEBRAID_JAVA (
+    set "JAVA_CMD=%TIMEBRAID_JAVA%"
+) else if exist "%TIMEBRAID_HOME%\runtime\bin\java.exe" (
+    set "JAVA_CMD=%TIMEBRAID_HOME%\runtime\bin\java.exe"
+) else if defined JAVA_HOME (
     set "JAVA_CMD=%JAVA_HOME%\bin\java.exe"
 ) else (
     set "JAVA_CMD=java"

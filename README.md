@@ -292,8 +292,8 @@ The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside
 `lib/git-timebraid.jar`; the launcher finds the jar relative to itself, through symlinks, so linking
 `bin/git-timebraid` into a directory already on `PATH` works too.
 
-`JAVA_HOME` selects the JVM if set, `java` from `PATH` otherwise. `JAVA_OPTS` goes to the JVM, which
-is where a larger heap belongs for a large history:
+`JAVA_HOME` selects the JVM if set and `java` from `PATH` otherwise, while `TIMEBRAID_JAVA` names one
+outright. `JAVA_OPTS` goes to the JVM, which is where a larger heap belongs for a large history:
 
 ```bash
 JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged ~/repos/backend.git ~/repos/webui.git
@@ -304,6 +304,24 @@ The jar is self-contained (all dependencies shaded in), so skipping the archive 
 ```bash
 java -jar target/git-timebraid.jar --help
 ```
+
+#### Without a JVM installed
+
+`-Pbundled-runtime` adds a second archive carrying a trimmed JVM built with `jlink`, for machines
+where installing Java is not on the table:
+
+```bash
+mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>.tar.gz (and .zip)
+```
+
+It unpacks and runs the same way; the launcher notices `runtime/` beside it and uses that JVM in
+preference to `JAVA_HOME`, which is the point of the archive. `TIMEBRAID_JAVA=/path/to/java` overrides
+that when you would rather it ran on yours.
+
+The bundle is roughly 46 MB unpacked against 9 MB for the plain jar, and unlike the plain archive it
+only runs on the platform that built it — hence the platform in the file name. It is the JDK running
+Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer; on JDK 17 build it with
+`-Djlink.compress=2`.
 
 ### Examples
 
@@ -377,12 +395,12 @@ input is cloned next to the output under `.timebraid-clones/`; a second run over
 refreshes that clone instead of downloading it again.
 
 `mvn package` produces the runnable artifacts: a self-contained jar and a `tar.gz`/`zip` holding it
-together with the `git-timebraid` launcher (see Install).
+together with the `git-timebraid` launcher, plus, under `-Pbundled-runtime`, a platform-specific
+archive with a `jlink` runtime for machines without a JVM (see Install).
 
 Not there yet:
 
-- **A published release.** The archives exist but are built locally; nothing is uploaded anywhere yet,
-  and there is no native binary — running the tool needs a JVM.
+- **A published release.** The archives are built locally; nothing is uploaded anywhere yet.
 
 ## Limitations
 
