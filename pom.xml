@@ -32,6 +32,7 @@
         <kotlin.compiler.jvmTarget>17</kotlin.compiler.jvmTarget>
 
         <jgit.version>7.7.1.202607240634-r</jgit.version>
+        <slf4j.version>2.0.18</slf4j.version>
         <clikt.version>5.1.0</clikt.version>
         <junit.version>5.14.4</junit.version>
 
@@ -62,6 +63,19 @@
             <groupId>org.eclipse.jgit</groupId>
             <artifactId>org.eclipse.jgit</artifactId>
             <version>${jgit.version}</version>
+        </dependency>
+
+        <!--
+            JGit logs through slf4j. Without a binding on the runtime classpath, slf4j's initializer
+            announces itself on stderr ("No SLF4J providers were found.") the first time JGit logs
+            anything, which Progress has no way to suppress. slf4j-simple, configured in
+            simplelogger.properties, keeps a normal run silent while letting JGit's warnings through.
+        -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- CLI parsing (help, version, options). -->
