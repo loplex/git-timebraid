@@ -18,7 +18,7 @@ class PlanFuzzTest {
             val corpus = RandomGraphs.generate(seed, repositories = 3, commitsPerRepository = 70)
             val subdirs = corpus.graph.sourceNames.toList()
 
-            val plan = MergePlan.build(corpus.graph, corpus.heads, subdirs)
+            val plan = corpus.graph.braid(corpus.heads).plan(subdirs)
 
             PlanInvariants.assertAll(plan, corpus.heads, "seed $seed")
         }
@@ -30,7 +30,7 @@ class PlanFuzzTest {
         // useless, so check that the braid actually alternates.
         for (seed in 1..20) {
             val corpus = RandomGraphs.generate(seed, repositories = 3, commitsPerRepository = 70)
-            val plan = MergePlan.build(corpus.graph, corpus.heads, corpus.graph.sourceNames.toList())
+            val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sourceNames.toList())
 
             val alternations = (1 until plan.braid.size).count {
                 corpus.graph.sourceOf(plan.braid[it]) != corpus.graph.sourceOf(plan.braid[it - 1])
@@ -48,7 +48,7 @@ class PlanFuzzTest {
         // finish inside the timeout.
         val corpus = RandomGraphs.generate(seed = 7, repositories = 3, commitsPerRepository = 5_000)
 
-        val plan = MergePlan.build(corpus.graph, corpus.heads, corpus.graph.sourceNames.toList())
+        val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sourceNames.toList())
 
         PlanInvariants.assertAll(plan, corpus.heads, "15k corpus")
     }
@@ -59,8 +59,8 @@ class PlanFuzzTest {
             val corpus = RandomGraphs.generate(seed)
             val subdirs = corpus.graph.sourceNames.toList()
 
-            val first = MergePlan.build(corpus.graph, corpus.heads, subdirs).render()
-            val second = MergePlan.build(corpus.graph, corpus.heads, subdirs).render()
+            val first = corpus.graph.braid(corpus.heads).plan(subdirs).render()
+            val second = corpus.graph.braid(corpus.heads).plan(subdirs).render()
 
             assertTrue(first == second, "seed $seed produced two different plans")
         }

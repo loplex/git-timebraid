@@ -13,23 +13,15 @@ package cz.loplex.timebraid.plan
  */
 object WholeGraphBraid {
 
-    fun compute(graph: CommitGraph, heads: IntArray): IntArray {
-        val onBraid = BooleanArray(graph.size)
-        var count = 0
+    fun compute(graph: CommitGraph, heads: List<Commit>): List<Commit> {
+        val onBraid = HashSet<Commit>()
         for (head in heads) {
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && !onBraid[commit]) {
-                onBraid[commit] = true
-                count++
-                commit = graph.firstParentOf(commit)
+            var commit: Commit? = head
+            while (commit != null && onBraid.add(commit)) {
+                commit = commit.firstParent
             }
         }
 
-        val braid = IntArray(count)
-        var next = 0
-        for (commit in TopoOrder.compute(graph)) {
-            if (onBraid[commit]) braid[next++] = commit
-        }
-        return braid
+        return graph.topologicalOrder().filter { it in onBraid }
     }
 }

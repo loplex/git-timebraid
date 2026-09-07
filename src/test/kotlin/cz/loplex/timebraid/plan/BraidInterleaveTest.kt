@@ -1,6 +1,5 @@
 package cz.loplex.timebraid.plan
 
-import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -21,10 +20,10 @@ class BraidInterleaveTest {
     @Test
     fun `agrees with a whole-graph interleave on two ordinary linear repositories`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
-        val heads = spec.ids("a3", "b2")
+        val heads = spec.commits("a3", "b2")
 
         val wholeGraph = WholeGraphBraid.compute(spec.graph, heads)
-        val interleaved = BraidInterleave.compute(spec.graph, heads)
+        val interleaved = spec.graph.braid(heads).commits
 
         assertEquals(spec.names(wholeGraph), spec.names(interleaved))
     }
@@ -35,11 +34,11 @@ class BraidInterleaveTest {
         // own queue, so nothing can move a1/a2 relative to each other regardless of what their
         // timestamps say -- ancestry within one repository holds no matter how its timestamps behave.
         val spec = GraphSpec.parse("A: a1@50 <- a2@10 | B: b1@20 <- b2@40")
-        val heads = spec.ids("a2", "b2")
+        val heads = spec.commits("a2", "b2")
 
-        val order = BraidInterleave.compute(spec.graph, heads)
+        val order = spec.graph.braid(heads).commits
 
-        assertTrue(respectsFirstParentAncestry(spec.graph, order))
+        assertTrue(respectsFirstParentAncestry(order))
     }
 
     @Test
@@ -53,10 +52,10 @@ class BraidInterleaveTest {
         // a whole-graph pass cannot emit m until f's chain (up to time 90) has drained, pushing m
         // past b2.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
-        val heads = spec.ids("m", "b2")
+        val heads = spec.commits("m", "b2")
 
         val wholeGraph = WholeGraphBraid.compute(spec.graph, heads)
-        val interleaved = BraidInterleave.compute(spec.graph, heads)
+        val interleaved = spec.graph.braid(heads).commits
 
         assertEquals(listOf("a1", "a2", "b1", "b2", "m"), spec.names(wholeGraph))
         assertEquals(listOf("a1", "a2", "b1", "m", "b2"), spec.names(interleaved))
@@ -71,15 +70,15 @@ class BraidInterleaveTest {
         // being* m's braid predecessor (b1 here vs b2 under a whole-graph pass), not whether m
         // still carries all of its original edges plus the braid edge.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
-        val heads = spec.ids("m", "b2")
+        val heads = spec.commits("m", "b2")
 
-        val interleaved = BraidInterleave.compute(spec.graph, heads)
-        val reparented = Reparenter.reparent(spec.graph, interleaved)
+        val reparented = spec.graph.braid(heads).reparent()
 
-        assertEquals(3, reparented[spec.id("m")].size, "m should still gain a third parent")
+        val parentsOfM = reparented.parentsOf(spec.commit("m"))
+        assertEquals(3, parentsOfM.size, "m should still gain a third parent")
         assertEquals(
             listOf("b1", "a2", "f"),
-            spec.names(reparented[spec.id("m")]),
+            spec.names(parentsOfM),
             "braid predecessor prepended, both original parents kept",
         )
     }
@@ -95,9 +94,9 @@ class BraidInterleaveTest {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = true)
 
             val wholeGraph = WholeGraphBraid.compute(corpus.graph, corpus.heads)
-            val interleaved = BraidInterleave.compute(corpus.graph, corpus.heads)
+            val interleaved = corpus.graph.braid(corpus.heads).commits
 
-            assertArrayEquals(wholeGraph, interleaved, "orders differ on seed $seed")
+            assertEquals(wholeGraph, interleaved, "orders differ on seed $seed")
         }
     }
 
@@ -110,9 +109,9 @@ class BraidInterleaveTest {
         for (seed in 1..100) {
             for (monotone in listOf(true, false)) {
                 val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = monotone)
-                assertArrayEquals(
-                    KWayBraid.compute(corpus.graph, corpus.heads),
-                    BraidInterleave.compute(corpus.graph, corpus.heads),
+                assertEquals(
+                    KWayBraid.compute(corpus.heads),
+                    corpus.graph.braid(corpus.heads).commits,
                     "seed $seed (monotone=$monotone) stopped reducing to a k-way merge",
                 )
             }
@@ -126,10 +125,10 @@ class BraidInterleaveTest {
         // the write order were separated, and what `--interleave-ref '*'` asks for.
         for (seed in 1..100) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
-            val everything = IntArray(corpus.graph.size) { it }
-            assertArrayEquals(
+            val everything = corpus.graph.commits
+            assertEquals(
                 WholeGraphBraid.compute(corpus.graph, corpus.heads),
-                BraidInterleave.compute(corpus.graph, corpus.heads, everything),
+                corpus.graph.braid(corpus.heads, everything).commits,
                 "seed $seed diverges from a whole-graph pass with everything in scope",
             )
         }
@@ -142,10 +141,10 @@ class BraidInterleaveTest {
         // in and m has to wait for it, which pushes m past B's history -- the caller trading the
         // no-future-edge property for having that branch's time taken into account.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
-        val heads = spec.ids("m", "b2")
+        val heads = spec.commits("m", "b2")
 
-        val byDefault = BraidInterleave.compute(spec.graph, heads)
-        val withF = BraidInterleave.compute(spec.graph, heads, spec.ids("f"))
+        val byDefault = spec.graph.braid(heads).commits
+        val withF = spec.graph.braid(heads, spec.commits("f")).commits
 
         assertEquals(listOf("a1", "a2", "b1", "m", "b2"), spec.names(byDefault))
         assertEquals(listOf("a1", "a2", "b1", "b2", "m"), spec.names(withF))
@@ -156,11 +155,11 @@ class BraidInterleaveTest {
         // Its ancestors are in scope either way, so there is nothing new to wait for. Worth pinning:
         // a user naming the mainline itself, or a tag sitting on it, should not see the braid shift.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
-        val heads = spec.ids("m", "b2")
+        val heads = spec.commits("m", "b2")
 
-        assertArrayEquals(
-            BraidInterleave.compute(spec.graph, heads),
-            BraidInterleave.compute(spec.graph, heads, spec.ids("a2", "m")),
+        assertEquals(
+            spec.graph.braid(heads).commits,
+            spec.graph.braid(heads, spec.commits("a2", "m")).commits,
         )
     }
 
@@ -185,17 +184,17 @@ class BraidInterleaveTest {
         // not a property either ordering algorithm can fix; see the README's own caveat.
         for (seed in 1..300) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
-            val braid = BraidInterleave.compute(corpus.graph, corpus.heads)
+            val braid = corpus.graph.braid(corpus.heads).commits
 
             for (i in 1 until braid.size) {
                 val commit = braid[i]
                 val predecessor = braid[i - 1]
-                if (corpus.graph.sourceOf(predecessor) == corpus.graph.sourceOf(commit)) continue
+                if (predecessor.source == commit.source) continue
 
                 assertTrue(
-                    corpus.graph.timeOf(predecessor) <= corpus.graph.timeOf(commit),
-                    "seed $seed: ${corpus.graph.describe(predecessor)}@${corpus.graph.timeOf(predecessor)} " +
-                        "precedes ${corpus.graph.describe(commit)}@${corpus.graph.timeOf(commit)} from a " +
+                    predecessor.time <= commit.time,
+                    "seed $seed: $predecessor@${predecessor.time} " +
+                        "precedes $commit@${commit.time} from a " +
                         "different repository, but is timestamped later -- a future leak",
                 )
             }
@@ -203,13 +202,13 @@ class BraidInterleaveTest {
     }
 
     /** Ancestry restricted to first-parent edges only -- the one relation a k-way merge tracks. */
-    private fun respectsFirstParentAncestry(graph: CommitGraph, order: IntArray): Boolean {
-        val position = IntArray(graph.size) { -1 }
+    private fun respectsFirstParentAncestry(order: List<Commit>): Boolean {
+        val position = HashMap<Commit, Int>()
         for ((index, commit) in order.withIndex()) position[commit] = index
         for (commit in order) {
-            val firstParent = graph.firstParentOf(commit)
-            if (firstParent == CommitGraph.NO_COMMIT || position[firstParent] == -1) continue
-            if (position[firstParent] >= position[commit]) return false
+            val firstParent = commit.firstParent ?: continue
+            val parentPosition = position[firstParent] ?: continue
+            if (parentPosition >= position.getValue(commit)) return false
         }
         return true
     }

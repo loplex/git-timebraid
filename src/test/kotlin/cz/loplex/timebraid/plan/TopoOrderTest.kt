@@ -1,6 +1,5 @@
 package cz.loplex.timebraid.plan
 
-import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -12,7 +11,7 @@ class TopoOrderTest {
     fun `interleaves two repositories by time`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertEquals(listOf("a1", "b1", "a2", "b2", "a3"), spec.names(order))
     }
@@ -23,10 +22,10 @@ class TopoOrderTest {
             "A: a1@10 <- a2@30 ; f1(a1)@20 <- m(a2,f1)@40 | B: b1@15 <- b2@35"
         )
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertEquals(spec.graph.size, order.size)
-        assertEquals((0 until spec.graph.size).toSet(), order.toSet())
+        assertEquals(spec.graph.commits.toSet(), order.toSet())
     }
 
     @Test
@@ -35,7 +34,7 @@ class TopoOrderTest {
             "A: a1@10 <- a2@30 ; f1(a1)@20 <- m(a2,f1)@40 | B: b1@15 <- b2@35"
         )
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertParentsFirst(spec.graph, order)
     }
@@ -44,7 +43,7 @@ class TopoOrderTest {
     fun `orders a diamond by time between the two sides`() {
         val spec = GraphSpec.parse("A: r@0 <- x@30 ; y(r)@10 <- m(x,y)@40")
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertEquals(listOf("r", "y", "x", "m"), spec.names(order))
     }
@@ -54,7 +53,7 @@ class TopoOrderTest {
         // A rebase leaves the chain in place but its timestamps out of order.
         val spec = GraphSpec.parse("A: p@50 <- c@10 | B: b1@20")
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertEquals(listOf("b1", "p", "c"), spec.names(order))
         assertParentsFirst(spec.graph, order)
@@ -65,7 +64,7 @@ class TopoOrderTest {
         // Ancestry through an intermediate commit, with the timestamps running backwards over it.
         val spec = GraphSpec.parse("A: g@50 <- p@60 <- c@10")
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertEquals(listOf("g", "p", "c"), spec.names(order))
     }
@@ -74,39 +73,39 @@ class TopoOrderTest {
     fun `orders several roots by time`() {
         val spec = GraphSpec.parse("A: a1@30 ; z1@30 | B: b1@10")
 
-        val order = TopoOrder.compute(spec.graph)
+        val order = spec.graph.topologicalOrder()
 
         assertParentsFirst(spec.graph, order)
-        assertEquals("b1", spec.graph.idOf(order[0]))
+        assertEquals("b1", order[0].id)
     }
 
     @Test
     fun `breaks a timestamp tie on the commit index, so the result never depends on the run`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 | B: b1@10 <- b2@20")
 
-        val first = TopoOrder.compute(spec.graph)
-        val second = TopoOrder.compute(spec.graph)
+        val first = spec.graph.topologicalOrder()
+        val second = spec.graph.topologicalOrder()
 
         // a1 and b1 share a timestamp and no ancestry; the lower index goes first, in every run.
         assertEquals(listOf("a1", "b1", "a2", "b2"), spec.names(first))
-        assertArrayEquals(first, second)
+        assertEquals(first, second)
     }
 
     @Test
     fun `a cycle is reported, not silently truncated`() {
         val spec = GraphSpec.parse("A: a1(a2)@10 <- a2@20")
 
-        assertThrows<CyclicGraphException> { TopoOrder.compute(spec.graph) }
+        assertThrows<CyclicGraphException> { spec.graph.topologicalOrder() }
     }
 
-    private fun assertParentsFirst(graph: CommitGraph, order: IntArray) {
-        val position = IntArray(graph.size)
+    private fun assertParentsFirst(graph: CommitGraph, order: List<Commit>) {
+        val position = HashMap<Commit, Int>()
         for ((index, commit) in order.withIndex()) position[commit] = index
-        for (commit in 0 until graph.size) {
-            for (parent in graph.parentsOf(commit)) {
+        for (commit in graph.commits) {
+            for (parent in commit.parents) {
                 assertTrue(
-                    position[parent] < position[commit],
-                    "${graph.describe(parent)} must precede ${graph.describe(commit)}",
+                    position.getValue(parent) < position.getValue(commit),
+                    "$parent must precede $commit",
                 )
             }
         }

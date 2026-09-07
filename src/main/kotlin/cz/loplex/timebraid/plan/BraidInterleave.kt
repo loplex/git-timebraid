@@ -50,7 +50,7 @@ import java.util.PriorityQueue
  * chains of a single repository would break the argument and are out of scope, exactly as they were for
  * the original two-repository-only tool.
  */
-object BraidInterleave {
+internal object BraidInterleave {
 
     /**
      * @param heads mainline tips, one per input repository. Two heads that share a tail contribute

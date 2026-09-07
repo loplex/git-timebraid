@@ -45,8 +45,8 @@ class CommitGraphBuilderTest {
 
         assertNotEquals(inA, inB)
         val graph = builder.build()
-        assertEquals("A", graph.sourceNameOf(inA))
-        assertEquals("B", graph.sourceNameOf(inB))
+        assertEquals("A", graph.commits[inA].source.name)
+        assertEquals("B", graph.commits[inB].source.name)
     }
 
     @Test

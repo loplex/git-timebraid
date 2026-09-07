@@ -171,7 +171,7 @@ class BraidWriter(
      * ends up as its own paragraph, which is where git's trailer parsing expects it.
      */
     private fun messageOf(planned: PlannedCommit, original: SourceCommit): String {
-        val repo = graph.sourceNameOf(planned.commit.index)
+        val repo = planned.commit.source.name
         val subdir = planned.subdir ?: repo
         val prefixed = options.subjectPrefix
             .replace("{repo}", repo)

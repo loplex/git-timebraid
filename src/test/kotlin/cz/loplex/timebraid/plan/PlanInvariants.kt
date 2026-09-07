@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
  */
 object PlanInvariants {
 
-    fun assertAll(plan: MergePlan, heads: IntArray, label: String) {
+    fun assertAll(plan: MergePlan, heads: List<Commit>, label: String) {
         assertWriteOrder(plan, label)
         assertOriginalEdgesKept(plan, label)
         assertNoDuplicateParents(plan, label)
@@ -69,12 +69,12 @@ object PlanInvariants {
     }
 
     /** The braid covers exactly the union of the heads' first-parent chains, without duplicates. */
-    fun assertBraidIsTheFirstParentChains(plan: MergePlan, heads: IntArray, label: String) {
+    fun assertBraidIsTheFirstParentChains(plan: MergePlan, heads: List<Commit>, label: String) {
         val expected = LinkedHashSet<Int>()
         for (head in heads) {
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && expected.add(commit)) {
-                commit = plan.graph.firstParentOf(commit)
+            var commit: Commit? = head
+            while (commit != null && expected.add(commit.index)) {
+                commit = commit.firstParent
             }
         }
 

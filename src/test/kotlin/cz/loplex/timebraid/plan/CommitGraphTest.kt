@@ -77,7 +77,7 @@ class CommitGraphTest {
 
         assertEquals("a2", braided.idOf(spec.id("a2")))
         assertEquals(20L, braided.timeOf(spec.id("a2")))
-        assertEquals("B", braided.sourceNameOf(spec.id("b1")))
+        assertEquals("B", braided.commits[spec.id("b1")].source.name)
         assertEquals(listOf("b1", "a1"), spec.names(braided.parentsOf(spec.id("a2"))))
     }
 

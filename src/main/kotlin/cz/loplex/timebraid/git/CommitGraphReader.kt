@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
 import org.eclipse.jgit.lib.Constants
@@ -15,7 +16,7 @@ enum class OrderBy { AUTHOR, COMMITTER }
 class BraidInputs(
     val graph: CommitGraph,
     /** Mainline tip per input repository, in the order the repositories were given to [CommitGraphReader.read]. */
-    val heads: IntArray,
+    val heads: List<Commit>,
     /** The branch name resolved as the mainline in every repository. */
     val mainlineBranch: String,
     /** The original commit behind every graph index, indexed exactly like [graph]. */
@@ -27,7 +28,7 @@ class BraidInputs(
      * across every input. Empty unless the option was given, which is the default scope: the
      * mainline chains alone (see `BraidInterleave`).
      */
-    val interleaveTips: IntArray = IntArray(0),
+    val interleaveTips: List<Commit> = emptyList(),
 )
 
 /** What was read out of one input repository, with every ref resolved to a graph index. */
@@ -146,11 +147,11 @@ object CommitGraphReader {
         @Suppress("UNCHECKED_CAST")
         return BraidInputs(
             graph = graph,
-            heads = heads,
+            heads = heads.map { graph.commits[it] },
             mainlineBranch = mainline,
             commits = commits as List<SourceCommit>,
             sources = inputs,
-            interleaveTips = interleaveTips(interleaveRefs, inputs),
+            interleaveTips = interleaveTips(interleaveRefs, inputs, graph),
         )
     }
 
@@ -176,8 +177,12 @@ object CommitGraphReader {
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
      * and a bare star is every ref — which puts the whole loaded graph in scope.
      */
-    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): IntArray {
-        if (patterns.isEmpty()) return IntArray(0)
+    private fun interleaveTips(
+        patterns: List<String>,
+        inputs: List<SourceInputs>,
+        graph: CommitGraph,
+    ): List<Commit> {
+        if (patterns.isEmpty()) return emptyList()
         val matchers = patterns.map { glob(it) }
         val tips = LinkedHashSet<Int>()
         for (input in inputs) {
@@ -190,7 +195,7 @@ object CommitGraphReader {
                 if (matchers.any { it.matches("${Constants.R_TAGS}${tag.name}") }) tips += tag.commit
             }
         }
-        return tips.toIntArray()
+        return tips.map { graph.commits[it] }
     }
 
     /** A glob over ref names: `*` is the only metacharacter and it spans path separators. */

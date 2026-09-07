@@ -3,7 +3,7 @@ package cz.loplex.timebraid.plan
 import kotlin.random.Random
 
 /** A generated corpus: the graph plus one mainline head per repository. */
-class RandomGraph(val graph: CommitGraph, val heads: IntArray)
+class RandomGraph(val graph: CommitGraph, val heads: List<Commit>)
 
 /**
  * Seeded generator of plausible input histories: several repositories, each a first-parent chain
@@ -67,6 +67,7 @@ object RandomGraphs {
             heads[repository] = head
         }
 
-        return RandomGraph(builder.build(), heads)
+        val graph = builder.build()
+        return RandomGraph(graph, heads.map { graph.commits[it] })
     }
 }

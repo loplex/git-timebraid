@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.git
 
 import cz.loplex.timebraid.plan.BraidInterleave
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.MergePlan
 import cz.loplex.timebraid.plan.WholeGraphBraid
@@ -55,7 +56,7 @@ class BraidCorpusPropertiesTest {
 
         // build() reparents and orders, and fails loudly on a braid that contradicts ancestry, so
         // getting a plan back at all is already part of what is being checked here.
-        val plan = MergePlan.build(graph, braidInputs.heads, graph.sourceNames.toList())
+        val plan = graph.braid(braidInputs.heads).plan(graph.sourceNames.toList())
         val wholeGraph = WholeGraphBraid.compute(graph, braidInputs.heads)
 
         val futureEdges = futureBraidEdges(graph, plan.braid)
@@ -105,14 +106,14 @@ class BraidCorpusPropertiesTest {
         return lines
     }
 
-    private fun interleavingDiff(graph: CommitGraph, braid: IntArray, other: IntArray): String {
+    private fun interleavingDiff(graph: CommitGraph, braid: IntArray, other: List<Commit>): String {
         if (other.size != braid.size) return "a whole-graph interleave covers a different commit set"
         val position = IntArray(graph.size)
         for ((index, commit) in braid.withIndex()) position[commit] = index
         var moved = 0
         var maxShift = 0
         for ((index, commit) in other.withIndex()) {
-            val shift = kotlin.math.abs(index - position[commit])
+            val shift = kotlin.math.abs(index - position[commit.index])
             if (shift != 0) moved++
             maxShift = maxOf(maxShift, shift)
         }

@@ -1,45 +1,94 @@
 package cz.loplex.timebraid.plan
 
-/**
- * Dense index of one commit inside a [CommitGraph].
- *
- * The planner works exclusively with dense indices: a commit is an `Int` in `0 until graph.size`,
- * and a set of commits is an `IntArray`. This type puts a name on that number where a single commit
- * crosses the boundary out of the planner ([PlannedCommit.commit]); the bulk structures stay
- * primitive arrays on purpose, because wrapping every array element would cost readability without
- * buying any type safety that the arrays themselves do not already have.
- */
-@JvmInline
-value class CommitId(val index: Int) {
-    override fun toString(): String = "#$index"
-}
-
 /** Thrown when a set of parent edges that is required to be a DAG turns out to contain a cycle. */
 class CyclicGraphException(message: String) : IllegalStateException(message)
 
 /**
- * Immutable indexed DAG of every commit of every input repository (every *strand*, in the
- * vocabulary of the README).
+ * One input repository — one *strand*, in the vocabulary of the README.
  *
- * This is the planner's entire input. It deliberately knows nothing about git: a commit is an index,
- * its identity is an opaque string supplied by whoever built the graph, and its timestamp is a single
- * `Long` resolved once by the reader according to `--order-by`. The planner never learns whether it
- * got author or committer time, which keeps that choice a one-line decision outside this package.
+ * Belongs to the [CommitGraph] that handed it out, and there is exactly one instance per repository,
+ * so two sources are the same repository precisely when they are the same object.
+ */
+class Source internal constructor(
+    /**
+     * Position of this repository among the inputs, in the order they were read.
+     *
+     * Public because a caller that keeps one entry per repository — a subdirectory, a tree, an open
+     * handle — wants an array rather than a map, and this is the index into it.
+     */
+    val index: Int,
+    /** Name of the input repository. */
+    val name: String,
+) {
+    override fun toString(): String = name
+}
+
+/**
+ * One commit of one input repository.
  *
- * Parent edges point from a child to its parents, in their original order, so `parentsOf(c)[0]` is
- * the first parent. Edges are *not* checked for acyclicity when the graph is constructed — a graph
- * read out of a repository is a DAG by definition, and the one place where that can genuinely break
- * is reparenting, which checks explicitly (see [requireAcyclic] and [Reparenter]).
+ * A handle onto the [CommitGraph] rather than a copy of anything it holds: the graph keeps the
+ * commits in parallel arrays, and this puts a name on one row of them. There is exactly one instance
+ * per commit, so identity comparison answers "the same commit", and a commit of one graph can be
+ * told from a commit of another.
+ *
+ * Two repositories may contain the same commit sha without interfering — the inputs are independent
+ * histories — so [id] alone does not identify a commit. The pair with [source] does, and so does
+ * this object.
+ */
+class Commit internal constructor(
+    private val graph: CommitGraph,
+    /**
+     * Position of this commit in the graph, in `0 until graph.size`.
+     *
+     * Public because it is the join key between the graph and anything indexed alongside it: the git
+     * payload the reader kept, the identities the writer hands out, the bitmap it marks progress in.
+     * A side table of `graph.size` entries is addressed by this, and cheaply.
+     */
+    val index: Int,
+) {
+    /** Original commit sha in production, a short name in tests. */
+    val id: String get() = graph.idOf(index)
+
+    /** Timestamp used to interleave the strands, as resolved by the reader according to `--order-by`. */
+    val time: Long get() = graph.timeOf(index)
+
+    /** The input repository this commit came from. */
+    val source: Source get() = graph.sourceAt(graph.sourceOf(index))
+
+    /** Parents in their original order, so the first entry is the first parent. */
+    val parents: List<Commit> get() = graph.parentHandlesOf(index)
+
+    /** First parent, or `null` for a root commit. */
+    val firstParent: Commit? get() = parents.firstOrNull()
+
+    override fun toString(): String = "$source/$id"
+}
+
+/**
+ * Immutable DAG of every commit of every input repository.
+ *
+ * This is the planner's entire input. It deliberately knows nothing about git: a commit's identity is
+ * an opaque string supplied by whoever built the graph, and its timestamp is a single `Long` resolved
+ * once by the reader. The planner never learns whether it got author or committer time, which keeps
+ * that choice a one-line decision outside this package.
+ *
+ * Internally a commit is a dense index and a set of commits is an `IntArray`, which is what the Kahn
+ * passes want; [Commit] and [Source] are how that leaves the class. The operations are methods rather
+ * than free functions over the arrays, so each stage of the pipeline hands the next one an object —
+ * see [braid].
+ *
+ * Edges are *not* checked for acyclicity when the graph is constructed: a graph read out of a
+ * repository is a DAG by definition, and the one place where that can genuinely break is reparenting,
+ * which checks explicitly.
  */
 class CommitGraph internal constructor(
     parents: Array<IntArray>,
     sourceIndex: IntArray,
     orderingTime: LongArray,
     commitIds: Array<String>,
-    /** Names of the input repositories, indexed by source index. */
-    val sourceNames: List<String>,
+    internal val sourceNames: List<String>,
 ) {
-    /** Number of commits; valid commit indices are `0 until size`. */
+    /** Number of commits; every [Commit.index] falls in `0 until size`. */
     val size: Int = parents.size
 
     private val edges: Array<IntArray> = Array(size) { parents[it].copyOf() }
@@ -47,8 +96,7 @@ class CommitGraph internal constructor(
     private val time: LongArray = orderingTime.copyOf()
     private val ids: Array<String> = commitIds.copyOf()
 
-    /** Number of input repositories. */
-    val sourceCount: Int get() = sourceNames.size
+    internal val sourceCount: Int get() = sourceNames.size
 
     init {
         require(source.size == size) { "sourceIndex has ${source.size} entries, expected $size" }
@@ -74,33 +122,86 @@ class CommitGraph internal constructor(
         }
     }
 
+    /** The input repositories, in the order they were read. */
+    val sources: List<Source> = sourceNames.mapIndexed { index, name -> Source(index, name) }
+
+    private val handles: Array<Commit> = Array(size) { Commit(this, it) }
+
+    /** Every commit of every input repository. Position in this list is [Commit.index]. */
+    val commits: List<Commit> = handles.asList()
+
     /**
-     * Parents of [commit], first parent first. The returned array is the graph's own storage and
-     * must not be modified.
+     * A topological order of the original history: every commit exactly once, parents before children,
+     * earliest timestamp first among the commits that are ready at any moment.
+     *
+     * The pipeline orders the *braided* history instead — see [ReparentedGraph.writeOrder] — because
+     * only there is the interleave already baked into the parent edges.
+     *
+     * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun parentsOf(commit: Int): IntArray = edges[commit]
+    fun topologicalOrder(): List<Commit> = commitsAt(TopoOrder.compute(this))
 
-    /** First parent of [commit], or [NO_COMMIT] for a root commit. */
-    fun firstParentOf(commit: Int): Int = if (edges[commit].isEmpty()) NO_COMMIT else edges[commit][0]
+    /**
+     * Interleaves the strands' mainlines into the single braid the output's history is built around.
+     *
+     * @param heads mainline tips, one per input repository. Two heads that share a tail contribute
+     *   each commit once; a duplicate would later become a commit that is its own predecessor.
+     * @param interleaveTips commits whose ancestry is allowed to delay a braid commit — the refs named
+     *   by `--interleave-ref`, already resolved. Empty by default; see [BraidInterleave] for what
+     *   widening the scope trades away.
+     */
+    fun braid(heads: List<Commit>, interleaveTips: List<Commit> = emptyList()): Braid =
+        Braid(
+            this,
+            BraidInterleave.compute(
+                this,
+                indicesOf(heads, "head"),
+                indicesOf(interleaveTips, "interleave tip"),
+            ),
+        )
 
-    /** Index of the input repository [commit] came from. */
-    fun sourceOf(commit: Int): Int = source[commit]
+    internal fun parentsOf(commit: Int): IntArray = edges[commit]
 
-    /** Name of the input repository [commit] came from. */
-    fun sourceNameOf(commit: Int): String = sourceNames[source[commit]]
+    internal fun firstParentOf(commit: Int): Int =
+        if (edges[commit].isEmpty()) NO_COMMIT else edges[commit][0]
 
-    /** Timestamp used to interleave the strands, as resolved by the reader. */
-    fun timeOf(commit: Int): Long = time[commit]
+    internal fun sourceOf(commit: Int): Int = source[commit]
 
-    /** Opaque identity of [commit] — the original commit sha in production, a short name in tests. */
-    fun idOf(commit: Int): String = ids[commit]
+    internal fun sourceAt(index: Int): Source = sources[index]
 
-    /** Human-readable `<repository>/<id>`, used in diagnostics. */
-    fun describe(commit: Int): String = "${sourceNames[source[commit]]}/${ids[commit]}"
+    internal fun timeOf(commit: Int): Long = time[commit]
+
+    internal fun idOf(commit: Int): String = ids[commit]
+
+    /**
+     * `<repository>/<id>`, the same text [Commit.toString] gives — spelled out from the arrays
+     * because validation runs before the handles exist.
+     */
+    internal fun describe(commit: Int): String = "${sourceNames[source[commit]]}/${ids[commit]}"
+
+    internal fun commitAt(commit: Int): Commit = handles[commit]
+
+    internal fun commitsAt(indices: IntArray): List<Commit> = indices.map { handles[it] }
+
+    internal fun parentHandlesOf(commit: Int): List<Commit> = commitsAt(edges[commit])
+
+    /**
+     * Indices of [commits], checking on the way that each one really is a commit of this graph.
+     *
+     * Identity is the check, not the bare index: a commit of another graph would otherwise be read as
+     * whatever this graph happens to hold at the same position.
+     */
+    internal fun indicesOf(commits: List<Commit>, what: String): IntArray = IntArray(commits.size) {
+        val commit = commits[it]
+        require(commit.index in handles.indices && handles[commit.index] === commit) {
+            "$what $commit is not a commit of this graph"
+        }
+        commit.index
+    }
 
     /**
      * A copy of this graph with a different set of parent edges and everything else unchanged.
-     * Used to view the reparented history through the same API as the original one.
+     * Used to run a pass over the reparented history through the same accessors as the original one.
      */
     internal fun withParents(parents: Array<IntArray>): CommitGraph =
         CommitGraph(parents, source, time, ids, sourceNames)

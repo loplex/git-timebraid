@@ -3,15 +3,14 @@ package cz.loplex.timebraid.plan
 /**
  * One commit to be written, as the planner decided it.
  *
- * [parents] are dense commit indices in the graph's own index space, not shas: the planner has never
- * seen a sha and cannot know the identity of a commit that does not exist yet. Translating those
- * indices into the identities of the commits actually written is the writer's job, and it is always
- * possible because the plan is in write order — every parent has been written by the time its child
- * comes up.
+ * [parents] are the original commits, not shas: the planner has never seen a sha and cannot know the
+ * identity of a commit that does not exist yet. Translating them into the identities of the commits
+ * actually written is the writer's job, and it is always possible because the plan is in write order —
+ * every parent has been written by the time its child comes up.
  */
 class PlannedCommit internal constructor(
     /** The original commit being recreated. */
-    val commit: CommitId,
+    val commit: Commit,
     /** Subdirectory this commit's repository occupies, or `null` for the repository placed at the root. */
     val subdir: String?,
     /** Parents after the braid edge was applied, first parent first; must not be modified. */
@@ -26,10 +25,10 @@ class PlannedCommit internal constructor(
  * the planner and everything that touches git. Everything above this line is arithmetic on indices;
  * everything below it is objects and refs.
  *
- * Building a plan runs the whole algorithm, in the order the two decisions actually depend on each
- * other: interleave the mainlines into the braid ([BraidInterleave]), apply the parent rule
- * ([Reparenter]) so every temporal decision becomes a real parent edge, then take a write order of
- * the braided history ([TopoOrder]) and accumulate the content map along it.
+ * Reached through [CommitGraph.braid] and [Braid.plan], which run the algorithm in the order the two
+ * decisions actually depend on each other: interleave the mainlines into the braid, apply the parent
+ * rule so every temporal decision becomes a real parent edge, then take a write order of the braided
+ * history and accumulate the content map along it.
  */
 class MergePlan private constructor(
     val graph: CommitGraph,
@@ -47,7 +46,7 @@ class MergePlan private constructor(
     /** Every commit to be written, in write order. */
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
-            commit = CommitId(commit),
+            commit = graph.commitAt(commit),
             subdir = subdirs[graph.sourceOf(commit)],
             parents = newParents[commit],
             onBraid = onBraid[commit],
@@ -84,8 +83,8 @@ class MergePlan private constructor(
         val counts = histogram.keys.sorted().joinToString(", ") { "$it -> ${histogram[it]}" }
         return buildString {
             appendLine("repositories:")
-            for (source in graph.sourceNames.indices) {
-                appendLine("  ${graph.sourceNames[source]} -> ${subdirs[source]?.plus("/") ?: "<root>"}")
+            for (source in graph.sources) {
+                appendLine("  ${source.name} -> ${subdirs[source.index]?.plus("/") ?: "<root>"}")
             }
             appendLine("commits: ${graph.size} (braid: ${braid.size})")
             appendLine("parent counts: $counts")
@@ -116,31 +115,22 @@ class MergePlan private constructor(
         }
     }
 
-    companion object {
+    internal companion object {
 
         /**
-         * Plans the merge.
+         * Assembles the plan from the decisions [Braid] and [ReparentedGraph] have already made.
          *
-         * @param heads mainline tips, one per input repository.
-         * @param subdirs subdirectory per input repository, `null` for the one placed at the root.
-         * @param braid the braid, in braid order; the default is the interleave the tool actually
-         *   uses. This is the one temporal decision in the whole pipeline — everything after it
-         *   follows from the parent edges [Reparenter] derives from it.
+         * The braid needs no checking here: it can only have come from [CommitGraph.braid], which
+         * names commits of this graph, each at most once.
          */
-        fun build(
+        fun create(
             graph: CommitGraph,
-            heads: IntArray,
+            braid: IntArray,
+            order: IntArray,
+            newParents: Array<IntArray>,
             subdirs: List<String?>,
-            braid: IntArray = BraidInterleave.compute(graph, heads),
         ): MergePlan {
             validateSubdirs(graph, subdirs)
-            validateBraid(graph, braid)
-
-            val newParents = Reparenter.reparent(graph, braid)
-            // Every braid edge is a real parent edge by now, so the write order has no temporal
-            // decision left to make: any topological order of the braided history writes correctly,
-            // and this one is deterministic.
-            val order = TopoOrder.compute(graph.withParents(newParents))
 
             val onBraid = BooleanArray(graph.size)
             for (commit in braid) onBraid[commit] = true
@@ -207,19 +197,6 @@ class MergePlan private constructor(
                 require(seen.add(subdir)) {
                     "two repositories would be placed in the same subdirectory '$subdir'"
                 }
-            }
-        }
-
-        private fun validateBraid(graph: CommitGraph, braid: IntArray) {
-            require(braid.size <= graph.size) {
-                "braid has ${braid.size} entries, more than the graph's ${graph.size} commits"
-            }
-            val seen = BooleanArray(graph.size)
-            for (commit in braid) {
-                require(commit in 0 until graph.size) { "braid contains $commit, not a commit index" }
-                // A repeated braid member would become its own predecessor, i.e. a self-edge.
-                require(!seen[commit]) { "braid contains ${graph.describe(commit)} twice" }
-                seen[commit] = true
             }
         }
     }

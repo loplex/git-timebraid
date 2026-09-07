@@ -22,11 +22,20 @@ class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
     fun id(name: String): Int =
         byName[name] ?: error("no commit named '$name' in this fixture")
 
+    /** The commit named [name]. */
+    fun commit(name: String): Commit = graph.commits[id(name)]
+
     /** Indices of the named commits, in the order given. */
     fun ids(vararg names: String): IntArray = IntArray(names.size) { id(names[it]) }
 
+    /** The named commits, in the order given — heads, tips, and anything else the API takes. */
+    fun commits(vararg names: String): List<Commit> = names.map { commit(it) }
+
     /** Names of the given commits, in the order given — the readable form of an order or a braid. */
     fun names(commits: IntArray): List<String> = commits.map { graph.idOf(it) }
+
+    /** Names of the given commits, in the order given. */
+    fun names(commits: List<Commit>): List<String> = commits.map { it.id }
 
     /** One subdirectory per repository, named after the repository. */
     fun subdirs(): List<String?> = graph.sourceNames

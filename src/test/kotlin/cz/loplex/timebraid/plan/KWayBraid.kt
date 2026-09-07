@@ -16,33 +16,31 @@ package cz.loplex.timebraid.plan
  */
 object KWayBraid {
 
-    fun compute(graph: CommitGraph, heads: IntArray): IntArray {
-        val claimed = BooleanArray(graph.size)
-        val queues = ArrayList<ArrayDeque<Int>>()
+    fun compute(heads: List<Commit>): List<Commit> {
+        val claimed = HashSet<Commit>()
+        val queues = ArrayList<ArrayDeque<Commit>>()
         for (head in heads) {
-            val chain = ArrayDeque<Int>()
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && !claimed[commit]) {
-                claimed[commit] = true
+            val chain = ArrayDeque<Commit>()
+            var commit: Commit? = head
+            while (commit != null && claimed.add(commit)) {
                 chain.addFirst(commit)
-                commit = graph.firstParentOf(commit)
+                commit = commit.firstParent
             }
             if (chain.isNotEmpty()) queues.add(chain)
         }
 
-        val result = IntArray(queues.sumOf { it.size })
-        var next = 0
+        val result = ArrayList<Commit>(queues.sumOf { it.size })
         while (queues.isNotEmpty()) {
             var oldest = 0
-            var oldestTime = graph.timeOf(queues[0].first())
+            var oldestTime = queues[0].first().time
             for (i in 1 until queues.size) {
-                val time = graph.timeOf(queues[i].first())
+                val time = queues[i].first().time
                 if (time < oldestTime) {
                     oldestTime = time
                     oldest = i
                 }
             }
-            result[next++] = queues[oldest].removeFirst()
+            result.add(queues[oldest].removeFirst())
             if (queues[oldest].isEmpty()) queues.removeAt(oldest)
         }
         return result
