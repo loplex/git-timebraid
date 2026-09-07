@@ -78,6 +78,27 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a renamed input carries the new name into its tags and provenance`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+
+        run(
+            "-o", out.toString(),
+            tmp.resolve("backend.git").toString() + "::legacy",
+            tmp.resolve("webui.git").toString(),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // The default tag prefix is "{repo}/", so the tag shows the name and not just where the
+            // content was placed; the same name has to reach the provenance trailer.
+            assertEquals(listOf("legacy/v1"), repo.tags().map { it.name })
+            val messages = repo.readReachable(repo.branches().map { it.target }).map { it.message }
+            assertTrue(messages.any { it.contains("repo=\"legacy\"") }, messages.toString())
+            assertTrue(messages.none { it.contains("backend") }, messages.toString())
+        }
+    }
+
+    @Test
     fun `--tag-prefix and --no-provenance shape the output`() {
         corpus()
         val out = tmp.resolve("merged.git")

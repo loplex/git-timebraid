@@ -36,7 +36,8 @@ import kotlin.io.path.writeText
 class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     /**
-     * An input is written `<path-or-url>[=<subdir>]`, and an absolute path (or a URL) is a token that
+     * An input is written `<path-or-url>[::<name>][=<subdir>]`, and an absolute path (or a URL) is
+     * a token that
      * clikt would otherwise try to read as a long option. Routing unknown option-shaped tokens to
      * the arguments instead lets the positional parser see the whole spec; [run] rejects a real stray
      * `-`/`--` token by hand so the usual protection against a mistyped option is kept.
@@ -54,7 +55,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help("Write into an existing output directory instead of refusing it (deletes nothing).")
 
     private val rootRepo by option("--root-repo")
-        .help("Repository whose content lands at the output root instead of in a subdirectory.")
+        .help(
+            "Repository whose content lands at the output root instead of in a subdirectory, by " +
+                "name (see <repo>::<name>).",
+        )
 
     private val mainlineBranch by option("--mainline-branch")
         .help(
@@ -106,7 +110,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help("Print every git subprocess as it runs.")
 
     private val inputs by argument("repo")
-        .help("Input repository, optionally with a target subdirectory: <path-or-url>[=<subdir>].")
+        .help(
+            "Input repository: <path-or-url>[::<name>][=<subdir>]. The name is the repository's " +
+                "identity (tag prefix, provenance, --root-repo) and defaults to the last segment " +
+                "of the path; the subdirectory is where its content lands and defaults to the name.",
+        )
         .multiple(required = true)
 
     override fun help(context: Context): String =
@@ -196,34 +204,51 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         MergeCommand::class.java.`package`?.implementationVersion ?: "dev"
 }
 
-/** A parsed `<path-or-url>[=<subdir>]` positional argument. */
+/** A parsed `<path-or-url>[::<name>][=<subdir>]` positional argument. */
 private class RepoSpec(
     val location: String,
     val isRemote: Boolean,
-    val subdir: String?,
+    /** `::<name>` if given, otherwise the name implied by the location. */
     val name: String,
+    /** Explicit `=<subdir>`, or `null` to place the repository under its own name. */
+    val subdir: String?,
 )
 
+/**
+ * Splits `<path-or-url>[::<name>][=<subdir>]`.
+ *
+ * The two are separate because they answer separate questions. The name is the repository's
+ * identity — the tag prefix, the provenance label, the qualifier on a branch two inputs share, what
+ * `--root-repo` matches — and has to be unique, which is the only way two inputs whose directories
+ * happen to share a name can be merged at all. The subdirectory is merely where the content lands,
+ * and defaults to the name without being tied to it.
+ *
+ * Each suffix is recognised only when what follows it is a bare word: a `/` or a `:` means the
+ * character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
+ */
 private fun parseRepoSpec(raw: String): RepoSpec {
-    val separator = raw.lastIndexOf('=')
-    // A trailing "=x" is a subdirectory only when x is a bare name; ":" or "/" mark it as part of a
-    // path or URL instead (`host:path`, `.../a=b/c`).
-    val hasSubdir = separator >= 0 &&
-        raw.substring(separator + 1).let { it.isNotEmpty() && '/' !in it && ':' !in it }
-    val locationPart = if (hasSubdir) raw.substring(0, separator) else raw
-    val subdir = if (hasSubdir) raw.substring(separator + 1) else null
-    if (subdir != null && subdir.isBlank()) {
-        throw UsageError("'$subdir' is not a usable subdirectory name (in '$raw')")
+    val (beforeSubdir, subdir) = splitSuffix(raw, "=")
+    val (location, name) = splitSuffix(beforeSubdir, "::")
+    for (part in listOfNotNull(name, subdir)) {
+        if (part.isBlank()) throw UsageError("'$part' is not a usable name (in '$raw')")
     }
 
-    val remote = isRemoteLocation(locationPart)
-    val name =
-        if (remote) repoNameFromLocation(locationPart)
-        else SourceRepository.defaultName(Path.of(locationPart))
+    val remote = isRemoteLocation(location)
+    val derived = name
+        ?: if (remote) repoNameFromLocation(location)
+        else SourceRepository.defaultName(Path.of(location))
     // The name becomes the default subdirectory, the tag prefix and the provenance label, so an
     // input that yields none is rejected here rather than failing later as an unusable subdirectory.
-    if (name.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
-    return RepoSpec(locationPart, remote, subdir, name)
+    if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
+    return RepoSpec(location, remote, derived, subdir)
+}
+
+/** [raw] split at the last [marker] that is followed by a bare word, or the whole of it and `null`. */
+private fun splitSuffix(raw: String, marker: String): Pair<String, String?> {
+    val at = raw.lastIndexOf(marker)
+    val suffix = if (at < 0) null else raw.substring(at + marker.length)
+    if (suffix.isNullOrEmpty() || '/' in suffix || ':' in suffix) return raw to null
+    return raw.substring(0, at) to suffix
 }
 
 /** `scheme://…` or the scp-like `user@host:path` — anything git clones over the network. */

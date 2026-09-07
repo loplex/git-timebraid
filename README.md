@@ -239,8 +239,12 @@ follows the branch. Which is exactly what you want, and it costs no configuratio
 
 ## What ends up in the output repository
 
-- **One subdirectory per input repository.** Name defaults to the repository name; override it with
-  `repo.git=subdir`. One repository may be placed at the root instead, with `--root-repo`.
+- **One subdirectory per input repository**, named after the input's own name, which in turn
+  defaults to the last segment of its path. The two are set separately:
+  `repo.git::name` is the repository's identity — the tag prefix, the provenance label, what
+  `--root-repo` matches, and what has to be unique, so it is how two inputs whose directories happen
+  to share a name are told apart — while `repo.git=subdir` only says where the content lands. One
+  repository may be placed at the root instead, with `--root-repo <name>`.
 - **All branches**, recreated at the corresponding new commits. Restrict with `-b`. The mainline
   branch collapses into one: every input contributed its own to the same braid, so the output has a
   single branch of that name, at the braid's tip. Any other branch keeps its own name, unless two
@@ -293,7 +297,8 @@ git-timebraid -o /tmp/merged \
     ~/repos/backend.git ~/repos/webui.git ~/repos/codegen.git
 ```
 
-Put the backend at the repository root, rename `webui` to `ui` on the way:
+Put the backend at the repository root and place `webui` in `ui/`, keeping its own name (so its
+tags stay `webui/v1.2`):
 
 ```bash
 git-timebraid -o /tmp/merged \
@@ -314,7 +319,7 @@ git-timebraid \
 ### Options
 
 ```
-git-timebraid -o <dir> [OPTIONS] <repo>[=<subdir>]...
+git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
   -o, --output DIR              output repository (must not exist unless --force)
       --force                   write into an existing output directory (deletes nothing)

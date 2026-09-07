@@ -102,6 +102,56 @@ class MergeCommandDryRunTest {
 
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("backend -> <root>"), result.output)
+        // "=ui" places the content; the repository is still called webui.
         assertTrue(result.output.contains("webui -> ui/"), result.output)
+    }
+
+    @Test
+    fun `two inputs whose directories share a name are told apart by naming them`() {
+        for (side in listOf("a", "b")) {
+            TestRepoBuilder.create(tmp.resolve("$side/proj.git")).use { repo ->
+                repo.branch("main", repo.commit("$side commit"))
+            }
+        }
+        val shared = listOf(tmp.resolve("a/proj.git").toString(), tmp.resolve("b/proj.git").toString())
+
+        val collided = MergeCommand().test(listOf("--dry-run") + shared)
+        assertEquals(1, collided.statusCode, collided.output)
+        assertTrue(collided.output.contains("same repository name"), collided.output)
+
+        val named = MergeCommand().test(
+            listOf("--dry-run", shared[0] + "::proj-a", shared[1] + "::proj-b"),
+        )
+        assertEquals(0, named.statusCode, named.output)
+        assertTrue(named.output.contains("proj-a -> proj-a/"), named.output)
+        assertTrue(named.output.contains("proj-b -> proj-b/"), named.output)
+    }
+
+    @Test
+    fun `a separator that belongs to the location is left there`() {
+        // Both suffixes are recognised only before a bare word, so a path that happens to contain
+        // one is not split behind the user's back.
+        for (location in listOf("/nonexistent/a=b/c", "/nonexistent/a::b/c")) {
+            val result = MergeCommand().test(listOf("--dry-run", location))
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains(location), result.output)
+        }
+    }
+
+    @Test
+    fun `a name and a subdirectory are set independently of each other`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run",
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString() + "::frontend=ui",
+            )
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("frontend -> ui/"), result.output)
     }
 }
