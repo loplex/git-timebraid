@@ -2,6 +2,7 @@ package cz.loplex.timebraid.plan
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -9,18 +10,19 @@ import org.junit.jupiter.api.assertThrows
 class CommitGraphBuilderTest {
 
     @Test
-    fun `hands out dense indices`() {
+    fun `hands out a node per commit and builds a graph of them`() {
         val builder = CommitGraphBuilder()
         val a = builder.addSource("A")
         val b = builder.addSource("B")
 
-        assertEquals(0, builder.addCommit(a, "a1", 10))
-        assertEquals(1, builder.addCommit(a, "a2", 20, listOf("a1")))
-        assertEquals(2, builder.addCommit(b, "b1", 15))
+        val a1 = builder.addCommit(a, "a1", 10)
+        val a2 = builder.addCommit(a, "a2", 20, listOf("a1"))
+        val b1 = builder.addCommit(b, "b1", 15)
 
-        val graph = builder.build()
-        assertEquals(3, graph.size)
-        assertEquals(2, graph.sources.size)
+        val built = builder.build()
+        assertEquals(3, built.graph.size)
+        assertEquals(2, built.graph.sources.size)
+        assertEquals(listOf("a1", "a2", "b1"), listOf(a1, a2, b1).map { built.commitOf(it).id })
     }
 
     @Test
@@ -31,8 +33,8 @@ class CommitGraphBuilderTest {
         builder.addCommit(a, "a2", 20, listOf("a1"))
         builder.addCommit(a, "a1", 10)
 
-        val graph = builder.build()
-        assertEquals("a1", graph.commits[builder.indexOf(a, "a2")].firstParent?.id)
+        val built = builder.build()
+        assertEquals("a1", built.commitOf(builder.find(a, "a2")!!).firstParent?.id)
     }
 
     @Test
@@ -44,9 +46,9 @@ class CommitGraphBuilderTest {
         val inB = builder.addCommit(b, "5c1a9f2", 20)
 
         assertNotEquals(inA, inB)
-        val graph = builder.build()
-        assertEquals("A", graph.commits[inA].source.name)
-        assertEquals("B", graph.commits[inB].source.name)
+        val built = builder.build()
+        assertEquals("A", built.commitOf(inA).source.name)
+        assertEquals("B", built.commitOf(inB).source.name)
     }
 
     @Test
@@ -57,8 +59,8 @@ class CommitGraphBuilderTest {
         builder.addCommit(a, "f1", 15, listOf("a1"))
         val merge = builder.addCommit(a, "m", 20, listOf("a1", "f1", "a1"))
 
-        val graph = builder.build()
-        assertEquals(listOf("a1", "f1"), graph.commits[merge].parents.map { it.id })
+        val built = builder.build()
+        assertEquals(listOf("a1", "f1"), built.commitOf(merge).parents.map { it.id })
     }
 
     @Test
@@ -91,12 +93,20 @@ class CommitGraphBuilderTest {
     }
 
     @Test
-    fun `indexOf reports an unknown commit rather than inventing one`() {
+    fun `find reports an unknown commit rather than inventing one`() {
         val builder = CommitGraphBuilder()
         val a = builder.addSource("A")
         builder.addCommit(a, "a1", 10)
 
-        assertEquals(CommitGraph.NO_COMMIT, builder.indexOf(a, "nope"))
-        assertEquals(1, builder.build().size)
+        assertNull(builder.find(a, "nope"))
+        assertEquals(1, builder.build().graph.size)
+    }
+
+    @Test
+    fun `a repository of another builder is refused rather than silently interned`() {
+        val builder = CommitGraphBuilder()
+        val elsewhere = CommitGraphBuilder().addSource("A")
+
+        assertThrows<IllegalArgumentException> { builder.addCommit(elsewhere, "a1", 10) }
     }
 }

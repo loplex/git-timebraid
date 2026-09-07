@@ -18,26 +18,17 @@ package cz.loplex.timebraid.plan
  */
 class GraphSpec internal constructor(
     val graph: CommitGraph,
-    private val byName: Map<String, Int>,
+    private val byName: Map<String, Commit>,
 ) {
 
-    /** Index of the commit named [name]. */
-    fun id(name: String): Int =
-        byName[name] ?: error("no commit named '$name' in this fixture")
-
     /** The commit named [name]. */
-    fun commit(name: String): Commit = graph.commits[id(name)]
-
-    /** Indices of the named commits, in the order given. */
-    fun ids(vararg names: String): IntArray = IntArray(names.size) { id(names[it]) }
+    fun commit(name: String): Commit =
+        byName[name] ?: error("no commit named '$name' in this fixture")
 
     /** The named commits, in the order given — heads, tips, and anything else the API takes. */
     fun commits(vararg names: String): List<Commit> = names.map { commit(it) }
 
     /** Names of the given commits, in the order given — the readable form of an order or a braid. */
-    fun names(commits: IntArray): List<String> = commits.map { graph.commits[it].id }
-
-    /** Names of the given commits, in the order given. */
     fun names(commits: List<Commit>): List<String> = commits.map { it.id }
 
     /** One subdirectory per repository, named after the repository. */
@@ -53,7 +44,7 @@ class GraphSpec internal constructor(
 
         fun parse(spec: String): GraphSpec {
             val builder = CommitGraphBuilder()
-            val byName = LinkedHashMap<String, Int>()
+            val byName = LinkedHashMap<String, Node>()
 
             for (strand in spec.split('|')) {
                 val parts = strand.split(':', limit = 2)
@@ -79,7 +70,8 @@ class GraphSpec internal constructor(
                     }
                 }
             }
-            return GraphSpec(builder.build(), byName)
+            val built = builder.build()
+            return GraphSpec(built.graph, byName.mapValues { built.commitOf(it.value) })
         }
     }
 }

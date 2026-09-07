@@ -3,6 +3,8 @@ package cz.loplex.timebraid.git
 import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
+import cz.loplex.timebraid.plan.Node
+import cz.loplex.timebraid.plan.Strand
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
@@ -55,9 +57,9 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
  * A ref while the graph is still being built, when the commits it will be expressed in do not exist
  * yet. Turned into a [BraidRef] or a [BraidTag] once [CommitGraphBuilder.build] has run.
  */
-private class UnresolvedRef(val name: String, val commit: Int, val annotation: TagAnnotation?)
+private class UnresolvedRef(val name: String, val commit: Node, val annotation: TagAnnotation?)
 
-/** One repository's refs, still as indices, for the same reason. */
+/** One repository's refs, still as nodes, for the same reason. */
 private class UnresolvedSource(
     val name: String,
     val branches: List<UnresolvedRef>,
@@ -101,11 +103,11 @@ object CommitGraphReader {
 
         val mainline = resolveMainline(repositories, mainlineBranch)
         val builder = CommitGraphBuilder()
-        val heads = IntArray(repositories.size)
-        val commits = ArrayList<SourceCommit?>()
+        val heads = ArrayList<Node>(repositories.size)
+        val original = HashMap<Node, SourceCommit>()
         val unresolved = ArrayList<UnresolvedSource>(repositories.size)
 
-        for ((repoIndex, repo) in repositories.withIndex()) {
+        for (repo in repositories) {
             val source = builder.addSource(repo.name)
 
             val mainlineTip = repo.resolveBranch(mainline)
@@ -131,17 +133,17 @@ object CommitGraphReader {
             }
 
             for (commit in repo.readReachable(tips)) {
-                val index = builder.addCommit(
+                val node = builder.addCommit(
                     source = source,
                     id = commit.id.name,
                     orderingTime = commit.time(orderBy),
                     parentIds = commit.parents.map { it.name },
                 )
-                while (commits.size <= index) commits.add(null)
-                commits[index] = commit
+                original[node] = commit
             }
 
-            heads[repoIndex] = builder.indexOf(source, mainlineTip.name)
+            heads += builder.find(source, mainlineTip.name)
+                ?: error("repository '${repo.name}' did not read its own mainline tip")
             unresolved += UnresolvedSource(
                 name = repo.name,
                 branches = selectedBranches.mapNotNull {
@@ -154,30 +156,26 @@ object CommitGraphReader {
             )
         }
 
-        val graph = builder.build()
-        check(commits.size == graph.size && commits.none { it == null }) {
-            "the graph has ${graph.size} commits but ${commits.count { it != null }} were read"
+        val built = builder.build()
+        val graph = built.graph
+        check(original.size == graph.size) {
+            "the graph has ${graph.size} commits but ${original.size} were read"
         }
 
         val inputs = unresolved.map { source ->
             SourceInputs(
                 name = source.name,
-                branches = source.branches.map { BraidRef(it.name, graph.commits[it.commit]) },
-                tags = source.tags.map { BraidTag(it.name, graph.commits[it.commit], it.annotation) },
+                branches = source.branches.map { BraidRef(it.name, built.commitOf(it.commit)) },
+                tags = source.tags.map { BraidTag(it.name, built.commitOf(it.commit), it.annotation) },
                 readRefs = source.readRefs,
             )
         }
 
-        // The rows were filled by graph index and graph.commits is in exactly that order, so pairing
-        // the two here is what turns a table addressed by position into one keyed by the commit
-        // itself. Past this point nothing outside the planner's package needs an index at all.
-        val original = graph.commits.withIndex().associate { (index, commit) -> commit to commits[index]!! }
-
         return BraidInputs(
             graph = graph,
-            heads = heads.map { graph.commits[it] },
+            heads = heads.map { built.commitOf(it) },
             mainlineBranch = mainline,
-            commits = original,
+            commits = original.entries.associate { (node, commit) -> built.commitOf(node) to commit },
             sources = inputs,
             interleaveTips = interleaveTips(interleaveRefs, inputs),
         )
@@ -189,14 +187,12 @@ object CommitGraphReader {
      */
     private fun resolve(
         builder: CommitGraphBuilder,
-        source: Int,
+        source: Strand,
         name: String,
         target: ObjectId,
         annotation: TagAnnotation?,
-    ): UnresolvedRef? {
-        val index = builder.indexOf(source, target.name)
-        return if (index == CommitGraph.NO_COMMIT) null else UnresolvedRef(name, index, annotation)
-    }
+    ): UnresolvedRef? =
+        builder.find(source, target.name)?.let { UnresolvedRef(name, it, annotation) }
 
     /**
      * The refs the patterns match, as graph indices, deduplicated.

@@ -142,9 +142,6 @@ class CommitGraph private constructor(private val core: DenseGraph) {
     internal fun parentsAt(commit: Int): List<Commit> = commitsAt(core.edges[commit])
 
     companion object {
-        /** Returned where a commit index is expected but there is none (no parent, no content yet). */
-        const val NO_COMMIT: Int = -1
-
         /**
          * Builds a graph from the dense arrays, which are copied and shape-checked on the way in.
          *

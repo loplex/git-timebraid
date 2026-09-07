@@ -1,6 +1,16 @@
 package cz.loplex.timebraid.plan
 
 /**
+ * A column of the content table with nothing in it yet — a repository that has committed
+ * nothing by that point in the braid.
+ *
+ * The table is the one dense structure the plan keeps, so it needs a blank, and this is it.
+ * Nothing outside this file sees one: [MergePlan.contentOf] leaves such a repository out of the
+ * map it hands back rather than reporting it as a commit that is not there.
+ */
+private const val NO_COMMIT: Int = -1
+
+/**
  * One commit to be written, as the planner decided it.
  *
  * [parents] are the original commits, not shas: the planner has never seen a sha and cannot know the
@@ -77,7 +87,7 @@ class MergePlan private constructor(
         val map = LinkedHashMap<Source, Commit>(graph.sources.size)
         for (source in graph.sources) {
             val holder = row[source.indexIn(graph)]
-            if (holder != CommitGraph.NO_COMMIT) map[source] = graph.commitAt(holder)
+            if (holder != NO_COMMIT) map[source] = graph.commitAt(holder)
         }
         return map
     }
@@ -117,7 +127,7 @@ class MergePlan private constructor(
             append("] content=[")
             append(
                 graph.sources
-                    .filter { row[it.indexIn(graph)] != CommitGraph.NO_COMMIT }
+                    .filter { row[it.indexIn(graph)] != NO_COMMIT }
                     .joinToString(", ") { "${it.name}=${graph.commitAt(row[it.indexIn(graph)]).id}" }
             )
             appendLine("]")
@@ -173,7 +183,7 @@ class MergePlan private constructor(
             for (commit in order) {
                 val parents = newParents.getValue(commit)
                 val inherited = if (parents.isEmpty()) {
-                    IntArray(graph.sources.size) { CommitGraph.NO_COMMIT }
+                    IntArray(graph.sources.size) { NO_COMMIT }
                 } else {
                     val firstParent = parents[0]
                     val parentContent = content[firstParent.indexIn(graph)]

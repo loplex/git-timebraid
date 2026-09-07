@@ -25,15 +25,15 @@ object RandomGraphs {
     ): RandomGraph {
         val random = Random(seed)
         val builder = CommitGraphBuilder()
-        val heads = IntArray(repositories)
-        val times = ArrayList<Long>()
+        val heads = ArrayList<Node>(repositories)
+        val times = HashMap<Node, Long>()
 
         for (repository in 0 until repositories) {
             val name = ('A' + repository).toString()
             val source = builder.addSource(name)
             val ids = ArrayList<String>()
             var clock = random.nextLong(0, 100)
-            var head = CommitGraph.NO_COMMIT
+            var head: Node? = null
 
             for (position in 0 until commitsPerRepository) {
                 val id = "$name$position"
@@ -52,22 +52,21 @@ object RandomGraphs {
 
                 clock += random.nextLong(0, 11)
                 val time = if (ancestryMonotoneTime) {
-                    val newest = parents.maxOfOrNull { times[builder.indexOf(source, it)] } ?: -1L
+                    val newest = parents.maxOfOrNull { times.getValue(builder.find(source, it)!!) } ?: -1L
                     maxOf(clock, newest + 1) + random.nextLong(0, 5)
                 } else {
                     clock + random.nextLong(-30, 31)
                 }
 
-                val commit = builder.addCommit(source, id, time, parents)
-                while (times.size <= commit) times.add(0L)
-                times[commit] = time
+                val node = builder.addCommit(source, id, time, parents)
+                times[node] = time
                 ids.add(id)
-                head = commit
+                head = node
             }
-            heads[repository] = head
+            heads += head ?: error("repository $name has no commits")
         }
 
-        val graph = builder.build()
-        return RandomGraph(graph, heads.map { graph.commits[it] })
+        val built = builder.build()
+        return RandomGraph(built.graph, heads.map { built.commitOf(it) })
     }
 }
