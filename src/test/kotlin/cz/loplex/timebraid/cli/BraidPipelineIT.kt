@@ -118,20 +118,28 @@ class BraidPipelineIT {
         GitCli.requireGit()
         GitCli.fsck(out)
 
-        // Branches of both inputs, under their own name, at their own sha. Tags are not mirrored:
-        // the output carries every one of them already, under a prefixed name of its own.
+        // Every branch and every tag of both inputs, at its own sha. Tags go under `tags/` so that a
+        // branch and a tag of one name cannot land on the same ref, and they are mirrored at all
+        // because a commit an input reaches only from a tag would otherwise have no ref pointing at
+        // it -- present in the output but unreachable.
         assertEquals(
             listOf(
                 "refs/remotes/backend/feature",
                 "refs/remotes/backend/main",
+                "refs/remotes/backend/tags/v1.0",
                 "refs/remotes/webui/esbuild-experiment",
                 "refs/remotes/webui/main",
+                "refs/remotes/webui/tags/v2.0",
             ),
             GitCli.run(out, "for-each-ref", "--format=%(refname)", "refs/remotes").lines().sorted(),
         )
         assertEquals(ids.getValue("a3").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/main"))
         assertEquals(ids.getValue("f1").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/feature"))
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/main"))
+        // v1.0 was a lightweight tag of a2 and v2.0 an annotated tag of b2; either way the mirror
+        // names the commit, because the annotation itself is recreated under the output's own tag.
+        assertEquals(ids.getValue("a2").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/tags/v1.0"))
+        assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/tags/v2.0"))
 
         // The originals are complete, not just their tips: rev-list cannot count a history whose
         // parent is missing, and `--objects` cannot list one whose trees are missing -- which is the
@@ -139,6 +147,14 @@ class BraidPipelineIT {
         assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
         assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
         GitCli.run(out, "rev-list", "--objects", "--remotes")
+
+        // The whole point of mirroring the tags: every original the run read is now reachable, so
+        // nothing of the inputs survives only as an object nobody can name.
+        assertEquals(
+            ids.size,
+            GitCli.run(out, "rev-list", "--count", "--remotes").toInt(),
+            "every original commit should be reachable from refs/remotes",
+        )
 
         // And the braid is untouched by any of it: the mainline is still the interleaving of both.
         assertEquals(6, GitCli.run(out, "rev-list", "--count", "main").toInt())
