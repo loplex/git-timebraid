@@ -28,7 +28,7 @@ class Braid internal constructor(
      */
     fun reparent(): ReparentedGraph {
         val order = graph.indicesOf(commits, "braid commit")
-        return ReparentedGraph(graph, core, order, Reparenter.reparent(core, order))
+        return ReparentedGraph(graph, core, order, reparent(core, order))
     }
 
     /**
@@ -54,7 +54,7 @@ class ReparentedGraph internal constructor(
     private val parents: Array<IntArray>,
 ) {
     private val order: IntArray by lazy {
-        graph.indicesOf(TopoOrder.compute(graph.commits, ::parentsOf), "write order")
+        graph.indicesOf(topoOrder(graph.commits, ::parentsOf), "write order")
     }
 
     /** Parents of [commit] after reparenting, first parent first. */

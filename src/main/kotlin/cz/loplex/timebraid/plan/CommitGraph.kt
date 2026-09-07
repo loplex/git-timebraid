@@ -112,7 +112,7 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
      *
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun topologicalOrder(): List<Commit> = TopoOrder.compute(commits) { it.parents }
+    fun topologicalOrder(): List<Commit> = topoOrder(commits) { it.parents }
 
     /**
      * Interleaves the strands' mainlines into the single braid the output's history is built around.

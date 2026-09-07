@@ -13,7 +13,7 @@ import org.junit.jupiter.api.assertThrows
  * there is no comparator that could be non-transitive — ancestry along a chain is respected by
  * construction rather than by a comparison that has to stay consistent. What it deliberately does not
  * do is track a merge commit's *other* parents, which a plain topological pass over the whole graph
- * ([TopoOrder]) does by construction, Kahn's algorithm requiring every parent ready and not only the
+ * ([topoOrder]) does by construction, Kahn's algorithm requiring every parent ready and not only the
  * first. The tests below demonstrate that divergence rather than assume it.
  */
 class BraidInterleaveTest {

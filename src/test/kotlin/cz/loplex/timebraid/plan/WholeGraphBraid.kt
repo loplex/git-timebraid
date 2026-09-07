@@ -1,7 +1,7 @@
 package cz.loplex.timebraid.plan
 
 /**
- * The braid a pass over the **whole graph** would produce: [TopoOrder] over every commit, filtered
+ * The braid a pass over the **whole graph** would produce: [topoOrder] over every commit, filtered
  * down to the mainline first-parent chains.
  *
  * This is the far end of [BraidInterleave]'s scope: naming every ref through `--interleave-ref` puts

@@ -7,7 +7,7 @@ package cz.loplex.timebraid.plan
  * decided by Kahn's algorithm with a priority queue — keep the commits whose parents have all been
  * emitted, always take the one with the earliest timestamp — run not over the whole graph but over a
  * **scope**: the mainline chains, plus the ancestors of whatever refs the caller opted in through
- * the `interleaveTips` parameter of [compute]. [Reparenter] then turns consecutive braid members
+ * the `interleaveTips` parameter of [compute]. [reparent] then turns consecutive braid members
  * into parent edges, which is what makes `git log --first-parent` walk the braid.
  *
  * **With no opted-in refs — the default — the scope is the mainline chains alone**, and since those are
@@ -21,7 +21,7 @@ package cz.loplex.timebraid.plan
  * 2. **A cross-repository predecessor is never timestamped later than the commit it precedes.** When a
  *    commit's predecessor comes from another chain, that commit was already in the ready set when the
  *    predecessor was taken, so the predecessor won a direct comparison against it. The artificial time
- *    edge this class hands to [Reparenter] can consequently never point into the future.
+ *    edge this class hands to [reparent] can consequently never point into the future.
  * 3. **No branch outside the mainlines can shift the interleave.** Nothing off a mainline chain is in
  *    scope, so a side branch merged into a mainline — however inconveniently timestamped, however
  *    insignificant — cannot move where two repositories' mainlines meet. A merge takes its braid place
@@ -38,7 +38,7 @@ package cz.loplex.timebraid.plan
  * all (the inputs are independent histories), same-repository braid members are ordered by property 1,
  * and neither depends on the scope — so a braid built here can never close a cycle when reparented.
  * Every original edge is preserved regardless; ancestry is a property of the *write* order
- * ([TopoOrder], run after reparenting), not of the braid.
+ * ([topoOrder], run after reparenting), not of the braid.
  *
  * The default mechanism is the one this project's first prototype used in June 2021: each branch read
  * as its own `git log --topo-order`, those logs merged k-way.

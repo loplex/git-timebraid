@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
-class ReparenterTest {
+class ReparentTest {
 
     @Test
     fun `prepends the braid edge when the predecessor comes from another repository`() {
@@ -84,7 +84,7 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = TopoOrder.compute(spec.graph.commits) { commit ->
+        val order = topoOrder(spec.graph.commits) { commit ->
             spec.graph.commitsAt(parents[commit.indexIn(spec.graph)])
         }
 
@@ -99,7 +99,7 @@ class ReparenterTest {
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
         val braid = spec.ids("c", "g")
 
-        val failure = assertThrows<CyclicGraphException> { Reparenter.reparent(spec.core, braid) }
+        val failure = assertThrows<CyclicGraphException> { reparent(spec.core, braid) }
 
         assertTrue(failure.message!!.contains("cycle in the parent chain"), failure.message)
         for (name in listOf("g", "p", "c")) {
@@ -113,7 +113,7 @@ class ReparenterTest {
             spec.commits(*heads),
             interleaveTips = emptyList(),
         ) { it.parents }
-        return Reparenter.reparent(spec.core, spec.graph.indicesOf(braid, "braid commit"))
+        return reparent(spec.core, spec.graph.indicesOf(braid, "braid commit"))
     }
 
     private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Array<IntArray>) {
