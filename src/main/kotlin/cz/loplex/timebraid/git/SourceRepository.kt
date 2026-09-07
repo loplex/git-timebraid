@@ -14,6 +14,7 @@ import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.treewalk.CanonicalTreeParser
 import org.eclipse.jgit.util.FS
+import java.io.File
 import java.nio.file.Path
 
 /**
@@ -149,22 +150,50 @@ class SourceRepository private constructor(
 
     companion object {
 
-        /** Opens the repository at [location] (bare or with a working tree). */
+        /**
+         * Opens the repository at [location] (bare or with a working tree).
+         *
+         * The repository has to be *at* [location]: either the path is itself a git directory, or
+         * it holds a `.git`. A repository in some parent directory is deliberately not opened.
+         * Inputs are named one by one on the command line, so walking up the tree could only ever
+         * substitute an enclosing repository for the one that was asked for — silently, and under
+         * the name of the path that was written.
+         */
         fun open(location: Path, name: String = defaultName(location)): SourceRepository {
             val dir = location.toFile()
             val builder = FileRepositoryBuilder().setMustExist(true).readEnvironment()
             if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) {
                 builder.setGitDir(dir)
-            } else {
+            } else if (File(dir, Constants.DOT_GIT).exists()) {
+                // `.git` is a directory in an ordinary working tree and a file pointing elsewhere in
+                // a linked worktree or a submodule; findGitDir resolves both, which is why it is
+                // still used here. Its first step examines `dir` itself, so a `.git` that is present
+                // and usable settles it there; the ceiling stops it from climbing when that `.git`
+                // turns out to be neither.
+                dir.parentFile?.let { builder.addCeilingDirectory(it) }
                 builder.findGitDir(dir)
             }
             require(builder.gitDir != null) { "no git repository at $location" }
             return SourceRepository(name, location, builder.build())
         }
 
-        /** The repository name implied by a path: its last segment without a trailing `.git`. */
-        fun defaultName(location: Path): String =
-            location.fileName.toString().removeSuffix(".git")
+        /**
+         * The repository name implied by a path: the last segment of its absolute, normalized form,
+         * without a trailing `.git`.
+         *
+         * Normalizing first is what lets `.` and `../sibling` be written as inputs and still name
+         * the directory they land on rather than themselves. Dropping a final `.git` *segment* —
+         * as opposed to the `.git` suffix of a bare `repo.git` — is what makes `repo/.git` name
+         * `repo` instead of nothing at all. Empty only for a path with no segment to be named by,
+         * the filesystem root; callers reject that rather than carrying a nameless repository.
+         */
+        fun defaultName(location: Path): String {
+            val absolute = location.toAbsolutePath().normalize()
+            val directory =
+                if (absolute.fileName?.toString() == Constants.DOT_GIT) absolute.parent ?: absolute
+                else absolute
+            return directory.fileName?.toString()?.removeSuffix(".git") ?: ""
+        }
     }
 }
 

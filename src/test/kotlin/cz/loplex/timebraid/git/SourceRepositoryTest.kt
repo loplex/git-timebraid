@@ -4,8 +4,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 
 class SourceRepositoryTest {
 
@@ -84,5 +86,50 @@ class SourceRepositoryTest {
                 commit.time(OrderBy.COMMITTER),
             )
         }
+    }
+
+    @Test
+    fun `a plain directory is not opened as the repository that encloses it`() {
+        val built = TestRepoBuilder.create(tmp.resolve("outer"), bare = false)
+        built.branch("main", built.commit("only commit"))
+        built.close()
+        val inside = tmp.resolve("outer/sub").createDirectories()
+
+        // Without this, JGit's findGitDir walks up to outer/.git and opens that instead, so a
+        // mistyped input silently becomes some other repository under the mistyped name.
+        val refused = assertThrows<IllegalArgumentException> { SourceRepository.open(inside) }
+
+        assertTrue(refused.message!!.contains("no git repository"), refused.message)
+    }
+
+    @Test
+    fun `a working tree named by its own dot-git directory keeps the working tree's name`() {
+        val built = TestRepoBuilder.create(tmp.resolve("webui"), bare = false)
+        val only = built.commit("only commit")
+        built.branch("main", only)
+        built.close()
+
+        SourceRepository.open(tmp.resolve("webui/.git")).use { repo ->
+            // Naming it after the last segment would strip ".git" down to nothing at all.
+            assertEquals("webui", repo.name)
+            assertEquals(only, repo.resolveBranch("main"))
+        }
+    }
+
+    @Test
+    fun `a path is named by where it points, not by how it was written`() {
+        assertEquals("outer", SourceRepository.defaultName(tmp.resolve("outer/.")))
+        assertEquals("outer", SourceRepository.defaultName(tmp.resolve("sub/../outer")))
+        assertEquals("outer", SourceRepository.defaultName(tmp.resolve("outer/.git")))
+        // A bare repository still loses the suffix of its own directory name.
+        assertEquals("outer", SourceRepository.defaultName(tmp.resolve("outer.git")))
+        // "." is the natural way to name the repository the shell is sitting in. The expected value
+        // comes first, as everywhere above; the inspection reads defaultName(Path.of(".")) as the
+        // more constant side and would have the two swapped, which would make a failure message lie.
+        @Suppress("KotlinMisorderedAssertEqualsArguments")
+        assertEquals(
+            Path.of("").toAbsolutePath().fileName.toString(),
+            SourceRepository.defaultName(Path.of(".")),
+        )
     }
 }

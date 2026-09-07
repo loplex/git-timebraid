@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.Instant
+import kotlin.io.path.createDirectories
 
 /**
  * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command
@@ -411,6 +412,47 @@ class BraidPipelineIT {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("--mainline-branch"), result.output)
         assertTrue(!out.toFile().exists(), "nothing should have been written")
+    }
+
+    @Test
+    fun `a directory inside a repository is refused, not taken for the repository itself`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r -> r.branch("main", r.commit("a1")) }
+        val webui = TestRepoBuilder.create(tmp.resolve("webui"), bare = false)
+        webui.branch("main", webui.commit("b1"))
+        webui.close()
+        val inside = tmp.resolve("webui/sub").createDirectories()
+        val out = tmp.resolve("out.git")
+
+        // The name-collision check cannot catch this on its own: "sub" and "webui" are different
+        // names, so an enclosing repository would come in a second time as a strand of its own and
+        // be braided against itself.
+        val result = MergeCommand().test(listOf("-o", out.toString(), path("backend.git"), inside.toString()))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no git repository"), result.output)
+        assertTrue(!out.toFile().exists(), "nothing should have been written")
+    }
+
+    @Test
+    fun `an input written as its dot-git directory lands under the working tree's name`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        val webui = TestRepoBuilder.create(tmp.resolve("webui"), bare = false)
+        val b1 = webui.commit("b1", at = at("10:00"))
+        webui.branch("main", b1)
+        webui.close()
+        val out = tmp.resolve("out.git")
+
+        braid("-o", out.toString(), path("backend.git"), tmp.resolve("webui/.git").toString())
+
+        val tip = OutputRepo.read(out).byOriginalSha.getValue(b1.name)
+        SourceRepository.open(out).use { repo ->
+            val top = repo.topLevelEntries(tip.tree).map { it.name }
+            assertTrue(top.contains("webui"), top.toString())
+            assertTrue(top.none { it.isEmpty() || it == ".git" }, top.toString())
+        }
+        if (GitCli.available) GitCli.fsck(out)
     }
 
     @Test

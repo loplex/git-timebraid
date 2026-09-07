@@ -220,6 +220,9 @@ private fun parseRepoSpec(raw: String): RepoSpec {
     val name =
         if (remote) repoNameFromLocation(locationPart)
         else SourceRepository.defaultName(Path.of(locationPart))
+    // The name becomes the default subdirectory, the tag prefix and the provenance label, so an
+    // input that yields none is rejected here rather than failing later as an unusable subdirectory.
+    if (name.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
     return RepoSpec(locationPart, remote, subdir, name)
 }
 
