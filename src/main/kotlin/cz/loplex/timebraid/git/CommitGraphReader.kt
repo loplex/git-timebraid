@@ -3,6 +3,7 @@ package cz.loplex.timebraid.git
 import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
+import cz.loplex.timebraid.plan.Source
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
@@ -33,7 +34,13 @@ class BraidInputs(
 
 /** What was read out of one input repository, with every ref resolved to the commit it names. */
 class SourceInputs(
-    val name: String,
+    /**
+     * The strand this repository became. Naming it rather than repeating its name is what lets a
+     * caller pair an open repository with its [Source] once, here, where the two are the same
+     * iteration — and look one up by the other afterwards instead of trusting two lists to have
+     * stayed in step.
+     */
+    val source: Source,
     val branches: List<BraidRef>,
     val tags: List<BraidTag>,
     /**
@@ -133,7 +140,7 @@ object CommitGraphReader {
             // points at something that is not a commit, which is a fact about the input, not an
             // error in the run.
             inputs += SourceInputs(
-                name = repo.name,
+                source = source,
                 branches = selectedBranches.mapNotNull { branch ->
                     builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
                 },

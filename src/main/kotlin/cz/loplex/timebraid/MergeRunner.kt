@@ -10,6 +10,7 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
+import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
@@ -106,7 +107,13 @@ class MergeRunner(
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
 
-            val written = writeOutput(output, sources, braid, plan)
+            // The one place that can pair the two rather than assume it: these are the repositories
+            // handed to read() above, and it gives back one SourceInputs per repository, each naming
+            // the strand that repository became. Everything downstream looks a repository up by its
+            // Source and never has to know the order again.
+            val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
+
+            val written = writeOutput(output, repoOf, braid, plan)
             if (request.keepRemotes) keepRemotes(output, locations)
             if (!request.bare) {
                 progress.step("checking out ${braid.mainlineBranch}")
@@ -128,17 +135,17 @@ class MergeRunner(
      */
     private fun writeOutput(
         output: Path,
-        sources: List<SourceRepository>,
+        repoOf: Map<Source, SourceRepository>,
         braid: BraidInputs,
         plan: MergePlan,
     ): Written {
         TargetRepository.create(output, braid.mainlineBranch, request.force, request.bare).use { target ->
-            val fetch = fetchInputs(target, sources, braid)
+            val fetch = fetchInputs(target, repoOf, braid)
 
             progress.step("writing ${plan.commits.size} commits into $output")
             val write = BraidWriter(
                 target = target,
-                sources = sources,
+                repoOf = repoOf,
                 inputs = braid,
                 plan = plan,
                 options = request.writeOptions,
@@ -153,16 +160,16 @@ class MergeRunner(
     /** Fetches each input into [target], narrowed to the refs its strand was read from. */
     private fun fetchInputs(
         target: TargetRepository,
-        sources: List<SourceRepository>,
+        repoOf: Map<Source, SourceRepository>,
         braid: BraidInputs,
     ): FetchSummary {
         var refs = 0
-        for ((index, source) in sources.withIndex()) {
-            val wanted = braid.sources[index].readRefs
-            progress.step("fetching ${wanted.size} refs from ${source.name}")
-            refs += target.fetchFrom(source, wanted)
+        for (input in braid.sources) {
+            val repo = repoOf.getValue(input.source)
+            progress.step("fetching ${input.readRefs.size} refs from ${repo.name}")
+            refs += target.fetchFrom(repo, input.readRefs)
         }
-        return FetchSummary(sources.size, refs)
+        return FetchSummary(braid.sources.size, refs)
     }
 
     /**

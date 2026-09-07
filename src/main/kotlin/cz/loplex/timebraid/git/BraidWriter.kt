@@ -41,7 +41,13 @@ class WriteSummary(
  */
 class BraidWriter(
     private val target: TargetRepository,
-    private val sources: List<SourceRepository>,
+    /**
+     * The open repository behind each strand, paired by whoever opened them — see
+     * [CommitGraphReader.read], where a [Source] and the repository it was read from are one
+     * iteration. Every lookup here is by [Source], so nothing in this class has to know what order
+     * anything arrived in, or be trusted to get it right.
+     */
+    private val repoOf: Map<Source, SourceRepository>,
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
@@ -68,21 +74,9 @@ class BraidWriter(
     /** Root `.gitmodules` blobs written so far, keyed by their text. */
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
 
-    /**
-     * The open repository behind each strand. The two lists arrive in the same order and are paired
-     * here, once: every later lookup is by [Source], so nothing downstream has to know the order or
-     * be trusted to get it right.
-     */
-    private val repoOf: Map<Source, SourceRepository>
-
     init {
-        require(sources.size == graph.sources.size) {
-            "got ${sources.size} repositories for ${graph.sources.size} strands"
-        }
-        require(sources.map { it.name } == graph.sources.map { it.name }) {
-            "the repositories and the graph disagree about the strands"
-        }
-        repoOf = graph.sources.zip(sources).toMap()
+        val missing = graph.sources.filterNot { repoOf.containsKey(it) }
+        require(missing.isEmpty()) { "no repository given for ${missing.joinToString()}" }
     }
 
     /**
@@ -229,23 +223,25 @@ class BraidWriter(
         var branches = 1
 
         val shared = HashMap<String, Int>()
-        for (source in inputs.sources) {
-            for (branch in source.branches) {
+        for (input in inputs.sources) {
+            for (branch in input.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
                 shared.merge(branch.name, 1) { a, b -> a + b }
             }
         }
 
         var tags = 0
-        for (source in inputs.sources) {
-            for (branch in source.branches) {
+        for (input in inputs.sources) {
+            for (branch in input.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
-                val name = if (shared[branch.name] == 1) branch.name else "${source.name}/${branch.name}"
+                val name =
+                    if (shared[branch.name] == 1) branch.name
+                    else "${input.source.name}/${branch.name}"
                 refs[Constants.R_HEADS + name] = idOf(branch.commit)
                 branches++
             }
-            for (tag in source.tags) {
-                val name = options.tagPrefix.replace("{repo}", source.name) + tag.name
+            for (tag in input.tags) {
+                val name = options.tagPrefix.replace("{repo}", input.source.name) + tag.name
                 refs[Constants.R_TAGS + name] = tagTarget(name, tag)
                 tags++
             }
@@ -285,13 +281,13 @@ class BraidWriter(
      */
     private fun mirrorInputs(refs: MutableMap<String, ObjectId>): Int {
         var added = 0
-        for (source in inputs.sources) {
-            val prefix = Constants.R_REMOTES + source.name + "/"
-            for (branch in source.branches) {
+        for (input in inputs.sources) {
+            val prefix = Constants.R_REMOTES + input.source.name + "/"
+            for (branch in input.branches) {
                 refs[prefix + branch.name] = originalOf(branch.commit).id
                 added++
             }
-            for (tag in source.tags) {
+            for (tag in input.tags) {
                 refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
                 added++
             }

@@ -71,12 +71,15 @@ class BraidWriterTest {
         val opened = names.map { SourceRepository.open(tmp.resolve("$it.git")) }
         try {
             val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER)
+            val repoOf = inputs.sources.map { it.source }.zip(opened).toMap()
             val plan = inputs.graph.braid(inputs.heads).plan(inputs.graph.sources.associateWith { if (it.name == rootRepo) null else subdirs[it.name] ?: it.name })
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
                 // The same order the runner uses: the inputs' objects arrive by fetch, the braid is
                 // written on top of them, and the refs the fetch needed are dropped afterwards.
-                opened.forEachIndexed { i, repo -> target.fetchFrom(repo, inputs.sources[i].readRefs) }
-                val summary = BraidWriter(target, opened, inputs, plan, options).write()
+                for (input in inputs.sources) {
+                    target.fetchFrom(repoOf.getValue(input.source), input.readRefs)
+                }
+                val summary = BraidWriter(target, repoOf, inputs, plan, options).write()
                 target.dropFetchRefs()
                 summary
             }
