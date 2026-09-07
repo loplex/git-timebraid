@@ -53,6 +53,17 @@ class BraidWriter(
     /** Top-level entries of the root repository's trees, which repeat across the whole braid. */
     private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
 
+    /**
+     * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
+     * that tree. [MergePlan.contentOf] names the commit each input *last* made at a point in the
+     * braid, so the same tree is asked about at as many braid positions as the input stood still
+     * for — without this the answer would be recomputed at every one of them.
+     */
+    private val wiring = Array(sources.size) { HashMap<ObjectId, RewiredGitmodules>() }
+
+    /** Root `.gitmodules` blobs written so far, keyed by their text. */
+    private val gitmodulesBlobs = HashMap<String, ObjectId>()
+
     init {
         require(sources.size == graph.sourceCount) {
             "got ${sources.size} repositories for ${graph.sourceCount} strands"
@@ -120,7 +131,9 @@ class BraidWriter(
     private fun treeOf(commit: Int): ObjectId {
         val content = plan.contentOf(commit)
         val subdirEntries = ArrayList<TreeEntry>(content.size)
+        val parts = ArrayList<RewiredGitmodules>(content.size)
         var root: List<TreeEntry> = emptyList()
+        val at = { graph.describe(commit) }
 
         for (source in content.indices) {
             val holder = content[source]
@@ -132,9 +145,27 @@ class BraidWriter(
             } else {
                 subdirEntries += TreeEntry(subdir, FileMode.TREE, tree)
             }
+            parts += wiringOf(source, tree, at)
         }
 
-        return target.trees.assemble(root, subdirEntries) { graph.describe(commit) }
+        return target.trees.assemble(root, subdirEntries, gitmodulesOf(parts, at), at)
+    }
+
+    /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
+    private fun wiringOf(source: Int, tree: ObjectId, at: () -> String): RewiredGitmodules =
+        wiring[source].getOrPut(tree) {
+            val text = sources[source].gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
+            SubmoduleWiring.rewire(text, plan.subdirs[source], sources[source].name, at)
+        }
+
+    /**
+     * The root `.gitmodules` blob for one commit, or `null` when no input describes a submodule
+     * there. Identical files are written once: the wiring only changes when an input adds, moves or
+     * drops a submodule, so one blob typically serves a long stretch of the braid.
+     */
+    private fun gitmodulesOf(parts: List<RewiredGitmodules>, at: () -> String): ObjectId? {
+        val text = SubmoduleWiring.merge(parts, at) ?: return null
+        return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text.toByteArray(Charsets.UTF_8)) }
     }
 
     /**

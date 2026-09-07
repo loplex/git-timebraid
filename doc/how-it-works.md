@@ -88,6 +88,44 @@ you walk forward:
 This is the mechanism behind the whole promise: "the state of every repository at that moment" is not
 computed on demand, it is simply what the commit's tree contains.
 
+A subdirectory entry *is* the input's own root tree object, so nothing is recursed into and no blob is
+copied: the output shares its content with the inputs, and each braided commit costs one small tree.
+
+### The one exception: `.gitmodules`
+
+`.gitmodules` is the only file whose *location* is part of its meaning — git reads it from the
+repository root and nowhere else. Carried along inside a subdirectory it would become text nothing
+reads, describing paths that no longer say where the gitlink it names actually sits. So it is the one
+file the braid writes for itself:
+
+> **`.gitmodules`** at the root of `tree'(c)` = the `[submodule]` sections of every input that has
+> content at `c`, with each section's `path` — and its name — prefixed by that input's subdirectory.
+
+The gitlink entries need no help; they ride along in their input's tree like any other entry, and the
+commit a gitlink names is fetched from the submodule's own url rather than from this repository.
+
+```
+$ git ls-tree -r HEAD
+100644 blob fa14b89…    .gitmodules          <- written by the braid
+100644 blob c70678b…    backend/.gitmodules  <- the input's own, carried along, now inert
+100644 blob 7898192…    backend/a.txt
+160000 commit 4196d3c…  backend/vendor/lib   <- the gitlink, untouched
+
+$ git show HEAD:.gitmodules
+[submodule "backend/vendor/lib"]
+	path = backend/vendor/lib
+	url = https://example.com/lib.git
+```
+
+Two consequences worth knowing:
+
+- The input's own `<subdir>/.gitmodules` stays where the tree rule put it. Rewriting it would mean
+  recursing into that subtree and copying it, which is the cost the tree rule exists to avoid — and
+  git ignores a `.gitmodules` outside the root anyway, so it is inert rather than wrong.
+- A **relative** `url` (`../lib.git`) resolves against the superproject's own remote. The output's
+  remote is not the input's, so a relative url points somewhere else after the merge. Making those
+  absolute in the inputs, before merging, is the fix.
+
 ---
 
 ## Branches

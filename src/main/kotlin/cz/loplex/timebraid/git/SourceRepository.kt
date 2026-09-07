@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.git
 
 import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.ObjectLoader
 import org.eclipse.jgit.lib.ObjectReader
@@ -128,6 +129,28 @@ class SourceRepository private constructor(
                 obj = walk.nextObject()
             }
         }
+    }
+
+    /**
+     * The top-level `.gitmodules` of [tree] read as text, or `null` when the tree has none.
+     *
+     * Only a regular file counts. A `.gitmodules` stored as a symlink is one git itself refuses to
+     * follow, and a tree of that name describes no submodule, so either is passed through as
+     * ordinary content rather than being read as configuration.
+     */
+    fun gitmodules(tree: ObjectId): String? {
+        val parser = CanonicalTreeParser(null, reader(), tree)
+        while (!parser.eof()) {
+            if (parser.entryPathString == Constants.DOT_GIT_MODULES &&
+                (parser.entryFileMode == FileMode.REGULAR_FILE ||
+                    parser.entryFileMode == FileMode.EXECUTABLE_FILE)
+            ) {
+                val bytes = reader().open(parser.entryObjectId, Constants.OBJ_BLOB).cachedBytes
+                return String(bytes, Charsets.UTF_8)
+            }
+            parser.next()
+        }
+        return null
     }
 
     /** Top-level entries of [tree], in the order git stored them. */

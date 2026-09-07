@@ -86,6 +86,8 @@ Three rules, in short:
 - **Trees.** A commit's tree is its first parent's tree with its own subdirectory swapped in. Content
   therefore accumulates along the braid: each subdirectory holds whatever its repository last
   committed at or before this point, and a repository that did not exist yet is simply not there.
+  A subdirectory entry *is* the input's own tree object, so no blob is copied — the one file the braid
+  writes for itself is the root `.gitmodules`, which git reads from nowhere else.
 
 ```
 $ git ls-tree HEAD                    # today
@@ -354,7 +356,13 @@ Not there yet:
 - **The output is written as one uncompressed pack** and comes out larger than the inputs, because
   objects are copied whole rather than as deltas. `git gc` in the output repository recovers the
   difference; nothing is missing either way.
-- **Not transferred:** submodules, `refs/notes/*`, reflogs, and any repository-local configuration.
+- **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
+  output gets a root `.gitmodules` whose paths point at where each gitlink landed, so
+  `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
+  What cannot be rewired is a **relative** url such as `../lib.git`: git resolves those against the
+  superproject's own remote, and the output's remote is not the input's. Make them absolute in the
+  inputs before merging.
+- **Not transferred:** `refs/notes/*`, reflogs, and any repository-local configuration.
 
 ## License
 

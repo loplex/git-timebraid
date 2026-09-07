@@ -27,8 +27,9 @@ import java.time.ZoneOffset
  *   and on every machine. That is what lets an integration test assert an exact output sha.
  * - **Awkward trees on demand.** A file path may contain `/`, so a fixture can put a blob inside a
  *   subdirectory; content is written verbatim, so a fixture can carry `CRLF`, NUL bytes or a
- *   non-ASCII name. Tree entries are ordered the way git orders them ([RootTreeAssembler.GIT_TREE_ORDER]),
- *   which is the only ordering `git fsck` accepts.
+ *   non-ASCII name. A path may also be a *gitlink* rather than a blob, which is how a fixture
+ *   carries a submodule. Tree entries are ordered the way git orders them
+ *   ([RootTreeAssembler.GIT_TREE_ORDER]), which is the only ordering `git fsck` accepts.
  */
 class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable {
 
@@ -46,17 +47,21 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
      * author and committer dates disagree.
      *
      * [files] keys are slash-separated paths: `mapOf("src/App.kt" to "…")` builds the `src` tree.
+     * [gitlinks] puts a submodule entry at a path instead of a blob, pointing at a commit that need
+     * not exist in this repository — which is the situation in every real superproject.
      */
     fun commit(
         message: String,
         parents: List<ObjectId> = emptyList(),
         files: Map<String, String> = mapOf("f" to message),
+        gitlinks: Map<String, ObjectId> = emptyMap(),
         at: Instant? = null,
         authorAt: Instant? = null,
     ): ObjectId = commitBytes(
         message,
         parents,
         files.mapValues { it.value.toByteArray(StandardCharsets.UTF_8) },
+        gitlinks,
         at,
         authorAt,
     )
@@ -66,9 +71,14 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         message: String,
         parents: List<ObjectId> = emptyList(),
         files: Map<String, ByteArray>,
+        gitlinks: Map<String, ObjectId> = emptyMap(),
         at: Instant? = null,
         authorAt: Instant? = null,
     ): ObjectId {
+        val leaves = LinkedHashMap<String, Leaf>()
+        for ((path, bytes) in files) leaves[path] = Leaf.Blob(bytes)
+        for ((path, commit) in gitlinks) leaves[path] = Leaf.Gitlink(commit)
+
         val stamp = at ?: clock.also { clock = clock.plusSeconds(3600) }
         repository.newObjectInserter().use { inserter ->
             val builder = CommitBuilder().apply {
@@ -76,7 +86,7 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
                 // read-only property plus a setter method: the property-access syntax the inspection
                 // suggests does not compile.
                 @Suppress("UsePropertyAccessSyntax")
-                setTreeId(writeTree(inserter, files))
+                setTreeId(writeTree(inserter, leaves))
                 setParentIds(parents)
                 author = who(authorAt ?: stamp)
                 committer = who(stamp)
@@ -88,22 +98,32 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         }
     }
 
-    /** Turns a path -> bytes map into a (possibly nested) tree and returns its id. */
-    private fun writeTree(inserter: ObjectInserter, files: Map<String, ByteArray>): ObjectId {
-        val here = LinkedHashMap<String, ByteArray>()
-        val subdirs = LinkedHashMap<String, MutableMap<String, ByteArray>>()
-        for ((path, bytes) in files) {
+    /** One leaf of a fixture tree: content to store, or a commit to point a gitlink at. */
+    private sealed class Leaf {
+        class Blob(val bytes: ByteArray) : Leaf()
+        class Gitlink(val commit: ObjectId) : Leaf()
+    }
+
+    /** Turns a path -> leaf map into a (possibly nested) tree and returns its id. */
+    private fun writeTree(inserter: ObjectInserter, leaves: Map<String, Leaf>): ObjectId {
+        val here = LinkedHashMap<String, Leaf>()
+        val subdirs = LinkedHashMap<String, MutableMap<String, Leaf>>()
+        for ((path, leaf) in leaves) {
             val slash = path.indexOf('/')
             if (slash < 0) {
-                here[path] = bytes
+                here[path] = leaf
             } else {
-                subdirs.getOrPut(path.substring(0, slash)) { LinkedHashMap() }[path.substring(slash + 1)] = bytes
+                subdirs.getOrPut(path.substring(0, slash)) { LinkedHashMap() }[path.substring(slash + 1)] = leaf
             }
         }
 
         val entries = ArrayList<TreeEntry>()
-        for ((name, bytes) in here) {
-            entries += TreeEntry(name, FileMode.REGULAR_FILE, inserter.insert(Constants.OBJ_BLOB, bytes))
+        for ((name, leaf) in here) {
+            entries += when (leaf) {
+                is Leaf.Blob ->
+                    TreeEntry(name, FileMode.REGULAR_FILE, inserter.insert(Constants.OBJ_BLOB, leaf.bytes))
+                is Leaf.Gitlink -> TreeEntry(name, FileMode.GITLINK, leaf.commit)
+            }
         }
         for ((name, nested) in subdirs) {
             entries += TreeEntry(name, FileMode.TREE, writeTree(inserter, nested))

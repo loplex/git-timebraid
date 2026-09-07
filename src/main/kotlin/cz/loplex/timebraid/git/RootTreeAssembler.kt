@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.ObjectInserter
@@ -33,11 +34,15 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
      * @param rootEntries top-level entries of the root repository's tree, empty when there is no
      *   `--root-repo` or it has no content yet.
      * @param subdirEntries one entry per other repository with content, name = its subdirectory.
+     * @param gitmodules the `.gitmodules` [SubmoduleWiring] built for this commit, or `null` when no
+     *   input describes a submodule here. It replaces the root repository's own entry of that name
+     *   rather than colliding with it, because it already holds that file's sections.
      * @param at describes the commit being built, used only to make a collision error locatable.
      */
     fun assemble(
         rootEntries: List<TreeEntry>,
         subdirEntries: List<TreeEntry>,
+        gitmodules: ObjectId? = null,
         at: () -> String,
     ): ObjectId {
         val byName = LinkedHashMap<String, TreeEntry>(rootEntries.size + subdirEntries.size)
@@ -49,6 +54,10 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
                     "repository at ${at()} — give that repository another subdirectory with " +
                     "<repo>=<subdir>"
             }
+        }
+        if (gitmodules != null) {
+            byName[Constants.DOT_GIT_MODULES] =
+                TreeEntry(Constants.DOT_GIT_MODULES, FileMode.REGULAR_FILE, gitmodules)
         }
 
         val entries = byName.values.sortedWith(GIT_TREE_ORDER)

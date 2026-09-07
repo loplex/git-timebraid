@@ -365,6 +365,63 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `a submodule comes out wired, so git submodule resolves it in the output`() {
+        // The gitlink's target need not exist anywhere here: a superproject records a sha it fetches
+        // from the submodule's own url, and that is what the output has to keep pointing at.
+        val vendored = ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234")
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            val a2 = r.commit(
+                "a2, vendor the library",
+                parents = listOf(a1),
+                files = mapOf(
+                    "a.txt" to "a\n",
+                    ".gitmodules" to "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n" +
+                        "\turl = https://example.com/lib.git\n",
+                ),
+                gitlinks = mapOf("vendor/lib" to vendored),
+                at = at("11:00"),
+            )
+            r.branch("main", a2)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+
+        val out = tmp.resolve("subs")
+        braid("-o", out.toString(), "--no-bare", path("backend.git"), path("webui.git"))
+
+        SourceRepository.open(out).use { repo ->
+            val tip = repo.resolveBranch("main")!!
+            val tree = repo.readReachable(listOf(tip)).first { it.id == tip }.tree
+
+            // The wiring git actually reads: one file at the root, its path pointing at where the
+            // gitlink landed rather than at where it used to be.
+            assertEquals(
+                "[submodule \"backend/vendor/lib\"]\n\tpath = backend/vendor/lib\n" +
+                    "\turl = https://example.com/lib.git\n",
+                repo.gitmodules(tree),
+            )
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            // The gitlink itself, unchanged, at its new path.
+            assertEquals(
+                "160000 commit ${vendored.name}\tbackend/vendor/lib",
+                GitCli.run(out, "ls-tree", "main", "backend/vendor/lib"),
+            )
+            // The command that used to fail outright with "no submodule mapping found". It reports
+            // the submodule as not checked out (the leading `-`), which is what an uninitialised
+            // submodule looks like — the mapping resolves.
+            assertEquals(
+                "-${vendored.name} backend/vendor/lib",
+                GitCli.run(out, "submodule", "status"),
+            )
+        }
+    }
+
+    @Test
     fun `a non-ASCII file name and commit message survive the rewrite`() {
         val subject = "Přidání funkce 🚀"
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->

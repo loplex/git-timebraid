@@ -42,6 +42,18 @@ class RootTreeAssemblerTest {
 
     private fun emptyTree(): ObjectId = inserter.insert(TreeFormatter())
 
+    private fun gitmodulesId(tree: ObjectId): ObjectId {
+        inserter.flush()
+        repo.repository.newObjectReader().use { reader ->
+            val parser = CanonicalTreeParser(null, reader, tree)
+            while (!parser.eof()) {
+                if (parser.entryPathString == Constants.DOT_GIT_MODULES) return parser.entryObjectId
+                parser.next()
+            }
+            error("no '${Constants.DOT_GIT_MODULES}' in the tree")
+        }
+    }
+
     private fun namesOf(tree: ObjectId): List<String> {
         inserter.flush()
         repo.repository.newObjectReader().use { reader ->
@@ -106,6 +118,38 @@ class RootTreeAssemblerTest {
         }
         assertTrue(error.message!!.contains("'webui'"), error.message)
         assertTrue(error.message!!.contains("backend/abc123"), error.message)
+    }
+
+    @Test
+    fun `the synthesized gitmodules replaces the root repository's own, rather than colliding`() {
+        val original = blob("[submodule \"lib\"]\n")
+        val wired = blob("[submodule \"A/lib\"]\n")
+
+        val tree = assembler.assemble(
+            rootEntries = listOf(
+                TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original),
+                TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+            ),
+            subdirEntries = listOf(TreeEntry("A", FileMode.TREE, emptyTree())),
+            gitmodules = wired,
+            at = { "test" },
+        )
+
+        assertEquals(listOf(".gitmodules", "A", "a.txt"), namesOf(tree))
+        assertEquals(wired, gitmodulesId(tree))
+    }
+
+    @Test
+    fun `no gitmodules leaves the root repository's own entry exactly where it was`() {
+        val original = blob("# only a comment\n")
+
+        val tree = assembler.assemble(
+            rootEntries = listOf(TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original)),
+            subdirEntries = listOf(TreeEntry("A", FileMode.TREE, emptyTree())),
+            at = { "test" },
+        )
+
+        assertEquals(original, gitmodulesId(tree))
     }
 
     @Test

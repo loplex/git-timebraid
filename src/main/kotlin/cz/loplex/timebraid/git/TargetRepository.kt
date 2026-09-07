@@ -60,6 +60,14 @@ class TargetRepository private constructor(
         return seen
     }
 
+    /**
+     * Writes a blob and returns its id.
+     *
+     * The output's content is otherwise copied from the inputs object for object, so this exists for
+     * the one file the braid has to invent: the root `.gitmodules` of [SubmoduleWiring].
+     */
+    fun writeBlob(content: ByteArray): ObjectId = inserter.insert(Constants.OBJ_BLOB, content)
+
     /** Writes a commit object and returns its id. */
     fun writeCommit(
         tree: ObjectId,

@@ -10,3 +10,10 @@
 # assembly re-applies the line endings when it packages the launchers, so
 # this line covers the checkout rather than the archive.
 *.bat text eol=crlf
+
+# `git diff --check` reads the .gitmodules fixtures in SubmoduleWiringTest
+# as "space before tab in indent". The tab is .gitmodules syntax -- git
+# writes that file tab-indented -- sitting inside a space-indented Kotlin
+# raw string whose common prefix trimIndent() strips at runtime. The tab
+# is content, not indentation, so the warning does not apply here.
+src/test/kotlin/cz/loplex/timebraid/git/SubmoduleWiringTest.kt whitespace=-space-before-tab
