@@ -102,6 +102,69 @@ class BraidInterleaveTest {
     }
 
     @Test
+    fun `reduces to a k-way merge of the mainline chains when no ref is opted in`() {
+        // The default scope is the chains alone, and those are disjoint paths, so the ready set holds
+        // each chain's front and the earliest wins -- which is a k-way merge, spelled out
+        // independently in KWayBraid. This is the reduction the class's first two properties are
+        // argued from, so it is asserted rather than trusted, on ordinary and skewed histories alike.
+        for (seed in 1..100) {
+            for (monotone in listOf(true, false)) {
+                val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = monotone)
+                assertArrayEquals(
+                    KWayBraid.compute(corpus.graph, corpus.heads),
+                    BraidInterleave.compute(corpus.graph, corpus.heads),
+                    "seed $seed (monotone=$monotone) stopped reducing to a k-way merge",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `matches a whole-graph pass when every commit is opted in`() {
+        // The far end of the scope: put everything in, and the braid has to agree with a plain
+        // topological pass over the whole graph -- the behaviour this tool had before the braid and
+        // the write order were separated, and what `--interleave-ref '*'` asks for.
+        for (seed in 1..100) {
+            val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
+            val everything = IntArray(corpus.graph.size) { it }
+            assertArrayEquals(
+                WholeGraphBraid.compute(corpus.graph, corpus.heads),
+                BraidInterleave.compute(corpus.graph, corpus.heads, everything),
+                "seed $seed diverges from a whole-graph pass with everything in scope",
+            )
+        }
+    }
+
+    @Test
+    fun `an opted-in ref delays the merge that merges it in`() {
+        // The middle of the spectrum, and the whole point of the option: f is timestamped after the
+        // merge m that brings it in. By default m lands by its own time (30), before b2 (35). Opt f
+        // in and m has to wait for it, which pushes m past B's history -- the caller trading the
+        // no-future-edge property for having that branch's time taken into account.
+        val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
+        val heads = spec.ids("m", "b2")
+
+        val byDefault = BraidInterleave.compute(spec.graph, heads)
+        val withF = BraidInterleave.compute(spec.graph, heads, spec.ids("f"))
+
+        assertEquals(listOf("a1", "a2", "b1", "m", "b2"), spec.names(byDefault))
+        assertEquals(listOf("a1", "a2", "b1", "b2", "m"), spec.names(withF))
+    }
+
+    @Test
+    fun `opting in a ref that is already on a mainline chain changes nothing`() {
+        // Its ancestors are in scope either way, so there is nothing new to wait for. Worth pinning:
+        // a user naming the mainline itself, or a tag sitting on it, should not see the braid shift.
+        val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
+        val heads = spec.ids("m", "b2")
+
+        assertArrayEquals(
+            BraidInterleave.compute(spec.graph, heads),
+            BraidInterleave.compute(spec.graph, heads, spec.ids("a2", "m")),
+        )
+    }
+
+    @Test
     fun `never gives a commit a cross-repository predecessor timestamped later than itself`() {
         // This is one specific, narrower property than "checking out a commit never shows you
         // another repository's future" -- it is only about the artificial braid EDGE this ordering

@@ -59,33 +59,4 @@ object TopoOrder {
         }
         return order
     }
-
-    private fun earliestFirst(graph: CommitGraph): Comparator<Int> = Comparator { a, b ->
-        val byTime = graph.timeOf(a).compareTo(graph.timeOf(b))
-        if (byTime != 0) byTime else a.compareTo(b)
-    }
-}
-
-/**
- * Child adjacency in compressed form: [starts] slices [targets] per commit. Built once per ordering
- * pass, because [CommitGraph] stores parents and Kahn's algorithm walks the edges the other way.
- */
-private class ChildEdges(val starts: IntArray, val targets: IntArray) {
-
-    companion object {
-        fun of(graph: CommitGraph): ChildEdges {
-            val size = graph.size
-            val starts = IntArray(size + 1)
-            for (commit in 0 until size) {
-                for (parent in graph.parentsOf(commit)) starts[parent + 1]++
-            }
-            for (commit in 0 until size) starts[commit + 1] += starts[commit]
-            val cursor = starts.copyOf(size)
-            val targets = IntArray(starts[size])
-            for (commit in 0 until size) {
-                for (parent in graph.parentsOf(commit)) targets[cursor[parent]++] = commit
-            }
-            return ChildEdges(starts, targets)
-        }
-    }
 }
