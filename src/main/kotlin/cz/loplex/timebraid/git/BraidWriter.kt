@@ -223,7 +223,7 @@ class BraidWriter(
             for (branch in source.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
                 val name = if (shared[branch.name] == 1) branch.name else "${source.name}/${branch.name}"
-                refs[Constants.R_HEADS + name] = idOf(branch.commit)
+                refs[Constants.R_HEADS + name] = idOf(branch.commit.index)
                 branches++
             }
             for (tag in source.tags) {
@@ -270,11 +270,11 @@ class BraidWriter(
         for (source in inputs.sources) {
             val prefix = Constants.R_REMOTES + source.name + "/"
             for (branch in source.branches) {
-                refs[prefix + branch.name] = inputs.commits[branch.commit].id
+                refs[prefix + branch.name] = inputs.commits[branch.commit.index].id
                 added++
             }
             for (tag in source.tags) {
-                refs[prefix + "tags/" + tag.name] = inputs.commits[tag.commit].id
+                refs[prefix + "tags/" + tag.name] = inputs.commits[tag.commit.index].id
                 added++
             }
         }
@@ -288,7 +288,7 @@ class BraidWriter(
      * longer exists under that name.
      */
     private fun tagTarget(name: String, tag: BraidTag): ObjectId {
-        val commit = idOf(tag.commit)
+        val commit = idOf(tag.commit.index)
         val annotation = tag.annotation ?: return commit
         return target.writeAnnotatedTag(
             name = name,

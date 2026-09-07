@@ -31,7 +31,7 @@ class BraidInputs(
     val interleaveTips: List<Commit> = emptyList(),
 )
 
-/** What was read out of one input repository, with every ref resolved to a graph index. */
+/** What was read out of one input repository, with every ref resolved to the commit it names. */
 class SourceInputs(
     val name: String,
     val branches: List<BraidRef>,
@@ -46,10 +46,24 @@ class SourceInputs(
 )
 
 /** A branch resolved to the commit it points at. */
-class BraidRef(val name: String, val commit: Int)
+class BraidRef(val name: String, val commit: Commit)
 
 /** A tag resolved to the commit it peels to, keeping its annotation if it had one. */
-class BraidTag(val name: String, val commit: Int, val annotation: TagAnnotation?)
+class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotation?)
+
+/**
+ * A ref while the graph is still being built, when the commits it will be expressed in do not exist
+ * yet. Turned into a [BraidRef] or a [BraidTag] once [CommitGraphBuilder.build] has run.
+ */
+private class UnresolvedRef(val name: String, val commit: Int, val annotation: TagAnnotation?)
+
+/** One repository's refs, still as indices, for the same reason. */
+private class UnresolvedSource(
+    val name: String,
+    val branches: List<UnresolvedRef>,
+    val tags: List<UnresolvedRef>,
+    val readRefs: List<String>,
+)
 
 /**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
@@ -89,7 +103,7 @@ object CommitGraphReader {
         val builder = CommitGraphBuilder()
         val heads = IntArray(repositories.size)
         val commits = ArrayList<SourceCommit?>()
-        val inputs = ArrayList<SourceInputs>(repositories.size)
+        val unresolved = ArrayList<UnresolvedSource>(repositories.size)
 
         for ((repoIndex, repo) in repositories.withIndex()) {
             val source = builder.addSource(repo.name)
@@ -128,12 +142,13 @@ object CommitGraphReader {
             }
 
             heads[repoIndex] = builder.indexOf(source, mainlineTip.name)
-            inputs += SourceInputs(
+            unresolved += UnresolvedSource(
                 name = repo.name,
-                branches = selectedBranches.mapNotNull { resolve(builder, source, it.name, it.target) },
-                tags = selectedTags.mapNotNull { tag ->
-                    resolve(builder, source, tag.name, tag.target)
-                        ?.let { BraidTag(it.name, it.commit, tag.annotation) }
+                branches = selectedBranches.mapNotNull {
+                    resolve(builder, source, it.name, it.target, annotation = null)
+                },
+                tags = selectedTags.mapNotNull {
+                    resolve(builder, source, it.name, it.target, it.annotation)
                 },
                 readRefs = readRefs.toList(),
             )
@@ -144,6 +159,15 @@ object CommitGraphReader {
             "the graph has ${graph.size} commits but ${commits.count { it != null }} were read"
         }
 
+        val inputs = unresolved.map { source ->
+            SourceInputs(
+                name = source.name,
+                branches = source.branches.map { BraidRef(it.name, graph.commits[it.commit]) },
+                tags = source.tags.map { BraidTag(it.name, graph.commits[it.commit], it.annotation) },
+                readRefs = source.readRefs,
+            )
+        }
+
         @Suppress("UNCHECKED_CAST")
         return BraidInputs(
             graph = graph,
@@ -151,7 +175,7 @@ object CommitGraphReader {
             mainlineBranch = mainline,
             commits = commits as List<SourceCommit>,
             sources = inputs,
-            interleaveTips = interleaveTips(interleaveRefs, inputs, graph),
+            interleaveTips = interleaveTips(interleaveRefs, inputs),
         )
     }
 
@@ -164,9 +188,10 @@ object CommitGraphReader {
         source: Int,
         name: String,
         target: ObjectId,
-    ): BraidRef? {
+        annotation: TagAnnotation?,
+    ): UnresolvedRef? {
         val index = builder.indexOf(source, target.name)
-        return if (index == CommitGraph.NO_COMMIT) null else BraidRef(name, index)
+        return if (index == CommitGraph.NO_COMMIT) null else UnresolvedRef(name, index, annotation)
     }
 
     /**
@@ -177,14 +202,10 @@ object CommitGraphReader {
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
      * and a bare star is every ref — which puts the whole loaded graph in scope.
      */
-    private fun interleaveTips(
-        patterns: List<String>,
-        inputs: List<SourceInputs>,
-        graph: CommitGraph,
-    ): List<Commit> {
+    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
         if (patterns.isEmpty()) return emptyList()
         val matchers = patterns.map { glob(it) }
-        val tips = LinkedHashSet<Int>()
+        val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
             for (branch in input.branches) {
                 if (matchers.any { it.matches("${Constants.R_HEADS}${branch.name}") }) {
@@ -195,7 +216,7 @@ object CommitGraphReader {
                 if (matchers.any { it.matches("${Constants.R_TAGS}${tag.name}") }) tips += tag.commit
             }
         }
-        return tips.map { graph.commits[it] }
+        return tips.toList()
     }
 
     /** A glob over ref names: `*` is the only metacharacter and it spans path separators. */
