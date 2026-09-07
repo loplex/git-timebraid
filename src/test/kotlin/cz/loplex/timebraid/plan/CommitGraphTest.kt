@@ -94,5 +94,5 @@ class CommitGraphTest {
         orderingTime: LongArray,
         commitIds: Array<String>,
         sourceNames: List<String> = listOf("A"),
-    ) = CommitGraph(DenseGraph.of(parents, sourceIndex, orderingTime, commitIds, sourceNames))
+    ) = CommitGraph.of(parents, sourceIndex, orderingTime, commitIds, sourceNames)
 }

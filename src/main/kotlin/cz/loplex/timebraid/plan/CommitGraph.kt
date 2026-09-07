@@ -1,8 +1,5 @@
 package cz.loplex.timebraid.plan
 
-/** Thrown when a set of parent edges that is required to be a DAG turns out to contain a cycle. */
-class CyclicGraphException(message: String) : IllegalStateException(message)
-
 /**
  * One input repository — one *strand*, in the vocabulary of the README.
  *
@@ -45,7 +42,6 @@ class Source internal constructor(
  */
 class Commit internal constructor(
     private val graph: CommitGraph,
-    private val core: DenseGraph,
     private val index: Int,
 ) {
     /**
@@ -61,16 +57,16 @@ class Commit internal constructor(
     }
 
     /** Original commit sha in production, a short name in tests. */
-    val id: String get() = core.ids[index]
+    val id: String get() = graph.idAt(index)
 
     /** Timestamp used to interleave the strands, as resolved by the reader according to `--order-by`. */
-    val time: Long get() = core.time[index]
+    val time: Long get() = graph.timeAt(index)
 
     /** The input repository this commit came from. */
-    val source: Source get() = graph.sources[core.source[index]]
+    val source: Source get() = graph.sources[graph.sourceAt(index)]
 
     /** Parents in their original order, so the first entry is the first parent. */
-    val parents: List<Commit> get() = graph.commitsAt(core.edges[index])
+    val parents: List<Commit> get() = graph.parentsAt(index)
 
     /** First parent, or `null` for a root commit. */
     val firstParent: Commit? get() = parents.firstOrNull()
@@ -90,7 +86,7 @@ class Commit internal constructor(
  * this class holds privately, and nothing else in the package holds one: a stage of the pipeline is
  * given commits and works in commits, deriving whatever numbering it needs for itself.
  */
-class CommitGraph internal constructor(private val core: DenseGraph) {
+class CommitGraph private constructor(private val core: DenseGraph) {
 
     /** Number of commits; every commit's index falls in `0 until size`. */
     val size: Int get() = core.size
@@ -98,7 +94,7 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
     /** The input repositories, in the order they were read. */
     val sources: List<Source> = core.sourceNames.mapIndexed { index, name -> Source(this, index, name) }
 
-    private val handles: Array<Commit> = Array(core.size) { Commit(this, core, it) }
+    private val handles: Array<Commit> = Array(core.size) { Commit(this, it) }
 
     /** Every commit of every input repository. Position in this list is that commit's index. */
     val commits: List<Commit> = handles.asList()
@@ -137,71 +133,115 @@ class CommitGraph internal constructor(private val core: DenseGraph) {
 
     internal fun commitsAt(indices: IntArray): List<Commit> = indices.map { handles[it] }
 
+    // One row of the storage, for the [Commit] that names it. A commit is a handle onto this graph,
+    // so it reads through the graph rather than holding the arrays itself — which is what lets the
+    // storage type stay private to this file.
+    internal fun idAt(commit: Int): String = core.ids[commit]
+    internal fun timeAt(commit: Int): Long = core.time[commit]
+    internal fun sourceAt(commit: Int): Int = core.source[commit]
+    internal fun parentsAt(commit: Int): List<Commit> = commitsAt(core.edges[commit])
+
     companion object {
         /** Returned where a commit index is expected but there is none (no parent, no content yet). */
         const val NO_COMMIT: Int = -1
+
+        /**
+         * Builds a graph from the dense arrays, which are copied and shape-checked on the way in.
+         *
+         * This is the only door: the storage type is private to this file, so a caller — the builder,
+         * or a test standing one up by hand — passes the arrays and never names it.
+         */
+        internal fun of(
+            parents: Array<IntArray>,
+            sourceIndex: IntArray,
+            orderingTime: LongArray,
+            commitIds: Array<String>,
+            sourceNames: List<String>,
+        ): CommitGraph =
+            CommitGraph(DenseGraph.of(parents, sourceIndex, orderingTime, commitIds, sourceNames))
     }
 }
 
 /**
- * Verifies that [parents] contains no cycle, and throws [CyclicGraphException] naming the offending
- * chain if it does.
+ * The commit graph as [CommitGraph] stores it: parallel arrays indexed by a dense commit number.
  *
- * This runs in production, not only in tests. Reparenting adds an edge from each braid commit to its
- * predecessor in the braid sequence; as long as that sequence is a valid topological order, no cycle
- * can arise. So a cycle here means the ordering contradicted ancestry, and the only safe response is
- * to fail loudly before a single object is written.
+ * A [Commit] is a handle onto one row of these, which is what keeps a history of 14 000 commits to a
+ * handful of arrays rather than an object per edge. This is storage and nothing else, and its reach
+ * is [CommitGraph] and the commits that graph hands out: every pass takes commits and derives the
+ * numbering it works in for itself. Nothing outside this package can name the type either.
  *
- * Iterative depth-first search — the first-parent chain of a real repository is tens of thousands of
- * commits deep, which recursion would not survive.
+ * Immutable in use: the arrays are copied on the way in and nothing writes into them afterwards. That
+ * matters because two public objects can share the same instance — a [Braid] and the [CommitGraph] it
+ * came from do.
  */
-internal fun requireAcyclic(parents: Array<IntArray>, describe: (Int) -> String = { "#$it" }) {
-    val white: Byte = 0
-    val gray: Byte = 1
-    val black: Byte = 2
+private class DenseGraph private constructor(
+    val edges: Array<IntArray>,
+    val source: IntArray,
+    val time: LongArray,
+    val ids: Array<String>,
+    val sourceNames: List<String>,
+) {
+    val size: Int get() = edges.size
 
-    val size = parents.size
-    val color = ByteArray(size)
-    val stackNode = IntArray(size)
-    val stackNextParent = IntArray(size)
+    /** `<repository>/<id>`, for diagnostics. The same text [Commit.toString] gives. */
+    fun describe(commit: Int): String = "${sourceNames[source[commit]]}/${ids[commit]}"
 
-    for (root in 0 until size) {
-        if (color[root] != white) continue
-        var top = 0
-        stackNode[0] = root
-        stackNextParent[0] = 0
-        color[root] = gray
-        while (top >= 0) {
-            val node = stackNode[top]
-            val parentsOfNode = parents[node]
-            if (stackNextParent[top] < parentsOfNode.size) {
-                val parent = parentsOfNode[stackNextParent[top]++]
-                when (color[parent]) {
-                    white -> {
-                        color[parent] = gray
-                        top++
-                        stackNode[top] = parent
-                        stackNextParent[top] = 0
-                    }
-                    gray -> throw CyclicGraphException(cycleMessage(stackNode, top, parent, describe))
-                    else -> Unit
-                }
-            } else {
-                color[node] = black
-                top--
+    companion object {
+        /**
+         * Copies the arrays in and checks the shape: matching lengths, every source index and every
+         * parent index in range, no commit its own parent, no parent listed twice.
+         *
+         * Acyclicity is deliberately *not* checked. A graph read out of a repository is a DAG by
+         * definition, and the one place where that can genuinely break is reparenting, which checks
+         * explicitly — see [requireAcyclic].
+         */
+        fun of(
+            parents: Array<IntArray>,
+            sourceIndex: IntArray,
+            orderingTime: LongArray,
+            commitIds: Array<String>,
+            sourceNames: List<String>,
+        ): DenseGraph {
+            val size = parents.size
+            require(sourceIndex.size == size) {
+                "sourceIndex has ${sourceIndex.size} entries, expected $size"
             }
+            require(orderingTime.size == size) {
+                "orderingTime has ${orderingTime.size} entries, expected $size"
+            }
+            require(commitIds.size == size) {
+                "commitIds has ${commitIds.size} entries, expected $size"
+            }
+
+            val graph = DenseGraph(
+                Array(size) { parents[it].copyOf() },
+                sourceIndex.copyOf(),
+                orderingTime.copyOf(),
+                commitIds.copyOf(),
+                sourceNames,
+            )
+
+            for (commit in 0 until size) {
+                require(graph.source[commit] in sourceNames.indices) {
+                    "commit #$commit has source index ${graph.source[commit]}, " +
+                        "expected 0..${sourceNames.size - 1}"
+                }
+                val parentsOfCommit = graph.edges[commit]
+                for (i in parentsOfCommit.indices) {
+                    val parent = parentsOfCommit[i]
+                    require(parent in 0 until size) {
+                        "commit #$commit has parent index $parent, expected 0..${size - 1}"
+                    }
+                    require(parent != commit) { "commit ${graph.describe(commit)} is its own parent" }
+                    for (j in 0 until i) {
+                        require(parentsOfCommit[j] != parent) {
+                            "commit ${graph.describe(commit)} lists parent " +
+                                "${graph.describe(parent)} twice"
+                        }
+                    }
+                }
+            }
+            return graph
         }
     }
-}
-
-private fun cycleMessage(
-    stackNode: IntArray,
-    top: Int,
-    closing: Int,
-    describe: (Int) -> String,
-): String {
-    var from = top
-    while (from > 0 && stackNode[from] != closing) from--
-    val chain = (from..top).joinToString(" -> ") { describe(stackNode[it]) }
-    return "cycle in the parent chain: $chain -> ${describe(closing)}"
 }

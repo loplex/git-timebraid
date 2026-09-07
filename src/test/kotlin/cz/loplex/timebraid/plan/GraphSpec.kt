@@ -18,8 +18,6 @@ package cz.loplex.timebraid.plan
  */
 class GraphSpec internal constructor(
     val graph: CommitGraph,
-    /** The same graph the passes see — for the tests that drive one directly. */
-    internal val core: DenseGraph,
     private val byName: Map<String, Int>,
 ) {
 
@@ -81,8 +79,7 @@ class GraphSpec internal constructor(
                     }
                 }
             }
-            val core = builder.dense()
-            return GraphSpec(CommitGraph(core), core, byName)
+            return GraphSpec(builder.build(), byName)
         }
     }
 }

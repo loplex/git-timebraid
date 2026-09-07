@@ -79,17 +79,14 @@ internal class CommitGraphBuilder {
             "referenced as a parent but never added: $listed$more" +
                 " — the input history is incomplete (a shallow or partial clone?)"
         }
-        return CommitGraph(dense())
+        return CommitGraph.of(
+            parents = Array(size) { parents[it]!! },
+            sourceIndex = IntArray(size) { sourceOf[it] },
+            orderingTime = LongArray(size) { orderingTime[it] },
+            commitIds = Array(size) { ids[it] },
+            sourceNames = ArrayList(sourceNames),
+        )
     }
-
-    /** The same graph in the form the passes run on. Test scope reaches for this; production does not. */
-    fun dense(): DenseGraph = DenseGraph.of(
-        parents = Array(size) { parents[it]!! },
-        sourceIndex = IntArray(size) { sourceOf[it] },
-        orderingTime = LongArray(size) { orderingTime[it] },
-        commitIds = Array(size) { ids[it] },
-        sourceNames = ArrayList(sourceNames),
-    )
 
     private fun intern(source: Int, id: String): Int =
         indexBySource[source].getOrPut(id) {
