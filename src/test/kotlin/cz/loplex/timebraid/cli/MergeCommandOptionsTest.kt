@@ -9,6 +9,7 @@ import org.eclipse.jgit.util.FS
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -74,6 +75,35 @@ class MergeCommandOptionsTest {
                 repo.refDatabase.getRefsByPrefix("refs/remotes/webui/").isNotEmpty(),
                 "webui refs were not fetched",
             )
+        }
+    }
+
+    @Test
+    fun `--keep-remotes resolves a relative input into an absolute remote URL`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+        val cwd = Path.of("").toAbsolutePath()
+        // A relative path between the two only exists when they share a filesystem root, which on
+        // Windows they need not.
+        assumeTrue(cwd.root == tmp.root, "temp directory is on another root than the working directory")
+        val backend = cwd.relativize(tmp.resolve("backend.git")).toString()
+        val webui = cwd.relativize(tmp.resolve("webui.git")).toString()
+        assumeTrue(!Path.of(backend).isAbsolute, "relativize did not produce a relative path")
+
+        run("-o", out.toString(), "--keep-remotes", backend, webui)
+
+        // git stores a remote's URL verbatim and resolves it against the repository holding it, so
+        // the relative path the caller typed has to be made absolute on the way in -- otherwise the
+        // fetch looks for the input underneath the output and the whole run fails.
+        FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
+            for (name in listOf("backend", "webui")) {
+                val url = repo.config.getString("remote", name, "url")
+                assertTrue(Path.of(url).isAbsolute, "remote '$name' recorded a relative url: $url")
+                assertTrue(
+                    repo.refDatabase.getRefsByPrefix("refs/remotes/$name/").isNotEmpty(),
+                    "$name refs were not fetched",
+                )
+            }
         }
     }
 

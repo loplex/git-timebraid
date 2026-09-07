@@ -138,11 +138,13 @@ class MergeRunner(
      */
     private fun resolveInputs(): List<LocalInput> {
         if (request.inputs.none { it.isRemote }) {
-            return request.inputs.map { LocalInput(Path.of(it.location), it.name, it.location) }
+            return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
         }
         val root = cloneRoot().also { it.createDirectories() }
         return request.inputs.map { input ->
-            if (!input.isRemote) return@map LocalInput(Path.of(input.location), input.name, input.location)
+            if (!input.isRemote) {
+                return@map LocalInput(Path.of(input.location), input.name, localRemote(input.location))
+            }
 
             val dir = root.resolve("${input.name}.git")
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
@@ -155,6 +157,17 @@ class MergeRunner(
             LocalInput(dir, input.name, input.location)
         }
     }
+
+    /**
+     * A local input recorded as its own remote URL, made absolute.
+     *
+     * `git remote add` stores the string verbatim, and every later `git fetch` runs with the
+     * *output* repository as its working directory — so a relative path, which is the ordinary way
+     * to name a repository on the command line, would be resolved against the wrong directory and
+     * the fetch would fail. A remote input keeps its URL, which needs no such treatment.
+     */
+    private fun localRemote(location: String): String =
+        Path.of(location).toAbsolutePath().normalize().toString()
 
     private fun cloneRoot(): Path =
         request.output?.toAbsolutePath()?.parent?.resolve(CLONE_DIR)
