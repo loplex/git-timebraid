@@ -55,7 +55,7 @@ class BraidCorpusPropertiesTest {
 
         // build() reparents and orders, and fails loudly on a braid that contradicts ancestry, so
         // getting a plan back at all is already part of what is being checked here.
-        val plan = graph.braid(braidInputs.heads).plan(graph.sources.map { it.name })
+        val plan = graph.braid(braidInputs.heads).plan(graph.sources.associateWith { it.name })
         val wholeGraph = WholeGraphBraid.compute(graph, braidInputs.heads)
 
         val futureEdges = futureBraidEdges(plan.braid)

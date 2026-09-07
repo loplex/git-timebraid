@@ -95,7 +95,7 @@ class MergeRunner(
             }
             val plan = braid.graph
                 .braid(braid.heads, braid.interleaveTips)
-                .plan(request.inputs.map { it.subdir })
+                .plan(braid.graph.sources.associateWith { request.inputs[it.index].subdir })
 
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)

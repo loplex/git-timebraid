@@ -32,7 +32,7 @@ class MergePlan private constructor(
     private val core: DenseGraph,
     private val braidOrder: IntArray,
     private val order: IntArray,
-    private val subdirs: List<String?>,
+    private val subdirs: Map<Source, String?>,
     private val newParents: Array<IntArray>,
     private val content: Array<IntArray>,
     private val onBraid: BooleanArray,
@@ -45,7 +45,7 @@ class MergePlan private constructor(
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
             commit = graph.commitAt(commit),
-            subdir = subdirs[core.source[commit]],
+            subdir = subdirs.getValue(graph.commitAt(commit).source),
             parents = graph.commitsAt(newParents[commit]),
         )
     }
@@ -57,10 +57,10 @@ class MergePlan private constructor(
     fun isOnBraid(commit: Commit): Boolean = onBraid[commit.index]
 
     /** Subdirectory of the repository [commit] came from, `null` for the root repository. */
-    fun subdirOf(commit: Commit): String? = subdirs[commit.source.index]
+    fun subdirOf(commit: Commit): String? = subdirs.getValue(commit.source)
 
     /** Subdirectory [source] occupies in the output, `null` for the repository placed at the root. */
-    fun subdirOf(source: Source): String? = subdirs[source.index]
+    fun subdirOf(source: Source): String? = subdirs.getValue(source)
 
     /**
      * The tree rule in symbolic form: for each input repository that has content at [commit], the
@@ -95,7 +95,7 @@ class MergePlan private constructor(
         return buildString {
             appendLine("repositories:")
             for (source in graph.sources) {
-                appendLine("  ${source.name} -> ${subdirs[source.index]?.plus("/") ?: "<root>"}")
+                appendLine("  ${source.name} -> ${subdirs.getValue(source)?.plus("/") ?: "<root>"}")
             }
             appendLine("commits: ${graph.size} (braid: ${braidOrder.size})")
             appendLine("parent counts: $counts")
@@ -140,7 +140,7 @@ class MergePlan private constructor(
             braidOrder: IntArray,
             order: IntArray,
             newParents: Array<IntArray>,
-            subdirs: List<String?>,
+            subdirs: Map<Source, String?>,
         ): MergePlan {
             validateSubdirs(graph, subdirs)
 
@@ -194,18 +194,21 @@ class MergePlan private constructor(
             return content as Array<IntArray>
         }
 
-        private fun validateSubdirs(graph: CommitGraph, subdirs: List<String?>) {
+        private fun validateSubdirs(graph: CommitGraph, subdirs: Map<Source, String?>) {
+            for (source in graph.sources) {
+                require(source in subdirs) { "no subdirectory given for repository ${source.name}" }
+            }
             require(subdirs.size == graph.sources.size) {
                 "got ${subdirs.size} subdirectories for ${graph.sources.size} repositories"
             }
-            require(subdirs.count { it == null } <= 1) {
+            require(subdirs.values.count { it == null } <= 1) {
                 "at most one repository can be placed at the root"
             }
             val seen = HashSet<String>()
-            for ((source, subdir) in subdirs.withIndex()) {
+            for ((source, subdir) in subdirs) {
                 if (subdir == null) continue
                 require(subdir.isNotBlank() && !subdir.contains('/') && subdir != "." && subdir != "..") {
-                    "'$subdir' is not a usable subdirectory name for ${graph.sources[source]}"
+                    "'$subdir' is not a usable subdirectory name for $source"
                 }
                 require(seen.add(subdir)) {
                     "two repositories would be placed in the same subdirectory '$subdir'"

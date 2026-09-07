@@ -45,7 +45,7 @@ class CommitGraphReaderTest {
             assertEquals(a2, braid.heads[0].id)
             assertEquals(b1, braid.heads[1].id)
 
-            val plan = braid.graph.braid(braid.heads).plan(listOf("backend", "webui"))
+            val plan = braid.graph.braid(braid.heads).plan(braid.graph.sources.associateWith { it.name })
             assertEquals(3, plan.braid.size)
         }
     }
@@ -127,7 +127,7 @@ class CommitGraphReaderTest {
         open("backend", "webui").useAll { repos ->
             fun firstOnBraid(orderBy: OrderBy): String {
                 val braid = CommitGraphReader.read(repos, orderBy)
-                val plan = braid.graph.braid(braid.heads).plan(listOf("backend", "webui"))
+                val plan = braid.graph.braid(braid.heads).plan(braid.graph.sources.associateWith { it.name })
                 val firstSha = plan.braid.first().id
                 return if (firstSha == braid.heads[0].id) "backend" else "webui"
             }

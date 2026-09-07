@@ -43,7 +43,11 @@ class GraphSpec internal constructor(
     fun names(commits: List<Commit>): List<String> = commits.map { it.id }
 
     /** One subdirectory per repository, named after the repository. */
-    fun subdirs(): List<String?> = graph.sources.map { it.name }
+    fun subdirs(): Map<Source, String?> = graph.sources.associateWith { it.name }
+
+    /** The given subdirectories, one per repository in the order the fixture declares them. */
+    fun subdirs(vararg values: String?): Map<Source, String?> =
+        graph.sources.take(values.size).withIndex().associate { (i, source) -> source to values[i] }
 
     companion object {
 

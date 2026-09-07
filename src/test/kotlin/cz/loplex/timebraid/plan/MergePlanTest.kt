@@ -63,7 +63,7 @@ class MergePlanTest {
     @Test
     fun `one repository may be placed at the root`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
-        val plan = spec.graph.braid(spec.commits("a2", "b1")).plan(listOf(null, "webui"))
+        val plan = spec.graph.braid(spec.commits("a2", "b1")).plan(spec.subdirs(null, "webui"))
 
         assertNull(plan.subdirOf(spec.commit("a1")))
         assertEquals("webui", plan.subdirOf(spec.commit("b1")))
@@ -75,7 +75,7 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         val failure = assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(listOf("shared", "shared"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("shared", "shared"))
         }
 
         assertTrue(failure.message!!.contains("same subdirectory"))
@@ -86,7 +86,7 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(listOf(null, null))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(null, null))
         }
     }
 
@@ -95,19 +95,19 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(listOf("a/b", "B"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("a/b", "B"))
         }
         assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(listOf("..", "B"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("..", "B"))
         }
     }
 
     @Test
-    fun `rejects a subdirectory list that does not match the repositories`() {
+    fun `rejects a set of subdirectories that does not cover the repositories`() {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(listOf("A"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("A"))
         }
     }
 
