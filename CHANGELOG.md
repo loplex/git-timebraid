@@ -13,9 +13,13 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Eighteen changes alter what a command line written for 0.1.0 does:
+Twenty changes alter what a command line written for 0.1.0 does:
 
-- `.git` as a destination, `repo=.git`, is refused.\
+- `repo=subdir` is now `repo::=subdir`.
+
+- A location holding a `::` of its own, an IPv6 URL for one, now ends with a bare `::`: `https://[fe80::1]/repo.git::`.
+
+- `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::=.git` now, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
 
 - A shallow or a partial clone is refused as an input, on a dry run too.\
@@ -86,12 +90,28 @@ Eighteen changes alter what a command line written for 0.1.0 does:
 
 ### Changed
 
+- **`<repo>=<subdir>` is now `<repo>::=<subdir>`.**\
+  Everything before the last `::` is the location, verbatim.\
+  Everything after it is `[<name>][=<subdir>]`.\
+  A location holding a `::` of its own ends with a bare one.\
+  An IPv6 URL therefore needs one: `https://[fe80::1]/repo.git::`, `git@[::1]:repo.git::`.
+
+- **A `\` escapes `=`, `:` and itself in the suffix.**\
+  A bare `:` is refused there rather than passed through.\
+  That is what makes the last `::` the separator: a colon is written `\:`, so no suffix holds one.
+
 - **The archives carry each dependency as its own jar in `lib/`,
   beside `git-timebraid.jar`, and a release no longer offers the jar on its own.**\
   The program's jar names the others in its manifest, so `java -jar lib/git-timebraid.jar` still runs it,
   and every jar keeps the license files its project shipped in it.\
   `doc/legal/` lists each library with the license it is used under, beside the texts of those licenses;
   NOTICE points there.
+
+### Added
+
+- **A destination may be a nested path.**\
+  `git-timebraid -o out backend::=libs/backend webui::=apps/webui`\
+  Inputs sharing a prefix share the tree for it.
 
 ### Fixed
 
@@ -149,8 +169,8 @@ Eighteen changes alter what a command line written for 0.1.0 does:
   `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare input as well:
   nothing overrode them, so they read its refs or its objects from another repository.
 
-- **A missing location now names the suffix read off its end.**\
-  `/some/path::libs` used to report only `/some/path` when nothing is there, and so did `/some/path=libs`.\
+- **A missing location now names the text the `::` dropped.**\
+  `/some/path::libs` used to report only `/some/path` when nothing is there.\
   The reading is unchanged, and which one was meant is still not guessed at.\
   The run fails on the location either way, so the refusal says what it cut off.
 

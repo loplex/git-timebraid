@@ -82,8 +82,8 @@ class MergePlan private constructor(
      * A repository that has committed nothing by this point in the braid is absent from the map
      * rather than present as a blank.
      *
-     * The written tree of [commit] follows from this directly —
-     * one entry per repository in the map, each pointing at that commit's original tree —
+     * The written tree of [commit] follows from this —
+     * [TreeAssembler] owns how a destination becomes entries, a nested one and a splice among them —
      * and so does the promise the whole tool is built on: whatever repository a commit came from,
      * the other repositories are present at whatever they had last committed at that point in the braid.
      *
