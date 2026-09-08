@@ -32,22 +32,7 @@ internal class KahnOrder<T : Any>(
     private val precedence: Comparator<T>,
 ) {
 
-    private val space = graph.indexSpace
-
-    /** The node at each index, `null` where the index belongs to a node outside this graph. */
-    private val nodeAt = MutableList<T?>(space) { null }
-
-    /** Parents of every node, by index; `null` where this graph has no node at that index. */
-    private val edges = arrayOfNulls<IntArray>(space)
-
-    init {
-        for (node in graph.nodes) {
-            val at = graph.indexOf(node)
-            nodeAt[at] = node
-            val parents = graph.parentsOf(node)
-            edges[at] = IntArray(parents.size) { graph.indexOf(parents[it]) }
-        }
-    }
+    private val adjacency = Adjacency.of(graph)
 
     /**
      * @return every node exactly once, parents before children.
@@ -55,8 +40,8 @@ internal class KahnOrder<T : Any>(
      */
     fun order(): List<T> {
         val size = graph.nodes.size
-        val children = childEdges()
-        val unemitted = IntArray(space) { edges[it]?.size ?: 0 }
+        val unemitted = adjacency.parentCounts.copyOf()
+        val nodeAt = adjacency.nodeAt
 
         val ready = PriorityQueue(maxOf(1, size), readyFirst())
         for (node in graph.nodes) {
@@ -68,15 +53,16 @@ internal class KahnOrder<T : Any>(
         while (ready.isNotEmpty()) {
             val at = ready.poll()
             order += nodeAt[at]!!
-            for (i in children.starts[at] until children.starts[at + 1]) {
-                val child = children.targets[i]
+            for (edge in adjacency.childStarts[at] until adjacency.childStarts[at + 1]) {
+                val child = adjacency.childTargets[edge]
                 if (--unemitted[child] == 0) ready.add(child)
             }
         }
 
         if (order.size != size) {
-            // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(graph)
+            // Whatever was left has an unemitted parent, which in a finite graph means a cycle. The
+            // check walks the adjacency this walk already built rather than deriving its own.
+            requireAcyclic(graph, adjacency)
             // Not worth a caller's wording: reaching this means the cycle check above disagrees with
             // the walk, which is a bug here rather than anything the caller did.
             error("${order.size} of $size nodes were ordered, but no cycle was found")
@@ -85,31 +71,7 @@ internal class KahnOrder<T : Any>(
     }
 
     private fun readyFirst(): Comparator<Int> = Comparator { a, b ->
-        val byPrecedence = precedence.compare(nodeAt[a]!!, nodeAt[b]!!)
+        val byPrecedence = precedence.compare(adjacency.nodeAt[a]!!, adjacency.nodeAt[b]!!)
         if (byPrecedence != 0) byPrecedence else a.compareTo(b)
     }
-
-    /**
-     * The edges pointing the other way.
-     *
-     * A node records its parents, because that is what a commit stores; the walk goes from a node to
-     * the ones that depend on it, so it needs children. Building that adjacency is linear.
-     */
-    private fun childEdges(): ChildEdges {
-        val starts = IntArray(space + 1)
-        for (at in 0 until space) {
-            val parents = edges[at] ?: continue
-            for (parent in parents) starts[parent + 1]++
-        }
-        for (at in 0 until space) starts[at + 1] += starts[at]
-        val cursor = starts.copyOf(space)
-        val targets = IntArray(starts[space])
-        for (at in 0 until space) {
-            val parents = edges[at] ?: continue
-            for (parent in parents) targets[cursor[parent]++] = at
-        }
-        return ChildEdges(starts, targets)
-    }
-
-    private class ChildEdges(val starts: IntArray, val targets: IntArray)
 }

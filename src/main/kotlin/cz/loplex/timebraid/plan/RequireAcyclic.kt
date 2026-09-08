@@ -18,22 +18,19 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * arrays, which is what the graph's own numbering gives it. A caller passes a graph and the cycle is
  * named by what its nodes print as.
  *
+ * @param adjacency the edges to walk. Defaults to this graph's, and is passed in by a caller that has
+ *   already built them — [KahnOrder] checks the graph it has just failed to order, and building a
+ *   second copy to say so would be the one path that allocates for an error.
  */
-internal fun <T : Any> requireAcyclic(graph: IndexedGraph<T>) {
+internal fun <T : Any> requireAcyclic(
+    graph: IndexedGraph<T>,
+    adjacency: Adjacency<T> = Adjacency.of(graph),
+) {
     val white: Byte = 0
     val gray: Byte = 1
     val black: Byte = 2
 
     val space = graph.indexSpace
-    val nodeAt = MutableList<T?>(space) { null }
-    val parents = arrayOfNulls<IntArray>(space)
-    for (node in graph.nodes) {
-        val at = graph.indexOf(node)
-        nodeAt[at] = node
-        val row = graph.parentsOf(node)
-        parents[at] = IntArray(row.size) { graph.indexOf(row[it]) }
-    }
-
     val color = ByteArray(space)
     val stackNode = IntArray(graph.nodes.size + 1)
     val stackNextParent = IntArray(graph.nodes.size + 1)
@@ -43,21 +40,20 @@ internal fun <T : Any> requireAcyclic(graph: IndexedGraph<T>) {
         if (color[root] != white) continue
         var top = 0
         stackNode[0] = root
-        stackNextParent[0] = 0
+        stackNextParent[0] = adjacency.parentStarts[root]
         color[root] = gray
         while (top >= 0) {
             val at = stackNode[top]
-            val parentsOfNode = parents[at]!!
-            if (stackNextParent[top] < parentsOfNode.size) {
-                val parent = parentsOfNode[stackNextParent[top]++]
+            if (stackNextParent[top] < adjacency.parentStarts[at + 1]) {
+                val parent = adjacency.parentTargets[stackNextParent[top]++]
                 when (color[parent]) {
                     white -> {
                         color[parent] = gray
                         top++
                         stackNode[top] = parent
-                        stackNextParent[top] = 0
+                        stackNextParent[top] = adjacency.parentStarts[parent]
                     }
-                    gray -> throw CyclicGraphException(cycleMessage(stackNode, top, parent, nodeAt))
+                    gray -> throw CyclicGraphException(cycleMessage(stackNode, top, parent, adjacency.nodeAt))
                     else -> Unit
                 }
             } else {
