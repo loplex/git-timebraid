@@ -215,7 +215,9 @@ class MergeCommandOptionsTest {
 
         run(
             "-o", out.toString(),
-            "file://" + tmp.resolve("backend.git").toAbsolutePath(),
+            // `toUri` rather than `"file://" + path`: the two agree only where a path already
+            // begins with a separator, and a Windows one begins with a drive letter instead.
+            tmp.resolve("backend.git").toUri().toString(),
             tmp.resolve("webui.git").toString(),
         )
 

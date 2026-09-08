@@ -130,12 +130,14 @@ class MergeCommandDryRunTest {
     @Test
     fun `a separator that belongs to the location is left there`() {
         // Both suffixes are recognised only before a bare word, so a path that happens to contain
-        // one is not split behind the user's back.
-        for (location in listOf("/nonexistent/a=b/c", "/nonexistent/a::b/c")) {
-            val result = MergeCommand().test(listOf("--dry-run", location))
+        // one is not split behind the user's back. The segment carrying it is what the report is
+        // read for: the rest of the location reaches the message as a path, and its separators are
+        // then the platform's rather than the ones written here.
+        for (segment in listOf("a=b", "a::b")) {
+            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/$segment/c"))
 
             assertEquals(1, result.statusCode, result.output)
-            assertTrue(result.output.contains(location), result.output)
+            assertTrue(result.output.contains(segment), result.output)
         }
     }
 
