@@ -27,7 +27,10 @@ class MergeInput(
     val location: String,
     val isRemote: Boolean,
     val name: String,
-    /** Subdirectory in the output, or `null` for the repository placed at the root. */
+    /**
+     * Where the content lands in the output — one name or a nested path — or `null` for the
+     * repository placed at the root.
+     */
     val subdir: String?,
 )
 

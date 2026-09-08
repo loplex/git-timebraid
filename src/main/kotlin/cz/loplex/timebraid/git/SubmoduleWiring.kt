@@ -32,12 +32,13 @@ class RewiredGitmodules(
  *
  * A section's *name* is prefixed as well, not just its path. The name is what git uses to store a
  * populated submodule under `.git/modules/`, so two inputs whose submodules happen to share a name
- * would otherwise be handed the same directory. Subdirectory names are unique and contain no `/`,
- * which makes `<subdir>/<name>` unique by construction among the inputs placed in a subdirectory.
- * Two kinds of name go unprefixed and can meet: those of the repository at the output root, whose
- * `A/lib` can meet input `A`'s `lib`, and a blank one (see [prefixed]). There the uniqueness is not
- * a property of the names but a refusal in [merge], which names the submodule and the commit
- * carrying it.
+ * would otherwise be handed the same directory. Where no destination contains another, which the
+ * planner enforces, `<subdir>/<name>` is unique by construction: `libs/a` with a section `b/x`
+ * cannot collide with `libs/a/b` and its section `x`, because the pair never arrives. The
+ * repository at the output root lets it arrive, since every destination is inside of it, and a
+ * blank name, which [prefixed] leaves as it is, meets another blank one wherever it stands; there
+ * the uniqueness is not a property of the destinations but a refusal in [merge], which names the
+ * submodule and the commit carrying it.
  */
 object SubmoduleWiring {
 
@@ -53,8 +54,8 @@ object SubmoduleWiring {
     val NOTHING = RewiredGitmodules("", emptySet())
 
     /**
-     * [text] as it should appear in the output, given that the input's content lands in [subdir]
-     * (`null` for the `--root-repo`, whose paths are already the output's paths).
+     * [text] as it should appear in the output, given that the input's content lands in [subdir] —
+     * possibly a nested path (`null` for the `--root-repo`, whose paths are already the output's).
      *
      * [repo] and [at] only name the input and the commit in an error message.
      */

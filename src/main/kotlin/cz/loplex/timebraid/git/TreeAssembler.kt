@@ -64,10 +64,10 @@ class Placement(
  * ([Placement.entriesOf]) and the input placed inside it goes in beside them. The descent follows
  * only the prefixes some destination names, and only down the containing repository's own trees.
  *
- * Whether one destination may contain another at all is not decided here but by the planner; what
- * is refused here is what only the trees can show, and only for the commit they show it at: an
- * input landing where the repository around it already has an entry of that name, or reaching
- * through one that is not a directory.
+ * Whether one destination may contain another at all is not decided here. The planner decides that,
+ * and refuses the pair; what is refused here is what only the trees can show, and only for the
+ * commit they show it at: an input landing where the repository around it already has an entry of
+ * that name, or reaching through one that is not a directory.
  */
 class TreeAssembler(private val inserter: ObjectInserter) {
 
