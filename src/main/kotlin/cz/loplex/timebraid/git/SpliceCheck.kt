@@ -10,7 +10,7 @@ import org.eclipse.jgit.lib.ObjectId
  * has something in the way of another input's subdirectory.
  *
  * The root repository's tree cannot be an entry of the output's, so its top-level entries are
- * spliced in beside the subdirectories (see [RootTreeAssembler]), and one named like an input's
+ * spliced in beside the subdirectories (see [TreeAssembler]), and one named like an input's
  * subdirectory collides with it. Whether one does is a question about a tree, and the root
  * repository's tree is different at every commit: the answer can be yes at one point of the braid
  * and no at another, and it matters only where the other input has content. Left to the writer alone
@@ -39,7 +39,7 @@ class SpliceCheck(
             val holder = content[root] ?: continue
             val tree = treeOf(holder)
             val entries = names.getOrPut(tree) {
-                repoOf.getValue(root).topLevelEntries(tree).mapTo(HashSet()) { it.name }
+                repoOf.getValue(root).entriesOf(tree).mapTo(HashSet()) { it.name }
             }
             for (source in content.keys) {
                 val subdir = plan.subdirOf(source) ?: continue

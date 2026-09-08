@@ -271,7 +271,7 @@ class BraidPipelineIT {
 
         val a3 = OutputRepo.read(out).byOriginalSha.getValue(ids.getValue("a3").name)
         SourceRepository.open(out).use { repo ->
-            val top = repo.topLevelEntries(a3.tree).map { it.name }
+            val top = repo.entriesOf(a3.tree).map { it.name }
             // "f" is TestRepoBuilder's default file; it lands at the root, next to webui/.
             assertTrue(top.contains("f"), top.toString())
             assertTrue(top.contains("webui"), top.toString())
@@ -288,7 +288,7 @@ class BraidPipelineIT {
         val written = OutputRepo.read(out)
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(written.byOriginalSha.getValue(ids.getValue(name).name).tree)
+                repo.entriesOf(written.byOriginalSha.getValue(ids.getValue(name).name).tree)
                     .single { it.name == "webui" }.id
             // f1 forked off a2 (11:00) while webui was at b1 (10:00); the braid went on to b2 (13:00).
             assertEquals(webuiTreeOf("b1"), webuiTreeOf("f1"))
@@ -340,7 +340,7 @@ class BraidPipelineIT {
 
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(rewritten(name).tree).single { it.name == "webui" }.id
+                repo.entriesOf(rewritten(name).tree).single { it.name == "webui" }.id
             // The observable consequence: m shows webui/ as it stood before m's own recorded moment.
             assertEquals(webuiTreeOf("b1"), webuiTreeOf("m"))
             assertNotEquals(webuiTreeOf("b2"), webuiTreeOf("m"))
@@ -373,7 +373,7 @@ class BraidPipelineIT {
 
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(rewritten(name).tree).single { it.name == "webui" }.id
+                repo.entriesOf(rewritten(name).tree).single { it.name == "webui" }.id
             assertEquals(webuiTreeOf("b2"), webuiTreeOf("m"))
         }
 
@@ -450,7 +450,7 @@ class BraidPipelineIT {
         val result = braid("-o", out.toString(), path("backend.git"), path("webui.git"))
 
         // The report states how many trees were written; it is well below one per commit.
-        val trees = Regex("(\\d+) root trees").find(result.output)?.groupValues?.get(1)?.toInt()
+        val trees = Regex("(\\d+) trees").find(result.output)?.groupValues?.get(1)?.toInt()
             ?: error("no tree count in:\n${result.output}")
         assertTrue(trees < 3, "expected tree reuse, wrote $trees trees for 3 commits")
         if (GitCli.available) GitCli.fsck(out)
@@ -570,8 +570,8 @@ class BraidPipelineIT {
         assertTrue(written.commits.any { it.message.contains(subject) }, "the subject was mangled")
         SourceRepository.open(out).use { repo ->
             val tip = repo.readReachable(listOf(repo.resolveBranch("main")!!)).first { it.message.contains(subject) }
-            val backend = repo.topLevelEntries(tip.tree).single { it.name == "backend" }
-            assertTrue(repo.topLevelEntries(backend.id).any { it.name == "café.txt" })
+            val backend = repo.entriesOf(tip.tree).single { it.name == "backend" }
+            assertTrue(repo.entriesOf(backend.id).any { it.name == "café.txt" })
         }
         if (GitCli.available) GitCli.fsck(out)
     }
@@ -666,7 +666,7 @@ class BraidPipelineIT {
 
         val tip = OutputRepo.read(out).byOriginalSha.getValue(b1.name)
         SourceRepository.open(out).use { repo ->
-            val top = repo.topLevelEntries(tip.tree).map { it.name }
+            val top = repo.entriesOf(tip.tree).map { it.name }
             assertTrue(top.contains("webui"), top.toString())
             assertTrue(top.none { it.isEmpty() || it == ".git" }, top.toString())
         }

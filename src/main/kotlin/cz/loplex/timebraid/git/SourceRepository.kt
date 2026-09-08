@@ -141,8 +141,13 @@ class SourceRepository private constructor(
         return null
     }
 
-    /** Top-level entries of [tree], in the order git stored them. */
-    fun topLevelEntries(tree: ObjectId): List<TreeEntry> {
+    /**
+     * Entries of [tree] itself, in the order git stored them — not recursed into.
+     *
+     * Called for a commit's own root tree, and for a subtree of it where a nested destination
+     * reaches into a directory this repository already has.
+     */
+    fun entriesOf(tree: ObjectId): List<TreeEntry> {
         val entries = ArrayList<TreeEntry>()
         val parser = CanonicalTreeParser(null, reader(), tree)
         while (!parser.eof()) {
