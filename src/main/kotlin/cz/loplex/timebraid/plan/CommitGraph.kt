@@ -40,6 +40,17 @@ class Commit internal constructor(
     private var edges: List<Commit>? = null
     private var stamp: Long = 0
 
+    /**
+     * Position among its graph's [CommitGraph.commits], assigned once when the graph is built.
+     *
+     * The dense numbering every pass of this package needs, derived where the commits are already in
+     * their final order and shared from there, so a pass indexes an array instead of hashing a key.
+     * Meaningful only against the graph that assigned it, which is why every reader checks the
+     * commit it finds at that position is the one it asked about.
+     */
+    internal var position: Int = -1
+        private set
+
     /** Timestamp used to interleave the strands, as resolved by the reader according to `--order-by`. */
     val time: Long get() = if (edges != null) stamp else neverAdded()
 
@@ -51,6 +62,11 @@ class Commit internal constructor(
 
     /** Whether the commit's own data has arrived, as against it having only been named as a parent. */
     internal val isAdded: Boolean get() = edges != null
+
+    /** Records where the graph being built put this commit. */
+    internal fun place(index: Int) {
+        position = index
+    }
 
     /** Gives the commit its data. The builder calls this once, when the commit's own turn comes. */
     internal fun define(time: Long, parents: List<Commit>) {
@@ -74,8 +90,8 @@ class Commit internal constructor(
  *
  * The graph is barely more than what it was built from — its repositories and its commits, each in
  * the order they were read. The edges live on the commits themselves, so a stage of the pipeline is
- * given commits, works in commits, and derives whatever numbering it needs for itself; [KahnOrder] is
- * where that numbering is done and where it stays.
+ * given commits and works in commits; the numbering the walks run on is this graph's own, handed to
+ * them through [IndexedGraph] rather than derived again by each of them.
  *
  * Immutable once [CommitGraphBuilder.build] has returned it, which matters because two public objects
  * can share the same commits — a [Braid] and the [CommitGraph] it came from do.
@@ -85,10 +101,31 @@ class CommitGraph internal constructor(
     val sources: List<Source>,
     /** Every commit of every input repository, in the order they were first named. */
     val commits: List<Commit>,
-) {
+) : IndexedGraph<Commit> {
+
+    init {
+        commits.forEachIndexed { index, commit -> commit.place(index) }
+    }
 
     /** Number of commits. */
     val size: Int get() = commits.size
+
+    override val nodes: List<Commit> get() = commits
+
+    override val indexSpace: Int get() = commits.size
+
+    /** A commit's own edges — the original history, as against the braided one. */
+    override fun parentsOf(node: Commit): List<Commit> = node.parents
+
+    /**
+     * Where a commit sits — the position it was given when this graph was built.
+     *
+     * A commit of another graph is refused by whoever is in a position to notice cheaply rather than
+     * on every read: [Adjacency] checks that every index it is handed is in the space and that every
+     * edge lands on a node, [braid] checks the heads and tips it is given, and [ParentEdges] and
+     * [MergePlan] check the commit at the position is the one asked about.
+     */
+    override fun indexOf(node: Commit): Int = node.position
 
     /**
      * A topological order of the original history: every commit exactly once, parents before children,
@@ -99,7 +136,7 @@ class CommitGraph internal constructor(
      *
      * @throws CyclicGraphException if the graph is not a DAG.
      */
-    fun topologicalOrder(): List<Commit> = topoOrder(commits) { it.parents }
+    fun topologicalOrder(): List<Commit> = topoOrder(this)
 
     /**
      * Interleaves the strands' mainlines into the single braid the output's history is built around.
@@ -117,7 +154,7 @@ class CommitGraph internal constructor(
         for (head in heads) requireOwn(head, "head")
         for (tip in interleaveTips) requireOwn(tip, "interleave tip")
 
-        return Braid(this, BraidInterleave.compute(commits, heads, interleaveTips) { it.parents })
+        return Braid(this, BraidInterleave.compute(this, heads, interleaveTips))
     }
 
     /**
@@ -130,5 +167,22 @@ class CommitGraph internal constructor(
         require(sources.any { it === commit.source }) {
             "$what $commit is not a commit of this graph"
         }
+    }
+}
+
+/**
+ * This graph's commits under a different set of parent edges.
+ *
+ * The braided history is exactly this: the same nodes, numbered the same, with the edges [reparent]
+ * derived. Sharing the numbering is the point — a commit belongs to one graph and carries one
+ * position, so a second set of edges must not mean a second set of nodes.
+ */
+internal fun CommitGraph.withParents(edges: (Commit) -> List<Commit>): IndexedGraph<Commit> {
+    val whole = this
+    return object : IndexedGraph<Commit> {
+        override val nodes: List<Commit> get() = whole.commits
+        override val indexSpace: Int get() = whole.commits.size
+        override fun indexOf(node: Commit): Int = whole.indexOf(node)
+        override fun parentsOf(node: Commit): List<Commit> = edges(node)
     }
 }

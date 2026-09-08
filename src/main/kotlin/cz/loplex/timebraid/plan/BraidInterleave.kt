@@ -56,47 +56,74 @@ internal object BraidInterleave {
      * @param interleaveTips commits whose ancestry is allowed to delay a braid commit — the refs named
      *   by `--interleave-ref`, already resolved. Empty by default, which is the mainline-chains-only
      *   scope described above.
-     * @param commits the nodes in scope; every head, tip and parent has to be among them.
-     * @param parentsOf the edges to walk, the commits' own in every present caller.
+     * @param graph the commits to walk and the edges to walk them by, the commits' own in every
+     *   present caller. Every head and tip has to be one of its nodes.
      * @return the braid — the union of the heads' first-parent chains — in braid order.
      */
     fun compute(
-        commits: List<Commit>,
+        graph: IndexedGraph<Commit>,
         heads: List<Commit>,
         interleaveTips: List<Commit>,
-        parentsOf: (Commit) -> List<Commit>,
     ): List<Commit> {
         // The braid itself: each head's first-parent chain, up to wherever it meets one already
-        // walked. `add` answering false is that meeting point.
-        val onBraid = HashSet<Commit>()
+        // walked — the flag already being set is that meeting point.
+        val onBraid = BooleanArray(graph.indexSpace)
         for (head in heads) {
             var commit: Commit? = head
-            while (commit != null && onBraid.add(commit)) commit = parentsOf(commit).firstOrNull()
+            while (commit != null) {
+                val at = graph.indexOf(commit)
+                if (onBraid[at]) break
+                onBraid[at] = true
+                commit = graph.parentsOf(commit).firstOrNull()
+            }
         }
 
         // Scope: the braid, plus everything the opted-in tips reach. A commit in scope but off the
         // braid is never written by this pass; it is here only so that it can delay one that is.
-        val inScope = HashSet(onBraid)
+        val inScope = onBraid.copyOf()
         val pending = ArrayDeque<Commit>()
         for (tip in interleaveTips) {
-            if (inScope.add(tip)) pending.addLast(tip)
+            val at = graph.indexOf(tip)
+            if (!inScope[at]) {
+                inScope[at] = true
+                pending.addLast(tip)
+            }
         }
         while (pending.isNotEmpty()) {
-            for (parent in parentsOf(pending.removeLast())) {
-                if (inScope.add(parent)) pending.addLast(parent)
+            for (parent in graph.parentsOf(pending.removeLast())) {
+                val at = graph.indexOf(parent)
+                if (!inScope[at]) {
+                    inScope[at] = true
+                    pending.addLast(parent)
+                }
             }
         }
 
-        // Taking the scope in the order the commits were given keeps the walk's tie-break the same
-        // as it would be over the whole graph: for any two commits in scope, their positions here
-        // and there rank them alike.
-        val scope = commits.filter { it in inScope }
-        val order = KahnOrder(
-            scope,
-            parentsOf = { commit -> parentsOf(commit).filter { it in inScope } },
-            precedence = compareBy(Commit::time),
-        ) { "$it is reachable in the scope but is not one of the commits given" }.order()
+        // The scope is a part of the graph and keeps its numbering, which is also what keeps the
+        // walk's tie-break the same as it would be over the whole graph: for any two commits in
+        // scope, their indices here and there rank them alike.
+        val order = KahnOrder(Part(graph, inScope), compareBy(Commit::time)).order()
 
-        return order.filter { it in onBraid }
+        return order.filter { onBraid[graph.indexOf(it)] }
     }
+}
+
+/**
+ * The part of [whole] the interleave is decided over: the braid, plus whatever the opted-in tips
+ * reach. Keeps the whole graph's numbering, so a commit has one position throughout the pipeline.
+ */
+private class Part(
+    private val whole: IndexedGraph<Commit>,
+    private val inScope: BooleanArray,
+) : IndexedGraph<Commit> {
+
+    override val nodes: List<Commit> = whole.nodes.filter { inScope[whole.indexOf(it)] }
+
+    override val indexSpace: Int get() = whole.indexSpace
+
+    override fun indexOf(node: Commit): Int = whole.indexOf(node)
+
+    /** The edges within the part: a parent outside it waits for nothing and is not reported. */
+    override fun parentsOf(node: Commit): List<Commit> =
+        whole.parentsOf(node).filter { inScope[whole.indexOf(it)] }
 }

@@ -13,11 +13,11 @@ class ReparentTest {
         val parents = reparented(spec, "a3", "b2")
 
         // b1 follows a1 in time, and a1 is not one of its parents, so the edge is added.
-        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("b1"))))
+        assertEquals(listOf("a1"), spec.names(parents[spec.commit("b1")]))
         // a2 follows b1, and keeps its original parent a1 behind the braid edge.
-        assertEquals(listOf("b1", "a1"), spec.names(parents.getValue(spec.commit("a2"))))
-        assertEquals(listOf("a2", "b1"), spec.names(parents.getValue(spec.commit("b2"))))
-        assertEquals(listOf("b2", "a2"), spec.names(parents.getValue(spec.commit("a3"))))
+        assertEquals(listOf("b1", "a1"), spec.names(parents[spec.commit("a2")]))
+        assertEquals(listOf("a2", "b1"), spec.names(parents[spec.commit("b2")]))
+        assertEquals(listOf("b2", "a2"), spec.names(parents[spec.commit("a3")]))
     }
 
     @Test
@@ -25,10 +25,10 @@ class ReparentTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 <- a3@30")
         val parents = reparented(spec, "a3")
 
-        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("a2"))))
-        assertEquals(listOf("a2"), spec.names(parents.getValue(spec.commit("a3"))))
+        assertEquals(listOf("a1"), spec.names(parents[spec.commit("a2")]))
+        assertEquals(listOf("a2"), spec.names(parents[spec.commit("a3")]))
         for (commit in spec.graph.commits) {
-            assertEquals(commit.parents.size, parents.getValue(commit).size)
+            assertEquals(commit.parents.size, parents[commit].size)
         }
     }
 
@@ -37,7 +37,7 @@ class ReparentTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
         val parents = reparented(spec, "a2", "b1")
 
-        assertEquals(emptyList<String>(), spec.names(parents.getValue(spec.commit("a1"))))
+        assertEquals(emptyList<String>(), spec.names(parents[spec.commit("a1")]))
     }
 
     @Test
@@ -48,7 +48,7 @@ class ReparentTest {
         )
         val parents = reparented(spec, "a2", "b3")
 
-        assertEquals(listOf("a2", "b2", "f1"), spec.names(parents.getValue(spec.commit("b3"))))
+        assertEquals(listOf("a2", "b2", "f1"), spec.names(parents[spec.commit("b3")]))
         assertOriginalEdgesKept(spec.graph, parents)
     }
 
@@ -57,8 +57,8 @@ class ReparentTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@40 ; f1(a1)@20 <- f2@30 | B: b1@25")
         val parents = reparented(spec, "a2", "b1")
 
-        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("f1"))))
-        assertEquals(listOf("f1"), spec.names(parents.getValue(spec.commit("f2"))))
+        assertEquals(listOf("a1"), spec.names(parents[spec.commit("f1")]))
+        assertEquals(listOf("f1"), spec.names(parents[spec.commit("f2")]))
     }
 
     @Test
@@ -69,7 +69,7 @@ class ReparentTest {
         val parents = reparented(spec, "a2", "b3")
 
         for (commit in spec.graph.commits) {
-            val row = parents.getValue(commit)
+            val row = parents[commit]
             assertEquals(row.size, row.toSet().size, "duplicate parent on $commit")
         }
     }
@@ -81,7 +81,7 @@ class ReparentTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = topoOrder(spec.graph.commits) { parents.getValue(it) }
+        val order = topoOrder(spec.graph.withParents { parents[it] })
 
         assertEquals(spec.graph.size, order.size)
     }
@@ -94,7 +94,7 @@ class ReparentTest {
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
 
         val failure = assertThrows<CyclicGraphException> {
-            reparent(spec.graph.commits, spec.commits("c", "g")) { it.parents }
+            reparent(spec.graph, spec.commits("c", "g"))
         }
 
         assertTrue(failure.message!!.contains("cycle in the parent chain"), failure.message)
@@ -103,19 +103,15 @@ class ReparentTest {
         }
     }
 
-    private fun reparented(spec: GraphSpec, vararg heads: String): Map<Commit, List<Commit>> {
-        val braid = BraidInterleave.compute(
-            spec.graph.commits,
-            spec.commits(*heads),
-            interleaveTips = emptyList(),
-        ) { it.parents }
-        return reparent(spec.graph.commits, braid) { it.parents }
+    private fun reparented(spec: GraphSpec, vararg heads: String): ParentEdges {
+        val braid = BraidInterleave.compute(spec.graph, spec.commits(*heads), interleaveTips = emptyList())
+        return reparent(spec.graph, braid)
     }
 
-    private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Map<Commit, List<Commit>>) {
+    private fun assertOriginalEdgesKept(graph: CommitGraph, parents: ParentEdges) {
         for (commit in graph.commits) {
             for (parent in commit.parents) {
-                assertTrue(parent in parents.getValue(commit), "$commit lost its original parent $parent")
+                assertTrue(parent in parents[commit], "$commit lost its original parent $parent")
             }
         }
     }
