@@ -59,17 +59,7 @@ class BraidWriter(
     /** New identity of every original commit, filled in write order. */
     private val written = HashMap<Commit, ObjectId>(graph.size)
 
-    /**
-     * Entries of the root repository's trees, keyed by the tree, which repeat across the whole
-     * braid: the top-level one at every position that repository stood still for, and — where an
-     * input is placed inside one of its directories — that directory's at every one of them too.
-     */
-    private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
-
-    /** The input placed at the output root, or `null` when every input has a subdirectory. */
-    private val rootSource: Source? = graph.sources.firstOrNull { plan.subdirOf(it) == null }
-
-    private val trees = target.treeAssembler(::rootEntriesOf)
+    private val trees = target.treeAssembler()
 
     /**
      * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
@@ -86,6 +76,23 @@ class BraidWriter(
         val missing = graph.sources.filterNot { repoOf.containsKey(it) }
         require(missing.isEmpty()) { "no repository given for ${missing.joinToString()}" }
     }
+
+    /**
+     * Per input, how to read one of its trees into entries — what a splice needs when another input
+     * is placed inside this one, and nothing else asks for.
+     *
+     * Memoized per tree because the same trees are asked about over and over: a containing
+     * repository's tree at a spliced path is read again at every braid position that repository
+     * stood still for, and the trees above it repeat the same way.
+     */
+    private val entryReaders: Map<Source, (ObjectId) -> List<TreeEntry>> =
+        graph.sources.associateWith { source ->
+            val repo = repoOf.getValue(source)
+            val cache = HashMap<ObjectId, List<TreeEntry>>()
+            val read: (ObjectId) -> List<TreeEntry> =
+                { tree -> cache.getOrPut(tree) { repo.entriesOf(tree) } }
+            read
+        }
 
     /**
      * The commit an input originally made, as the reader read it.
@@ -147,29 +154,16 @@ class BraidWriter(
         val content = plan.contentOf(commit)
         val placements = ArrayList<Placement>(content.size)
         val parts = ArrayList<RewiredGitmodules>(content.size)
-        var root: List<TreeEntry> = emptyList()
         val at = { commit.toString() }
 
         for ((source, holder) in content) {
             val tree = originalOf(holder).tree
-            val subdir = plan.subdirOf(source)
-            if (subdir == null) root = rootEntriesOf(tree)
-            else placements += Placement(subdir, tree)
+            placements += Placement(plan.subdirOf(source), tree, entryReaders.getValue(source))
             parts += wiringOf(source, tree, at)
         }
 
-        return trees.assemble(root, placements, gitmodulesOf(parts, at), at)
+        return trees.assemble(placements, gitmodulesOf(parts, at), at)
     }
-
-    /**
-     * Entries of one tree of the root repository, cached because the same trees are asked about over
-     * and over — see [rootEntries].
-     */
-    private fun rootEntriesOf(tree: ObjectId): List<TreeEntry> =
-        rootEntries.getOrPut(tree) {
-            val source = rootSource ?: error("no input is placed at the output root")
-            repoOf.getValue(source).entriesOf(tree)
-        }
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
     private fun wiringOf(source: Source, tree: ObjectId, at: () -> String): RewiredGitmodules =

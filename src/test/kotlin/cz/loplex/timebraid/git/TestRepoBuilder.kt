@@ -29,7 +29,7 @@ import java.time.ZoneOffset
  *   subdirectory; content is written verbatim, so a fixture can carry `CRLF`, NUL bytes or a
  *   non-ASCII name. A path may also be a *gitlink* rather than a blob, which is how a fixture
  *   carries a submodule. Tree entries are ordered the way git orders them
- *   ([RootTreeAssembler.GIT_TREE_ORDER]), which is the only ordering `git fsck` accepts.
+ *   ([TreeAssembler.GIT_TREE_ORDER]), which is the only ordering `git fsck` accepts.
  */
 class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable {
 
@@ -128,7 +128,7 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         for ((name, nested) in subdirs) {
             entries += TreeEntry(name, FileMode.TREE, writeTree(inserter, nested))
         }
-        entries.sortWith(RootTreeAssembler.GIT_TREE_ORDER)
+        entries.sortWith(TreeAssembler.GIT_TREE_ORDER)
 
         val tree = TreeFormatter(entries.size)
         for (entry in entries) tree.append(entry.name, entry.mode, entry.id)
