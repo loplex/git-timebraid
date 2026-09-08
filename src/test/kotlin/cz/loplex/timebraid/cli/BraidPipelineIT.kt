@@ -523,6 +523,104 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `one destination inside another is refused until --splice asks for it`() {
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("README.md" to "the platform's own")))
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a")))
+        }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                path("platform.git") + "::=libs",
+                path("backend.git") + "::=libs/backend",
+            ),
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("one contains the other"), result.output)
+        assertTrue(result.output.contains("--splice"), result.output)
+    }
+
+    @Test
+    fun `--splice places one input inside another, both repositories' content in one directory`() {
+        // The same shape --root-repo has always allowed, one level down: platform holds libs/ and
+        // backend is placed inside it. Without --splice the planner refuses the pair outright.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch(
+                "main",
+                r.commit(
+                    "p1",
+                    files = mapOf("README.md" to "the platform's own", "docs/guide.md" to "g"),
+                    at = at("09:00"),
+                ),
+            )
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("10:00")))
+        }
+
+        val out = tmp.resolve("spliced.git")
+        braid(
+            "-o", out.toString(),
+            "--splice",
+            path("platform.git") + "::=libs",
+            path("backend.git") + "::=libs/backend",
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("libs"), names(""))
+            // The containing repository's own entries, with the input placed in beside them.
+            assertEquals(listOf("README.md", "backend", "docs"), names("libs"))
+            assertEquals(listOf("src"), names("libs/backend"))
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("a", GitCli.run(out, "show", "main:libs/backend/src/Main.kt"))
+            assertEquals("the platform's own", GitCli.run(out, "show", "main:libs/README.md"))
+        }
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+    }
+
+    @Test
+    fun `--splice still refuses an input landing on something the containing repository holds`() {
+        // The flag says the nesting is intended, not that anything goes: what the containing
+        // repository already has at the inner destination is a collision either way.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("backend" to "a stray file")))
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a")))
+        }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                "--splice",
+                path("platform.git") + "::=libs",
+                path("backend.git") + "::=libs/backend",
+            ),
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'libs/backend'"), result.output)
+        assertTrue(result.output.contains("collides"), result.output)
+    }
+
+    @Test
     fun `a-txt sorts before a-slash and CRLF content is left untouched`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             r.commitBytes(

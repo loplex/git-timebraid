@@ -85,6 +85,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "themselves decide where the strands interleave."
         )
 
+    private val splice by option("--splice").flag()
+        .help(
+            "Let one input's destination lie inside another's (::=libs and ::=libs/backend), " +
+                "splicing the two into one directory instead of refusing the pair. The containing " +
+                "repository's own content stays where it is; anything it already holds at the " +
+                "inner destination is still a collision."
+        )
+
     private val tagPrefix by option("--tag-prefix").default("{repo}/")
         .help("Prefix prepended to every recreated tag; {repo} is substituted.")
 
@@ -166,6 +174,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             mainlineBranch = mainlineBranch,
             branches = branches.toSet().ifEmpty { null },
             interleaveRefs = interleaveRefs,
+            splice = splice,
             writeOptions = WriteOptions(subjectPrefix, tagPrefix, provenance),
             dryRun = dryRun,
         )

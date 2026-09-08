@@ -167,11 +167,15 @@ the last segment of its path. Name and placement are set separately:
 - `repo.git::=subdir` only says **where the content lands**. It may be a nested path
   (`repo.git::=libs/backend`), and inputs sharing a prefix share the directory for it — so
   `backend.git::=libs/backend webui.git::=apps/webui` gives the output a `libs/` and an `apps/`.
-  What no two inputs may do is contain each other: `libs` and `libs/backend` cannot both hold a
-  repository, because an input's content is placed as its own tree object and nothing fits beside it.
-- One repository may be placed at the root instead, with `--root-repo <name>`. A nested destination
-  reaching into a directory *that* repository already has is spliced: its own entries there and the
-  inputs placed inside it end up in one directory.
+  Two inputs may not contain each other — `libs` and `libs/backend` — unless **`--splice`** says so:
+  an input's content is placed as its own tree object, and nothing fits beside a single object, so
+  the containing repository's tree has to be opened up instead. What that never buys is a merge of
+  two repositories' files: anything the containing repository already holds at the inner
+  destination is a collision, with or without the flag.
+- One repository may be placed at the root instead, with `--root-repo <name>`. That is the same
+  splice, and the one that needs no flag — every other destination is inside it, which is what the
+  option asked for. Its own entries at a path and the inputs placed inside it end up in one
+  directory.
 
 ### How an input is written
 
@@ -368,6 +372,8 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::[<name>][=<subdir>]]...
   -b, --branch NAME             recreate only these branches (repeatable; default: all)
       --interleave-ref PATTERN  let this ref's commits delay a mainline merge that merges
                                 them in (repeatable; glob over full ref names; default: none)
+      --splice                  let one input's destination lie inside another's, the two
+                                spliced into one directory (default: the pair is refused)
       --tag-prefix FMT          default "{repo}/"
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)
@@ -419,7 +425,10 @@ to check it runs, and uploads them with a `SHA256SUMS`.
   invalidates it. Signatures are dropped rather than kept in an invalid state.
 - **Inputs must be complete clones.** Shallow clones and partial clones are rejected — the tool needs
   the entire commit graph.
-- **Subdirectory names must not collide** with entries of the `--root-repo` at its top level.
+- **A destination must not collide** with what the repository around it already holds there — the
+  `--root-repo`, or with `--splice` any input the destination lies inside. A destination reaching
+  *through* an entry that is not a directory is refused for the same reason. Both depend on the
+  content of the commit, so both are reported against the commit they happen at.
 - **The whole commit graph is held in memory.** Hundreds of thousands of commits will want a larger
   heap. This is a batch tool run once per merge, not a daemon.
 - **The output holds the inputs' original commits unreferenced.** They arrive with everything else

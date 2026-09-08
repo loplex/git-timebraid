@@ -46,6 +46,8 @@ class MergeRequest(
      * default scope, the mainline chains alone.
      */
     val interleaveRefs: List<String>,
+    /** Whether one input's destination may lie inside another's, the two spliced into one tree. */
+    val splice: Boolean,
     val writeOptions: WriteOptions,
     val dryRun: Boolean,
 )
@@ -104,7 +106,8 @@ class MergeRunner(
                     // position here rather than by asking a Source where it sits.
                     braid.graph.sources
                         .mapIndexed { index, source -> source to request.inputs[index].subdir }
-                        .toMap()
+                        .toMap(),
+                    splice = request.splice,
                 )
 
             val output = request.output
