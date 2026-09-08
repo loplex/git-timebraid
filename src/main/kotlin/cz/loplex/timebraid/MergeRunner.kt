@@ -8,6 +8,7 @@ import cz.loplex.timebraid.git.GitCommand
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.SpliceCheck
+import cz.loplex.timebraid.git.SpliceReport
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
@@ -49,6 +50,8 @@ class MergeRequest(
      * Empty means the default scope, the mainline chains alone.
      */
     val interleaveRefs: List<String>,
+    /** Whether one input's destination may lie inside another's, the two spliced into one tree. */
+    val splice: Boolean,
     val writeOptions: WriteOptions,
     val dryRun: Boolean,
 )
@@ -63,6 +66,11 @@ class FetchSummary(val repositories: Int, val refs: Int)
 class MergeResult(
     val braid: BraidInputs,
     val plan: MergePlan,
+    /**
+     * One per splice the plan makes, each checked against every tree before anything was written into the output.\
+     * An input can lie inside more than one other along the braid, and then has one for each — see [SpliceCheck.check].
+     */
+    val splices: List<SpliceReport>,
     val fetch: FetchSummary?,
     val write: WriteSummary?,
 )
@@ -123,7 +131,8 @@ class MergeRunner(
                     // so the two are paired by position here rather than by asking a Source where it sits.
                     braid.graph.sources
                         .mapIndexed { index, source -> source to request.inputs[index].subdir }
-                        .toMap()
+                        .toMap(),
+                    splice = request.splice,
                 )
 
             // The one place that pairs the two: these are the repositories handed to read() above,
@@ -132,10 +141,16 @@ class MergeRunner(
             // Everything downstream looks a repository up by its Source and never has to know the order again.
             val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
-            // Before anything is written into the output, and on a dry run too:
-            // a collision with the root repository's entries happens at one commit of the braid
-            // rather than at all of them, so a dry run that skipped this would report a plan it cannot carry out.
-            SpliceCheck(plan, braid, repoOf).check()
+            // Before anything is written into the output, and on a dry run too —
+            // a splice that collides does so at one commit of the braid rather than at all of them,
+            // so a dry run that skipped this would report a plan it cannot carry out.
+            val splices = SpliceCheck(plan, braid, repoOf).check()
+            for (splice in splices) {
+                progress.detail(
+                    "${splice.splice.innerSubdir} lies inside ${splice.splice.outerPath}, " +
+                        "spliced at ${splice.commits} commits over ${splice.trees} distinct trees"
+                )
+            }
 
             val output = request.output
             // Before anything is written into the output, and on a dry run too.
@@ -158,7 +173,9 @@ class MergeRunner(
                         "before any =<subdir>"
                 }
             }
-            if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
+            if (request.dryRun || output == null) {
+                return MergeResult(braid, plan, splices, null, null)
+            }
 
             val written = writeOutput(output, repoOf, braid, plan)
             if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
@@ -166,7 +183,7 @@ class MergeRunner(
                 progress.step("checking out ${braid.mainlineBranch}")
                 git.checkout(output, braid.mainlineBranch)
             }
-            return MergeResult(braid, plan, written.fetch, written.write)
+            return MergeResult(braid, plan, splices, written.fetch, written.write)
         } finally {
             sources.forEach { it.close() }
         }
