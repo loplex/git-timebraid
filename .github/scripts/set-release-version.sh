@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Pins the checked-out pom to the version its release tag names.
+# Settles which version the build in progress is producing, and pins the pom to it.
 #
-# A branch's pom carries the version being worked towards, suffixed `-SNAPSHOT`; a tag carries the
-# version being released. This reconciles the two -- it checks that they name the same version once
-# the suffix is set aside, then rewrites the pom so the build produces `1.2.3` and not
+# A branch's pom carries the version being worked towards and keeps its `-SNAPSHOT` suffix; a tag
+# names the version being released. This reconciles the two -- it checks that they name the same
+# version once the suffix is set aside, then rewrites the pom so the build produces `1.2.3` and not
 # `1.2.3-SNAPSHOT`. Nothing is committed: the rewrite is for the runner's throwaway checkout, and
 # the branch goes on carrying its snapshot.
 #
@@ -17,18 +17,27 @@
 # so a job that skipped it would upload `git-timebraid-1.2.3-SNAPSHOT-linux-x64.tar.gz` under a tag
 # saying 1.2.3.
 #
-# Usage: set-release-version.sh <tag>
-# The released version goes to stdout; the reasoning and Maven's own noise go to stderr.
+# Usage: set-release-version.sh [tag]
+# With no tag -- a dry run from a branch, where nothing is being released -- the pom is left alone
+# and its version reported as it stands. The archives then keep the snapshot suffix in their names,
+# which is the point: a dry run's output should not be mistakable for a release's.
+#
+# The version in play goes to stdout; the reasoning and Maven's own noise go to stderr.
 
 set -euo pipefail
 
 tag=${1:-}
+
+pom=$(mvn -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)
+
 if [ -z "$tag" ]; then
-    echo "usage: set-release-version.sh <tag>" >&2
-    exit 2
+    echo "no tag: building the pom's own version, $pom" >&2
+    echo "$pom"
+    exit 0
 fi
 
 version=${tag#v}
+echo "tag: $version, pom: $pom" >&2
 
 # A tag promises that these bytes stay put, so it may not name a version that by definition moves.
 case "$version" in
@@ -37,9 +46,6 @@ case "$version" in
         exit 1
         ;;
 esac
-
-pom=$(mvn -B -ntp -q help:evaluate -Dexpression=project.version -DforceStdout)
-echo "tag: $version, pom: $pom" >&2
 
 if [ "${pom%-SNAPSHOT}" != "$version" ]; then
     echo "::error::tag $tag says $version but pom.xml says $pom" >&2

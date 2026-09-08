@@ -21,9 +21,16 @@ name: Release
 # What comes out is a *draft* release holding one portable archive, one archive per platform, the
 # standalone jar, and a SHA256SUMS file. Nothing is published to anyone until a human opens that
 # draft and presses the button.
+#
+# The same workflow runs from the Actions tab against any branch, and that run is the rehearsal for
+# all of the above. It builds and smoke-tests every archive and stops there: no tag names a
+# version, so the pom's snapshot stands and the release job is skipped. The archives land on the
+# run's own page instead, which lets the version decision wait until they are known to be good --
+# a tag, once pushed, has to be deleted to be taken back.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 # The draft release and its assets; nothing else.
 permissions:
@@ -38,6 +45,11 @@ env:
   # CI covers the JDK 17 spelling on every push; here one JDK keeps the platform archives
   # comparable to each other.
   JAVA_VERSION: "21"
+
+  # The tag being released, and empty on a manual run -- which is what makes that run a dry one.
+  # The version script reads an empty tag as "leave the pom's snapshot alone", and the release job
+  # tests the same condition to decide whether there is anything to draft.
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
 
 jobs:
   portable:
@@ -56,12 +68,12 @@ jobs:
 
       # The check and the rewrite live in one script so that every job packaging an archive can
       # make the identical one; this job is merely the one that reports the version onwards.
-      - name: Pin the pom to the tag's version
+      - name: Settle the version to build
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          version=$(.github/scripts/set-release-version.sh "$GITHUB_REF_NAME")
+          version=$(.github/scripts/set-release-version.sh "$RELEASE_TAG")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # The tag gets its own test run rather than trusting the branch build: a tag can be moved,
@@ -111,9 +123,9 @@ jobs:
 
       # This checkout is its own, and the archive below takes its name from the pom version, so
       # the suffix has to come off here too rather than only where the version is read out.
-      - name: Pin the pom to the tag's version
+      - name: Settle the version to build
         shell: bash
-        run: .github/scripts/set-release-version.sh "$GITHUB_REF_NAME"
+        run: .github/scripts/set-release-version.sh "$RELEASE_TAG"
 
       # A jlink image is built by and for one platform, which is why this job exists once per
       # platform rather than once. The tests ran in the portable job; this is the archive itself.
@@ -139,6 +151,9 @@ jobs:
   release:
     name: draft release
     needs: [portable, bundled]
+    # Where a manual run stops, having built and smoke-tested every archive without putting
+    # anything where a person could mistake it for a release.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
