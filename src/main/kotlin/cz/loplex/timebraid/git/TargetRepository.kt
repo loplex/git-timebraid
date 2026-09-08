@@ -26,7 +26,7 @@ import java.nio.file.Path
  * The output repository, opened for writing.
  *
  * The inputs' own objects arrive by [fetchFrom]; everything the braid invents on top of them —
- * the rewritten commits, the new root trees, the tag objects — is written through a single
+ * the rewritten commits, the new trees, the tag objects — is written through a single
  * [ObjectInserter], and where the storage backend allows it that inserter is a *pack* inserter,
  * because one pack file is the difference between a repository that opens instantly and a directory
  * holding tens of thousands of loose files.

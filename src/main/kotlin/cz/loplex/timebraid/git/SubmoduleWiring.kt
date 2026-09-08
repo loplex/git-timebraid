@@ -104,7 +104,7 @@ object SubmoduleWiring {
                             "no subdirectory parts them, only renaming that section in one input"
                     } else {
                         "two inputs both describe a submodule named '$name' at ${at()}; " +
-                            "give one of them another subdirectory with <repo>=<subdir>"
+                            "give one of them another subdirectory with <repo>::=<subdir>"
                     }
                 }
             }

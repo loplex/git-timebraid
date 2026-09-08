@@ -158,7 +158,7 @@ class TreeAssembler(private val inserter: ObjectInserter) {
                 require(occupant == null || occupant.mode == FileMode.TREE) {
                     "'$here' is not a directory in the repository that holds it at ${at()}, so no " +
                         "repository can be placed inside it -- give that repository another " +
-                        "subdirectory with <repo>=<subdir>"
+                        "subdirectory with <repo>::=<subdir>"
                 }
                 inside = if (occupant == null) emptyList() else entriesOf(occupant.id)
                 deeper = entriesOf
@@ -209,7 +209,7 @@ class TreeAssembler(private val inserter: ObjectInserter) {
         private fun collision(here: String, at: () -> String): String =
             "subdirectory '$here' collides with an entry of the same name in the repository that " +
                 "holds it at ${at()} -- give that repository another subdirectory with " +
-                "<repo>=<subdir>"
+                "<repo>::=<subdir>"
 
         /**
          * The order git stores tree entries in, which [TreeFormatter] does not apply on its own:

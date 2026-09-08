@@ -80,10 +80,10 @@ class MergePlan private constructor(
      * commit whose original tree is that content. A repository that has committed nothing by this
      * point in the braid is absent from the map rather than present as a blank.
      *
-     * The written tree of [commit] follows from this directly — one entry per repository in the map,
-     * each pointing at that commit's original tree — and so does the promise the whole tool is built
-     * on: whatever repository a commit came from, the other repositories are present at whatever they
-     * had last committed at that point in the braid.
+     * The written tree of [commit] follows from this — [TreeAssembler] owns how a destination
+     * becomes entries, a nested one and a splice among them — and so does the promise the whole tool
+     * is built on: whatever repository a commit came from, the other repositories are present at
+     * whatever they had last committed at that point in the braid.
      *
      * Iterates in the order the repositories were read, which is what keeps the assembled tree and
      * the merged `.gitmodules` a deterministic function of the inputs.

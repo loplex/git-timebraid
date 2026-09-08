@@ -39,6 +39,7 @@ import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 
 /**
@@ -49,9 +50,9 @@ import kotlin.io.path.writeText
 class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     /**
-     * An input is written `<path-or-url>[::<name>][=<subdir>]`, and clikt reads a token that opens
-     * with `/` and holds a `=`, an absolute path with a subdirectory, as a long option with its
-     * value attached, and refuses it as unknown. Routing unknown option-shaped tokens to the
+     * An input is written `<path-or-url>[::[<name>][=<subdir>]]`, and clikt reads a token that
+     * opens with `/` and holds a `=`, an absolute path with a subdirectory, as a long option with
+     * its value attached, and refuses it as unknown. Routing unknown option-shaped tokens to the
      * arguments instead lets the positional parser see the whole spec; [inputs] then refuses, as
      * clikt would, a token opening with `-` that stood before any `--`.
      */
@@ -143,9 +144,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     private val inputs by argument("repo")
         .help(
-            "Input repository: <path-or-url>[::<name>][=<subdir>]. The name is the repository's " +
-                "identity (tag prefix, provenance, --root-repo) and defaults to the last segment " +
-                "of the path; the subdirectory is where its content lands and defaults to the name.",
+            "Input repository: <path-or-url>[::[<name>][=<subdir>]]. Everything before the last " +
+                "'::' is the location, verbatim; append a bare '::' when the location itself " +
+                "holds one. The name is the repository's identity (tag prefix, provenance, " +
+                "--root-repo) and defaults to the last segment of the location, which an empty " +
+                "name asks for. The subdirectory is where the content lands, may be nested " +
+                "(::=libs/backend), and defaults to the name. In both, '\\' escapes; the " +
+                "subdirectory writes a ':' as '\\:', and a name can hold neither a ':' nor a " +
+                "'\\', which git refuses in a ref.",
         )
         .transformAll(nvalues = -1, required = true) { tokens -> afterOptions(tokens) }
 
@@ -254,33 +260,51 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     /**
-     * A location that is not there, reported with the suffix that was read off its end.
+     * The one diagnostic the grammar cannot give on its own.
      *
-     * `<location>[::<name>][=<subdir>]` is read by cutting each suffix off the end, so a location
-     * whose own last segment ends in `::<word>` or `=<word>` is read as a shorter location and a name
-     * or a subdirectory. When nothing is at the shorter location either, opening it fails with "no
-     * git repository at <the location, cut short>", which never mentions the part that was taken.
-     * The run is going to fail whichever reading was meant, so the only question is whether the
-     * failure says what was cut, and it costs nothing to say it here.
+     * `<location>::<name>` is read as exactly that, so a path whose own name holds a `::` is read
+     * as a location and a name — and when what follows happens to *be* a usable name, nothing in
+     * the parse looks wrong. The run then fails with "no git repository at <the location, cut
+     * short>" and never mentions the part it dropped.
      *
-     * What is on disk never changes the reading — this only refuses to go on.
+     * Both cases here are a location that is not on disk, and neither guesses at what was meant:
+     *
+     *  * the argument as written *is* a directory, which settles it — that is the repository, and
+     *    the `::` in its name was read as a separator;
+     *  * the argument as written is no directory either, which settles nothing. The run is going
+     *    to fail on the location whichever reading was intended, so the only question is whether
+     *    the failure mentions the text it dropped, and it costs nothing to say it here instead.
+     *
+     * Both quote that text as it was written, `::` and all, rather than as the parts it was read
+     * into. An argument ending in the bare `::` dropped nothing, and has nothing to report here.
+     *
+     * What is on disk never changes the reading — this only refuses to go on, naming the remedy.
      */
     private fun checkSplit(spec: RepoSpec, raw: String) {
-        if (spec.isRemote || spec.location == raw) return
+        if (spec.isRemote || !spec.split) return
+        val whole = try {
+            Path.of(raw)
+        } catch (e: InvalidPathException) {
+            return
+        }
         val location = try {
             Path.of(spec.location)
         } catch (e: InvalidPathException) {
             return
         }
         if (location.exists()) return
-        val cut = raw.substring(spec.location.length)
-        val read = listOfNotNull(
-            "name".takeIf { cut.startsWith("::") },
-            "subdirectory".takeIf { spec.subdir != null },
-        )
+        val dropped = raw.substring(spec.location.length)
+        if (dropped == SEPARATOR) return
         throw UsageError(
-            "there is nothing at '${spec.location}', which is '$raw' with '$cut' read off its end " +
-                "as the ${read.joinToString(" and ")}"
+            if (whole.isDirectory()) {
+                "'$raw' is a directory, but its name holds a '::', so it was read as the location " +
+                    "'${spec.location}' with '$dropped' as its suffix -- end the argument with '::' " +
+                    "to mean the whole path"
+            } else {
+                "there is nothing at '${spec.location}', which is '$raw' with '$dropped' read off " +
+                    "its end as the suffix -- end the argument with '::' if the location itself " +
+                    "holds the '::'"
+            }
         )
     }
 
@@ -328,13 +352,20 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         MergeCommand::class.java.`package`?.implementationVersion ?: "dev"
 }
 
-/** A parsed `<path-or-url>[::<name>][=<subdir>]` positional argument. */
+/** A parsed `<path-or-url>[::[<name>][=<subdir>]]` positional argument. */
 private class RepoSpec(
     val location: String,
     val isRemote: Boolean,
-    /** `::<name>` if given, otherwise the name implied by the location. */
+    /** Whether the argument held a `::` at all, which only a diagnostic needs — see [checkSplit]. */
+    val split: Boolean,
+    /** The name written after `::`, or the one implied by the location. */
     val name: String,
-    /** Explicit `=<subdir>`, or `null` to place the repository under its own name. */
+    /**
+     * Explicit `=<subdir>`, or `null` to place the repository under its own name. It may be a
+     * nested path (`libs/backend`); what this platform can spell as a path segment is checked here,
+     * and every rule about what git will store and check out is the planner's — `.git` at any
+     * level, and two repositories placed inside each other.
+     */
     val subdir: String?,
 )
 
@@ -357,22 +388,54 @@ private fun ArgumentTransformContext.afterOptions(tokens: List<String>): List<St
 }
 
 /**
- * Splits `<path-or-url>[::<name>][=<subdir>]`.
+ * Splits `<path-or-url>[::[<name>][=<subdir>]]`.
  *
- * The two are separate because they answer separate questions. The name is the repository's
- * identity — the tag prefix, the provenance label, the qualifier on a branch two inputs share, what
- * `--root-repo` matches — and has to be unique, which is the only way two inputs whose directories
- * happen to share a name can be merged at all. The subdirectory is where the content lands, and
- * what the default subject prefix names; it defaults to the name without being tied to it.
+ * The name and the subdirectory are separate because they answer separate questions. The name is
+ * the repository's identity — the tag prefix, the provenance label, the qualifier on a branch two
+ * inputs share, what `--root-repo` matches — and has to be unique, which is the only way two inputs
+ * whose directories happen to share a name can be merged at all. The subdirectory is where the
+ * content lands, and what the default subject prefix names; it defaults to the name without being
+ * tied to it.
  *
- * Each suffix is recognised only when what follows it is a bare word: a `/` or a `:` means the
- * character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
+ * The grammar is anchored on the **last** `::` in the argument, and there is nothing else to it.
+ * Everything before that is the location, taken verbatim; everything after it is the name and the
+ * subdirectory, where `\` escapes and an empty name means the default one. Nothing is guessed and
+ * nothing is guarded: an argument that cannot be read this way is refused, never quietly reread.
+ *
+ * Two consequences are the whole reason for this shape:
+ *
+ * - The location needs no escaping and can hold anything, `=` and `::` included, because appending
+ *   `::` always ends it exactly where it ends. (If the location ends in *k* colons, the argument
+ *   ends in *k+2*, so the last `::` starts at the location's length — for every location there is.)
+ * - The suffix needs no care either, because a colon is written `\:` there and a bare one is
+ *   refused. An encoded suffix therefore never holds a literal `::`, so the last one in the
+ *   argument is always the separator this parser wrote about. The subdirectory can hold anything
+ *   this way, and the name anything git takes in a ref.
+ *
+ * No name can hold a `/`, nor anything else git refuses in a ref name, which is not a gap: the name
+ * is a directory name for the clone of a remote input and a segment of a tag, and one segment of a
+ * ref is what it means.
  */
 private fun parseRepoSpec(raw: String): RepoSpec {
-    val (beforeSubdir, subdir) = splitSuffix(raw, "=")
-    val (location, name) = splitSuffix(beforeSubdir, "::")
-    for (part in listOfNotNull(name, subdir)) {
-        if (part.isBlank()) throw UsageError("'$part' is not a usable name (in '$raw')")
+    val at = raw.lastIndexOf(SEPARATOR)
+    val location = if (at < 0) raw else raw.substring(0, at)
+    val suffix = if (at < 0) "" else raw.substring(at + SEPARATOR.length)
+
+    val (nameText, subdirText) = splitAtEquals(suffix)
+    val name = decode(nameText, "name", raw).ifEmpty { null }
+    if (name != null && !isOneSegment(name)) throw unusableName(name, raw, fromSuffix = true)
+    val subdir = subdirText?.let { text ->
+        val decoded = decode(text, "subdirectory", raw)
+        if (decoded.isEmpty()) {
+            throw UsageError(
+                "'$raw' names no subdirectory after its '=' (leave the '=' out to place the " +
+                    "repository under its own name)" + REMEDY
+            )
+        }
+        if (!decoded.split('/').all(::isOneSegment)) {
+            throw UsageError("'$decoded' is not a usable subdirectory (in '$raw')" + REMEDY)
+        }
+        decoded
     }
 
     val remote = isRemoteLocation(location)
@@ -385,9 +448,33 @@ private fun parseRepoSpec(raw: String): RepoSpec {
     // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
     // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
     // of descending into it, so such a name is refused before anything is written anywhere.
-    if (!isOneSegment(derived)) throw UsageError("'$derived' is not a usable name (in '$raw')")
+    if (!isOneSegment(derived)) throw unusableName(derived, raw, fromSuffix = false)
     if (!isRefComponent(derived)) throw unusableRefName(derived, raw, fromSuffix = name != null)
-    return RepoSpec(location, remote, derived, subdir)
+    return RepoSpec(location, remote, at >= 0, derived, subdir)
+}
+
+/** The `::` that separates the location from the name — see [parseRepoSpec]. */
+private const val SEPARATOR = "::"
+
+/** The characters a `\` stands in front of; anything else after one is two ordinary characters. */
+private const val ESCAPABLE = "\\=:"
+
+/**
+ * An unusable name, and — when the argument wrote one — the way out if it never meant to.
+ *
+ * A location holding a `::` (an IPv6 URL, a directory somebody named that way) is read as a location
+ * and a name, which is what the grammar says and cannot be guessed around. Naming the remedy is what
+ * keeps that from being a dead end, because the remedy is not obvious: end the argument with `::`
+ * and the whole of it is the location.
+ *
+ * It is only offered for a name that came from the suffix, though. A name *derived* from the
+ * location is unusable for its own reasons — a last segment of `..`, a trailing separator — and
+ * there the remedy would be advice that does not apply, either because the argument holds no `::`
+ * at all or because it already ends in one.
+ */
+private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageError {
+    val said = "'$name' is not a usable name (in '$raw')"
+    return UsageError(if (fromSuffix) said + REMEDY else said)
 }
 
 /**
@@ -400,9 +487,77 @@ private fun parseRepoSpec(raw: String): RepoSpec {
 private fun unusableRefName(name: String, raw: String, fromSuffix: Boolean): UsageError {
     val said = "'$name' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
         "git will not have it in a ref name"
-    // One derived from the location is the one case where giving a name is the way out.
-    return UsageError(if (fromSuffix) said else "$said -- give the input a name with <repo>::<name>")
+    // A name the suffix gave is refused like the suffix's other parts; one derived from the
+    // location is the one case where giving a name is the way out.
+    return UsageError(
+        if (fromSuffix) said + REMEDY else "$said -- give the input a name with <repo>::<name>"
+    )
 }
+
+/**
+ * What to do when the `::` a refusal is about was never meant as the separator.
+ *
+ * Appended to every refusal that comes out of the suffix, because for all of them the likeliest
+ * cause is the same and the way out is not obvious.
+ */
+private const val REMEDY =
+    " -- if that '::' belongs to the location, end the argument with '::' to say so"
+
+/**
+ * [suffix] split at the first `=` that is not escaped: the name, and the subdirectory or `null`
+ * when there is no `=` at all.
+ */
+private fun splitAtEquals(suffix: String): Pair<String, String?> {
+    var i = 0
+    while (i < suffix.length) {
+        val c = suffix[i]
+        if (c == '\\' && i + 1 < suffix.length && suffix[i + 1] in ESCAPABLE) {
+            i += 2
+            continue
+        }
+        if (c == '=') return suffix.substring(0, i) to suffix.substring(i + 1)
+        i++
+    }
+    return suffix to null
+}
+
+/**
+ * [text] with its escapes resolved, or a usage error naming [part] and [raw].
+ *
+ * A bare `:` is refused rather than passed through, and that refusal is what the grammar rests on:
+ * with every colon written `\:`, an encoded name or subdirectory cannot hold a literal `::`, so the
+ * last `::` in the argument is always the separator. Accepting a lone colon here would make that
+ * only true of arguments nobody wrote carelessly.
+ */
+private fun decode(text: String, part: String, raw: String): String {
+    val out = StringBuilder(text.length)
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        if (c == '\\' && i + 1 < text.length && text[i + 1] in ESCAPABLE) {
+            out.append(text[i + 1])
+            i += 2
+            continue
+        }
+        if (c == ':') {
+            throw UsageError("a ':' in the $part has to be written '\\:' (in '$raw')" + REMEDY)
+        }
+        out.append(c)
+        i++
+    }
+    return out.toString()
+}
+
+/**
+ * Whether [name] can stand as one component of a ref name.
+ *
+ * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), the qualifier on a branch two inputs
+ * share, and the namespace under `refs/remotes/` that `--keep-remotes` writes. A spelling git will
+ * not accept in a ref is therefore not a quirk of taste but an argument that cannot be carried out.
+ * Asked of [TargetRepository.isRefName], the rule every ref the output is given is held to.
+ */
+private fun isRefComponent(name: String): Boolean =
+    TargetRepository.isRefName(Constants.R_TAGS + name + "/x")
 
 /**
  * [location] as a path, or a usage error naming it.
@@ -434,25 +589,6 @@ private fun isOneSegment(name: String): Boolean {
         return false
     }
     return !path.isAbsolute && path.nameCount == 1
-}
-
-/**
- * Whether [name] can stand as one component of a ref name.
- *
- * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), the qualifier on a branch two inputs
- * share, and the namespace under `refs/remotes/` that `--keep-remotes` writes. A spelling git will
- * not accept in a ref is therefore not a quirk of taste but an argument that cannot be carried out.
- * Asked of [TargetRepository.isRefName], the rule every ref the output is given is held to.
- */
-private fun isRefComponent(name: String): Boolean =
-    TargetRepository.isRefName(Constants.R_TAGS + name + "/x")
-
-/** [raw] split at the last [marker] that is followed by a bare word, or the whole of it and `null`. */
-private fun splitSuffix(raw: String, marker: String): Pair<String, String?> {
-    val at = raw.lastIndexOf(marker)
-    val suffix = if (at < 0) null else raw.substring(at + marker.length)
-    if (suffix.isNullOrEmpty() || '/' in suffix || ':' in suffix) return raw to null
-    return raw.substring(0, at) to suffix
 }
 
 /**
