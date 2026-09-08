@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.CommitGraph
 import cz.loplex.timebraid.plan.CommitGraphBuilder
 import org.eclipse.jgit.lib.Constants
@@ -15,11 +16,11 @@ enum class OrderBy { AUTHOR, COMMITTER }
 class BraidInputs(
     val graph: CommitGraph,
     /** Mainline tip per input repository, in the order the repositories were given to [CommitGraphReader.read]. */
-    val heads: IntArray,
+    val heads: List<Commit>,
     /** The branch name resolved as the mainline in every repository. */
     val mainlineBranch: String,
-    /** The original commit behind every graph index, indexed exactly like [graph]. */
-    val commits: List<SourceCommit>,
+    /** The original commit behind every commit of [graph]. */
+    val commits: Map<Commit, SourceCommit>,
     /** Per input repository, in the order they were given to [CommitGraphReader.read]. */
     val sources: List<SourceInputs>,
     /**
@@ -27,10 +28,10 @@ class BraidInputs(
      * across every input. Empty unless the option was given, which is the default scope: the
      * mainline chains alone (see `BraidInterleave`).
      */
-    val interleaveTips: IntArray = IntArray(0),
+    val interleaveTips: List<Commit> = emptyList(),
 )
 
-/** What was read out of one input repository, with every ref resolved to a graph index. */
+/** What was read out of one input repository, with every ref resolved to the commit it names. */
 class SourceInputs(
     val name: String,
     val branches: List<BraidRef>,
@@ -45,10 +46,10 @@ class SourceInputs(
 )
 
 /** A branch resolved to the commit it points at. */
-class BraidRef(val name: String, val commit: Int)
+class BraidRef(val name: String, val commit: Commit)
 
 /** A tag resolved to the commit it peels to, keeping its annotation if it had one. */
-class BraidTag(val name: String, val commit: Int, val annotation: TagAnnotation?)
+class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotation?)
 
 /**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
@@ -86,11 +87,11 @@ object CommitGraphReader {
 
         val mainline = resolveMainline(repositories, mainlineBranch)
         val builder = CommitGraphBuilder()
-        val heads = IntArray(repositories.size)
-        val commits = ArrayList<SourceCommit?>()
+        val heads = ArrayList<Commit>(repositories.size)
+        val original = HashMap<Commit, SourceCommit>()
         val inputs = ArrayList<SourceInputs>(repositories.size)
 
-        for ((repoIndex, repo) in repositories.withIndex()) {
+        for (repo in repositories) {
             val source = builder.addSource(repo.name)
 
             val mainlineTip = repo.resolveBranch(mainline)
@@ -115,71 +116,62 @@ object CommitGraphReader {
                 tips += tag.target
             }
 
-            for (commit in repo.readReachable(tips)) {
-                val index = builder.addCommit(
+            for (sourceCommit in repo.readReachable(tips)) {
+                val commit = builder.addCommit(
                     source = source,
-                    id = commit.id.name,
-                    orderingTime = commit.time(orderBy),
-                    parentIds = commit.parents.map { it.name },
+                    id = sourceCommit.id.name,
+                    orderingTime = sourceCommit.time(orderBy),
+                    parentIds = sourceCommit.parents.map { it.name },
                 )
-                while (commits.size <= index) commits.add(null)
-                commits[index] = commit
+                original[commit] = sourceCommit
             }
 
-            heads[repoIndex] = builder.indexOf(source, mainlineTip.name)
+            heads += builder.find(source, mainlineTip.name)
+                ?: error("repository '${repo.name}' did not read its own mainline tip")
+
+            // A ref whose target never made it into the graph is dropped rather than rejected: it
+            // points at something that is not a commit, which is a fact about the input, not an
+            // error in the run.
             inputs += SourceInputs(
                 name = repo.name,
-                branches = selectedBranches.mapNotNull { resolve(builder, source, it.name, it.target) },
+                branches = selectedBranches.mapNotNull { branch ->
+                    builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
+                },
                 tags = selectedTags.mapNotNull { tag ->
-                    resolve(builder, source, tag.name, tag.target)
-                        ?.let { BraidTag(it.name, it.commit, tag.annotation) }
+                    builder.find(source, tag.target.name)
+                        ?.let { BraidTag(tag.name, it, tag.annotation) }
                 },
                 readRefs = readRefs.toList(),
             )
         }
 
         val graph = builder.build()
-        check(commits.size == graph.size && commits.none { it == null }) {
-            "the graph has ${graph.size} commits but ${commits.count { it != null }} were read"
+        check(original.size == graph.size) {
+            "the graph has ${graph.size} commits but ${original.size} were read"
         }
 
-        @Suppress("UNCHECKED_CAST")
         return BraidInputs(
             graph = graph,
             heads = heads,
             mainlineBranch = mainline,
-            commits = commits as List<SourceCommit>,
+            commits = original,
             sources = inputs,
             interleaveTips = interleaveTips(interleaveRefs, inputs),
         )
     }
 
     /**
-     * A ref whose target never made it into the graph is dropped rather than rejected: it points at
-     * something that is not a commit, which is a fact about the input, not an error in the run.
-     */
-    private fun resolve(
-        builder: CommitGraphBuilder,
-        source: Int,
-        name: String,
-        target: ObjectId,
-    ): BraidRef? {
-        val index = builder.indexOf(source, target.name)
-        return if (index == CommitGraph.NO_COMMIT) null else BraidRef(name, index)
-    }
-
-    /**
-     * The refs the patterns match, as graph indices, deduplicated.
+     * The refs the patterns match, as the commits they name, deduplicated.
      *
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
      * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
      * and a bare star is every ref — which puts the whole loaded graph in scope.
      */
-    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): IntArray {
-        if (patterns.isEmpty()) return IntArray(0)
+    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
+        if (patterns.isEmpty()) return emptyList()
         val matchers = patterns.map { glob(it) }
-        val tips = LinkedHashSet<Int>()
+        val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
             for (branch in input.branches) {
                 if (matchers.any { it.matches("${Constants.R_HEADS}${branch.name}") }) {
@@ -190,7 +182,7 @@ object CommitGraphReader {
                 if (matchers.any { it.matches("${Constants.R_TAGS}${tag.name}") }) tips += tag.commit
             }
         }
-        return tips.toIntArray()
+        return tips.toList()
     }
 
     /** A glob over ref names: `*` is the only metacharacter and it spans path separators. */

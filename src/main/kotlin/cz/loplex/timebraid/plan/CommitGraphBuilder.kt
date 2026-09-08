@@ -1,70 +1,62 @@
 package cz.loplex.timebraid.plan
 
 /**
- * Assigns dense indices to `(repository, commit id)` pairs and assembles a [CommitGraph].
+ * Assembles a [CommitGraph] from commits given in any order.
  *
- * Commits may be added in any order, and a commit may name parents that have not been added yet —
- * a repository log is usually walked newest first, so forward references are the normal case, not
- * the exception. A parent named by a commit that is never added is an error reported by [build]:
- * that is exactly the shape a shallow or partial clone has, and the tool needs the whole graph.
+ * A commit may name parents that have not been added yet — a repository log is usually walked
+ * newest first, so forward references are the normal case, not the exception. Each one becomes a
+ * [Commit] straight away and is filled in when its own turn comes; one that never gets a turn is an
+ * error reported by [build], which is exactly the shape a shallow or partial clone has, and the
+ * tool needs the whole graph.
  *
  * Parent references are resolved **within the same repository**. Original parent edges never cross
  * repository boundaries — the inputs are independent histories, and the edges that do cross are
  * precisely the ones the braid adds later. Two repositories may therefore contain the same commit
  * id without interfering; they become two distinct commits.
+ *
+ * What the builder hands out is what the graph is made of: [addSource] returns the [Source] and
+ * [addCommit] the [Commit] that will be in the finished graph, so a caller that has to remember a
+ * commit — a ref target, a mainline tip, the original behind it — remembers the commit itself and
+ * has nothing left to look up once [build] has run.
  */
-class CommitGraphBuilder {
+internal class CommitGraphBuilder {
 
-    private val sourceNames = ArrayList<String>()
-    private val indexBySource = ArrayList<HashMap<String, Int>>()
+    /** Every repository, in the order they were registered, each with its own commits by id. */
+    private val sources = LinkedHashMap<Source, HashMap<String, Commit>>()
 
-    private val ids = ArrayList<String>()
-    private val sourceOf = ArrayList<Int>()
-    private val orderingTime = ArrayList<Long>()
-    private val parents = ArrayList<IntArray?>()
+    /** Every commit, in the order they were first named, which becomes the graph's order. */
+    private val commits = ArrayList<Commit>()
 
-    /** Number of commit indices handed out so far, including placeholders for unresolved parents. */
-    val size: Int get() = ids.size
-
-    /** Registers an input repository and returns its source index. */
-    fun addSource(name: String): Int {
-        sourceNames.add(name)
-        indexBySource.add(HashMap())
-        return sourceNames.size - 1
-    }
+    /** Registers an input repository. */
+    fun addSource(name: String): Source =
+        Source(name).also { sources[it] = HashMap() }
 
     /**
-     * Adds a commit and returns its dense index. [parentIds] are commit ids within the same
-     * repository, first parent first; duplicates are dropped, keeping the first occurrence.
+     * Adds a commit. [parentIds] are commit ids within the same repository, first parent first;
+     * duplicates are dropped, keeping the first occurrence.
      */
     fun addCommit(
-        source: Int,
+        source: Source,
         id: String,
         orderingTime: Long,
         parentIds: List<String> = emptyList(),
-    ): Int {
-        require(source in sourceNames.indices) { "unknown source index $source" }
-        val commit = intern(source, id)
-        check(parents[commit] == null) {
-            "commit ${sourceNames[source]}/$id added twice"
-        }
-        val resolved = IntArray(parentIds.size)
-        var count = 0
+    ): Commit {
+        val byId = commitsOf(source)
+        val commit = intern(byId, source, id)
+        check(!commit.isAdded) { "commit $source/$id added twice" }
+
+        val parents = ArrayList<Commit>(parentIds.size)
         for (parentId in parentIds) {
-            require(parentId != id) { "commit ${sourceNames[source]}/$id is its own parent" }
-            val parent = intern(source, parentId)
-            if ((0 until count).none { resolved[it] == parent }) resolved[count++] = parent
+            require(parentId != id) { "commit $source/$id is its own parent" }
+            val parent = intern(byId, source, parentId)
+            if (parent !in parents) parents.add(parent)
         }
-        parents[commit] = if (count == resolved.size) resolved else resolved.copyOf(count)
-        this.orderingTime[commit] = orderingTime
+        commit.define(orderingTime, parents)
         return commit
     }
 
-    /** Dense index of an already known commit, or [CommitGraph.NO_COMMIT] if it was never seen. */
-    fun indexOf(source: Int, id: String): Int {
-        require(source in sourceNames.indices) { "unknown source index $source" }
-        return indexBySource[source][id] ?: CommitGraph.NO_COMMIT
-    }
+    /** The already named commit with this id, or null if nothing has named it. */
+    fun find(source: Source, id: String): Commit? = commitsOf(source)[id]
 
     /**
      * Builds the graph.
@@ -72,28 +64,29 @@ class CommitGraphBuilder {
      * @throws IllegalStateException if any commit was referenced as a parent but never added.
      */
     fun build(): CommitGraph {
-        val missing = (0 until size).filter { parents[it] == null }
+        val missing = commits.filter { !it.isAdded }
         check(missing.isEmpty()) {
-            val listed = missing.take(10).joinToString(", ") { "${sourceNames[sourceOf[it]]}/${ids[it]}" }
+            val listed = missing.take(10).joinToString(", ")
             val more = if (missing.size > 10) ", ... (${missing.size} in total)" else ""
             "referenced as a parent but never added: $listed$more" +
                 " — the input history is incomplete (a shallow or partial clone?)"
         }
-        return CommitGraph(
-            parents = Array(size) { parents[it]!! },
-            sourceIndex = IntArray(size) { sourceOf[it] },
-            orderingTime = LongArray(size) { orderingTime[it] },
-            commitIds = Array(size) { ids[it] },
-            sourceNames = ArrayList(sourceNames),
-        )
+
+        return CommitGraph(sources.keys.toList(), commits.toList())
     }
 
-    private fun intern(source: Int, id: String): Int =
-        indexBySource[source].getOrPut(id) {
-            ids.add(id)
-            sourceOf.add(source)
-            orderingTime.add(0L)
-            parents.add(null)
-            ids.size - 1
-        }
+    private fun intern(byId: HashMap<String, Commit>, source: Source, id: String): Commit =
+        byId.getOrPut(id) { Commit(source, id).also { commits.add(it) } }
+
+    /**
+     * The commits of [source], which is also the check that it is one of this builder's.
+     *
+     * A [Source] is looked up by identity, so one from another builder is refused rather than
+     * quietly interning into a map that is not this graph's.
+     */
+    private fun commitsOf(source: Source): HashMap<String, Commit> {
+        val byId = sources[source]
+        require(byId != null) { "repository $source belongs to another builder" }
+        return byId
+    }
 }

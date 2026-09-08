@@ -1,7 +1,8 @@
 package cz.loplex.timebraid.git
 
-import cz.loplex.timebraid.plan.CommitGraph
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.MergePlan
+import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.FileMode
@@ -51,7 +52,7 @@ class BraidWriter(
     private val graph = inputs.graph
 
     /** New identity of every original commit, filled in write order. */
-    private val written = arrayOfNulls<ObjectId>(graph.size)
+    private val written = HashMap<Commit, ObjectId>(graph.size)
 
     /** Top-level entries of the root repository's trees, which repeat across the whole braid. */
     private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
@@ -62,19 +63,37 @@ class BraidWriter(
      * braid, so the same tree is asked about at as many braid positions as the input stood still
      * for — without this the answer would be recomputed at every one of them.
      */
-    private val wiring = Array(sources.size) { HashMap<ObjectId, RewiredGitmodules>() }
+    private val wiring = graph.sources.associateWith { HashMap<ObjectId, RewiredGitmodules>() }
 
     /** Root `.gitmodules` blobs written so far, keyed by their text. */
     private val gitmodulesBlobs = HashMap<String, ObjectId>()
 
+    /**
+     * The open repository behind each strand. The two lists arrive in the same order and are paired
+     * here, once: every later lookup is by [Source], so nothing downstream has to know the order or
+     * be trusted to get it right.
+     */
+    private val repoOf: Map<Source, SourceRepository>
+
     init {
-        require(sources.size == graph.sourceCount) {
-            "got ${sources.size} repositories for ${graph.sourceCount} strands"
+        require(sources.size == graph.sources.size) {
+            "got ${sources.size} repositories for ${graph.sources.size} strands"
         }
-        require(sources.map { it.name } == graph.sourceNames) {
+        require(sources.map { it.name } == graph.sources.map { it.name }) {
             "the repositories and the graph disagree about the strands"
         }
+        repoOf = graph.sources.zip(sources).toMap()
     }
+
+    /**
+     * The commit an input originally made, as the reader read it.
+     *
+     * Missing means the commit is not one of these inputs' — which can only happen if the plan and
+     * the inputs were built from different graphs, and is worth saying rather than reading whatever
+     * happens to be at hand.
+     */
+    private fun originalOf(commit: Commit): SourceCommit =
+        inputs.commits[commit] ?: error("$commit is not a commit of these inputs")
 
     fun write(): WriteSummary {
         writeCommits()
@@ -98,13 +117,13 @@ class BraidWriter(
 
     private fun writeCommits() {
         for (planned in plan.commits) {
-            val commit = planned.commit.index
-            val original = inputs.commits[commit]
+            val commit = planned.commit
+            val original = originalOf(commit)
             val parents = planned.parents.map { parent ->
                 written[parent]
                     ?: error(
-                        "${graph.describe(commit)} is written before its parent " +
-                            "${graph.describe(parent)} — the plan's order is not a write order"
+                        "$commit is written before its parent $parent — " +
+                            "the plan's order is not a write order"
                     )
             }
             written[commit] = target.writeCommit(
@@ -120,22 +139,20 @@ class BraidWriter(
     /**
      * The root tree of [commit]: every repository that already has content, each at whatever the
      * plan says it last committed. [MergePlan.contentOf] has done the accumulating; all that is left
-     * here is to turn commit indices into the trees those commits carried.
+     * here is to turn those commits into the trees they carried.
      */
-    private fun treeOf(commit: Int): ObjectId {
+    private fun treeOf(commit: Commit): ObjectId {
         val content = plan.contentOf(commit)
         val subdirEntries = ArrayList<TreeEntry>(content.size)
         val parts = ArrayList<RewiredGitmodules>(content.size)
         var root: List<TreeEntry> = emptyList()
-        val at = { graph.describe(commit) }
+        val at = { commit.toString() }
 
-        for (source in content.indices) {
-            val holder = content[source]
-            if (holder == CommitGraph.NO_COMMIT) continue
-            val tree = inputs.commits[holder].tree
-            val subdir = plan.subdirs[source]
+        for ((source, holder) in content) {
+            val tree = originalOf(holder).tree
+            val subdir = plan.subdirOf(source)
             if (subdir == null) {
-                root = rootEntries.getOrPut(tree) { sources[source].topLevelEntries(tree) }
+                root = rootEntries.getOrPut(tree) { repoOf.getValue(source).topLevelEntries(tree) }
             } else {
                 subdirEntries += TreeEntry(subdir, FileMode.TREE, tree)
             }
@@ -146,10 +163,11 @@ class BraidWriter(
     }
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
-    private fun wiringOf(source: Int, tree: ObjectId, at: () -> String): RewiredGitmodules =
-        wiring[source].getOrPut(tree) {
-            val text = sources[source].gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
-            SubmoduleWiring.rewire(text, plan.subdirs[source], sources[source].name, at)
+    private fun wiringOf(source: Source, tree: ObjectId, at: () -> String): RewiredGitmodules =
+        wiring.getValue(source).getOrPut(tree) {
+            val repo = repoOf.getValue(source)
+            val text = repo.gitmodules(tree) ?: return@getOrPut SubmoduleWiring.NOTHING
+            SubmoduleWiring.rewire(text, plan.subdirOf(source), repo.name, at)
         }
 
     /**
@@ -159,7 +177,7 @@ class BraidWriter(
      */
     private fun gitmodulesOf(parts: List<RewiredGitmodules>, at: () -> String): ObjectId? {
         val text = SubmoduleWiring.merge(parts, at) ?: return null
-        return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text.toByteArray(Charsets.UTF_8)) }
+        return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text) }
     }
 
     /**
@@ -171,7 +189,7 @@ class BraidWriter(
      * ends up as its own paragraph, which is where git's trailer parsing expects it.
      */
     private fun messageOf(planned: PlannedCommit, original: SourceCommit): String {
-        val repo = graph.sourceNameOf(planned.commit.index)
+        val repo = planned.commit.source.name
         val subdir = planned.subdir ?: repo
         val prefixed = options.subjectPrefix
             .replace("{repo}", repo)
@@ -270,11 +288,11 @@ class BraidWriter(
         for (source in inputs.sources) {
             val prefix = Constants.R_REMOTES + source.name + "/"
             for (branch in source.branches) {
-                refs[prefix + branch.name] = inputs.commits[branch.commit].id
+                refs[prefix + branch.name] = originalOf(branch.commit).id
                 added++
             }
             for (tag in source.tags) {
-                refs[prefix + "tags/" + tag.name] = inputs.commits[tag.commit].id
+                refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
                 added++
             }
         }
@@ -298,8 +316,8 @@ class BraidWriter(
         )
     }
 
-    private fun idOf(commit: Int): ObjectId =
-        written[commit] ?: error("${graph.describe(commit)} was never written")
+    private fun idOf(commit: Commit): ObjectId =
+        written[commit] ?: error("$commit was never written")
 
     companion object {
 

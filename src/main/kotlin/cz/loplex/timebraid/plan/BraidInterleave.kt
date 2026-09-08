@@ -1,7 +1,5 @@
 package cz.loplex.timebraid.plan
 
-import java.util.PriorityQueue
-
 /**
  * Decides *the braid*: which commits form the output's single interleaved mainline, and in what order.
  *
@@ -9,7 +7,7 @@ import java.util.PriorityQueue
  * decided by Kahn's algorithm with a priority queue — keep the commits whose parents have all been
  * emitted, always take the one with the earliest timestamp — run not over the whole graph but over a
  * **scope**: the mainline chains, plus the ancestors of whatever refs the caller opted in through
- * the `interleaveTips` parameter of [compute]. [Reparenter] then turns consecutive braid members
+ * the `interleaveTips` parameter of [compute]. [reparent] then turns consecutive braid members
  * into parent edges, which is what makes `git log --first-parent` walk the braid.
  *
  * **With no opted-in refs — the default — the scope is the mainline chains alone**, and since those are
@@ -23,7 +21,7 @@ import java.util.PriorityQueue
  * 2. **A cross-repository predecessor is never timestamped later than the commit it precedes.** When a
  *    commit's predecessor comes from another chain, that commit was already in the ready set when the
  *    predecessor was taken, so the predecessor won a direct comparison against it. The artificial time
- *    edge this class hands to [Reparenter] can consequently never point into the future.
+ *    edge this class hands to [reparent] can consequently never point into the future.
  * 3. **No branch outside the mainlines can shift the interleave.** Nothing off a mainline chain is in
  *    scope, so a side branch merged into a mainline — however inconveniently timestamped, however
  *    insignificant — cannot move where two repositories' mainlines meet. A merge takes its braid place
@@ -40,7 +38,7 @@ import java.util.PriorityQueue
  * all (the inputs are independent histories), same-repository braid members are ordered by property 1,
  * and neither depends on the scope — so a braid built here can never close a cycle when reparented.
  * Every original edge is preserved regardless; ancestry is a property of the *write* order
- * ([TopoOrder], run after reparenting), not of the braid.
+ * ([topoOrder], run after reparenting), not of the braid.
  *
  * The default mechanism is the one this project's first prototype used in June 2021: each branch read
  * as its own `git log --topo-order`, those logs merged k-way.
@@ -50,7 +48,7 @@ import java.util.PriorityQueue
  * chains of a single repository would break the argument and are out of scope, exactly as they were for
  * the original two-repository-only tool.
  */
-object BraidInterleave {
+internal object BraidInterleave {
 
     /**
      * @param heads mainline tips, one per input repository. Two heads that share a tail contribute
@@ -58,73 +56,47 @@ object BraidInterleave {
      * @param interleaveTips commits whose ancestry is allowed to delay a braid commit — the refs named
      *   by `--interleave-ref`, already resolved. Empty by default, which is the mainline-chains-only
      *   scope described above.
+     * @param commits the nodes in scope; every head, tip and parent has to be among them.
+     * @param parentsOf the edges to walk, the commits' own in every present caller.
      * @return the braid — the union of the heads' first-parent chains — in braid order.
      */
     fun compute(
-        graph: CommitGraph,
-        heads: IntArray,
-        interleaveTips: IntArray = IntArray(0),
-    ): IntArray {
-        val onBraid = BooleanArray(graph.size)
-        var braidSize = 0
+        commits: List<Commit>,
+        heads: List<Commit>,
+        interleaveTips: List<Commit>,
+        parentsOf: (Commit) -> List<Commit>,
+    ): List<Commit> {
+        // The braid itself: each head's first-parent chain, up to wherever it meets one already
+        // walked. `add` answering false is that meeting point.
+        val onBraid = HashSet<Commit>()
         for (head in heads) {
-            require(head in 0 until graph.size) { "head index $head is not a commit of this graph" }
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && !onBraid[commit]) {
-                onBraid[commit] = true
-                braidSize++
-                commit = graph.firstParentOf(commit)
-            }
+            var commit: Commit? = head
+            while (commit != null && onBraid.add(commit)) commit = parentsOf(commit).firstOrNull()
         }
 
-        val inScope = onBraid.copyOf()
-        var scopeSize = braidSize
-        val pending = ArrayDeque<Int>()
+        // Scope: the braid, plus everything the opted-in tips reach. A commit in scope but off the
+        // braid is never written by this pass; it is here only so that it can delay one that is.
+        val inScope = HashSet(onBraid)
+        val pending = ArrayDeque<Commit>()
         for (tip in interleaveTips) {
-            require(tip in 0 until graph.size) { "tip index $tip is not a commit of this graph" }
-            if (!inScope[tip]) {
-                inScope[tip] = true
-                scopeSize++
-                pending.addLast(tip)
-            }
+            if (inScope.add(tip)) pending.addLast(tip)
         }
         while (pending.isNotEmpty()) {
-            for (parent in graph.parentsOf(pending.removeLast())) {
-                if (!inScope[parent]) {
-                    inScope[parent] = true
-                    scopeSize++
-                    pending.addLast(parent)
-                }
+            for (parent in parentsOf(pending.removeLast())) {
+                if (inScope.add(parent)) pending.addLast(parent)
             }
         }
 
-        val children = ChildEdges.of(graph)
-        val unemitted = IntArray(graph.size)
-        val ready = PriorityQueue(maxOf(1, scopeSize), earliestFirst(graph))
-        for (commit in 0 until graph.size) {
-            if (!inScope[commit]) continue
-            unemitted[commit] = graph.parentsOf(commit).count { inScope[it] }
-            if (unemitted[commit] == 0) ready.add(commit)
-        }
+        // Taking the scope in the order the commits were given keeps the walk's tie-break the same
+        // as it would be over the whole graph: for any two commits in scope, their positions here
+        // and there rank them alike.
+        val scope = commits.filter { it in inScope }
+        val order = KahnOrder(
+            scope,
+            parentsOf = { commit -> parentsOf(commit).filter { it in inScope } },
+            precedence = compareBy(Commit::time),
+        ) { "$it is reachable in the scope but is not one of the commits given" }.order()
 
-        val braid = IntArray(braidSize)
-        var next = 0
-        var emitted = 0
-        while (ready.isNotEmpty()) {
-            val commit = ready.poll()
-            emitted++
-            if (onBraid[commit]) braid[next++] = commit
-            for (i in children.starts[commit] until children.starts[commit + 1]) {
-                val child = children.targets[i]
-                if (inScope[child] && --unemitted[child] == 0) ready.add(child)
-            }
-        }
-
-        if (emitted != scopeSize) {
-            // Whatever was left has an unemitted parent, which in a finite graph means a cycle.
-            requireAcyclic(Array(graph.size) { graph.parentsOf(it) }, graph::describe)
-            error("$emitted of $scopeSize commits in scope were ordered, but no cycle was found")
-        }
-        return braid
+        return order.filter { it in onBraid }
     }
 }

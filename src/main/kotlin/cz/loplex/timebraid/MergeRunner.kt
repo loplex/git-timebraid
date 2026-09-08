@@ -10,7 +10,6 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
-import cz.loplex.timebraid.plan.BraidInterleave
 import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
@@ -94,12 +93,15 @@ class MergeRunner(
                         "wait for them"
                 )
             }
-            val plan = MergePlan.build(
-                graph = braid.graph,
-                heads = braid.heads,
-                subdirs = request.inputs.map { it.subdir },
-                braid = BraidInterleave.compute(braid.graph, braid.heads, braid.interleaveTips),
-            )
+            val plan = braid.graph
+                .braid(braid.heads, braid.interleaveTips)
+                .plan(
+                    // The strands are in the order the inputs were given, so the two are paired by
+                    // position here rather than by asking a Source where it sits.
+                    braid.graph.sources
+                        .mapIndexed { index, source -> source to request.inputs[index].subdir }
+                        .toMap()
+                )
 
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)

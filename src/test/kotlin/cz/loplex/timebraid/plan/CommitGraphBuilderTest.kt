@@ -2,6 +2,7 @@ package cz.loplex.timebraid.plan
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -9,18 +10,19 @@ import org.junit.jupiter.api.assertThrows
 class CommitGraphBuilderTest {
 
     @Test
-    fun `hands out dense indices`() {
+    fun `hands out the commits it then builds the graph from`() {
         val builder = CommitGraphBuilder()
         val a = builder.addSource("A")
         val b = builder.addSource("B")
 
-        assertEquals(0, builder.addCommit(a, "a1", 10))
-        assertEquals(1, builder.addCommit(a, "a2", 20, listOf("a1")))
-        assertEquals(2, builder.addCommit(b, "b1", 15))
+        val a1 = builder.addCommit(a, "a1", 10)
+        val a2 = builder.addCommit(a, "a2", 20, listOf("a1"))
+        val b1 = builder.addCommit(b, "b1", 15)
 
         val graph = builder.build()
         assertEquals(3, graph.size)
-        assertEquals(2, graph.sourceCount)
+        assertEquals(2, graph.sources.size)
+        assertEquals(listOf(a1, a2, b1), graph.commits)
     }
 
     @Test
@@ -28,11 +30,11 @@ class CommitGraphBuilderTest {
         val builder = CommitGraphBuilder()
         val a = builder.addSource("A")
         // A log is normally walked newest first, so a commit names parents that are still unknown.
-        builder.addCommit(a, "a2", 20, listOf("a1"))
+        val a2 = builder.addCommit(a, "a2", 20, listOf("a1"))
         builder.addCommit(a, "a1", 10)
 
-        val graph = builder.build()
-        assertEquals("a1", graph.idOf(graph.firstParentOf(builder.indexOf(a, "a2"))))
+        builder.build()
+        assertEquals("a1", a2.firstParent?.id)
     }
 
     @Test
@@ -44,9 +46,9 @@ class CommitGraphBuilderTest {
         val inB = builder.addCommit(b, "5c1a9f2", 20)
 
         assertNotEquals(inA, inB)
-        val graph = builder.build()
-        assertEquals("A", graph.sourceNameOf(inA))
-        assertEquals("B", graph.sourceNameOf(inB))
+        builder.build()
+        assertEquals("A", inA.source.name)
+        assertEquals("B", inB.source.name)
     }
 
     @Test
@@ -57,8 +59,8 @@ class CommitGraphBuilderTest {
         builder.addCommit(a, "f1", 15, listOf("a1"))
         val merge = builder.addCommit(a, "m", 20, listOf("a1", "f1", "a1"))
 
-        val graph = builder.build()
-        assertEquals(listOf("a1", "f1"), graph.parentsOf(merge).map { graph.idOf(it) })
+        builder.build()
+        assertEquals(listOf("a1", "f1"), merge.parents.map { it.id })
     }
 
     @Test
@@ -71,6 +73,17 @@ class CommitGraphBuilderTest {
 
         assertTrue(failure.message!!.contains("A/a1"))
         assertTrue(failure.message!!.contains("shallow"))
+    }
+
+    @Test
+    fun `a commit named only as a parent has no data of its own`() {
+        val builder = CommitGraphBuilder()
+        val a = builder.addSource("A")
+        val a2 = builder.addCommit(a, "a2", 20, listOf("a1"))
+
+        val failure = assertThrows<IllegalStateException> { a2.firstParent!!.time }
+
+        assertTrue(failure.message!!.contains("A/a1"))
     }
 
     @Test
@@ -91,12 +104,20 @@ class CommitGraphBuilderTest {
     }
 
     @Test
-    fun `indexOf reports an unknown commit rather than inventing one`() {
+    fun `find reports an unknown commit rather than inventing one`() {
         val builder = CommitGraphBuilder()
         val a = builder.addSource("A")
         builder.addCommit(a, "a1", 10)
 
-        assertEquals(CommitGraph.NO_COMMIT, builder.indexOf(a, "nope"))
+        assertNull(builder.find(a, "nope"))
         assertEquals(1, builder.build().size)
+    }
+
+    @Test
+    fun `a repository of another builder is refused rather than silently interned`() {
+        val builder = CommitGraphBuilder()
+        val elsewhere = CommitGraphBuilder().addSource("A")
+
+        assertThrows<IllegalArgumentException> { builder.addCommit(elsewhere, "a1", 10) }
     }
 }

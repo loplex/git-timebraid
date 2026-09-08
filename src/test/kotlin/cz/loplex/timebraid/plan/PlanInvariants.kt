@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
  */
 object PlanInvariants {
 
-    fun assertAll(plan: MergePlan, heads: IntArray, label: String) {
+    fun assertAll(plan: MergePlan, heads: List<Commit>, label: String) {
         assertWriteOrder(plan, label)
         assertOriginalEdgesKept(plan, label)
         assertNoDuplicateParents(plan, label)
@@ -20,71 +20,59 @@ object PlanInvariants {
 
     /** Every commit appears exactly once, and after all of its parents. */
     fun assertWriteOrder(plan: MergePlan, label: String) {
-        val graph = plan.graph
-        assertEquals(graph.size, plan.commits.size, "$label: plan does not cover the graph")
+        assertEquals(plan.graph.size, plan.commits.size, "$label: plan does not cover the graph")
 
-        val written = BooleanArray(graph.size)
+        val written = HashSet<Commit>()
         for (planned in plan.commits) {
-            val commit = planned.commit.index
-            assertTrue(!written[commit], "$label: ${graph.describe(commit)} planned twice")
+            assertTrue(planned.commit !in written, "$label: ${planned.commit} planned twice")
             for (parent in planned.parents) {
                 assertTrue(
-                    written[parent],
-                    "$label: ${graph.describe(commit)} is written before its parent " +
-                        graph.describe(parent),
+                    parent in written,
+                    "$label: ${planned.commit} is written before its parent $parent",
                 )
             }
-            written[commit] = true
+            written += planned.commit
         }
     }
 
     /** The rule adds parents and never removes one. */
     fun assertOriginalEdgesKept(plan: MergePlan, label: String) {
-        val graph = plan.graph
-        for (commit in 0 until graph.size) {
+        for (commit in plan.graph.commits) {
             val now = plan.parentsOf(commit)
-            for (parent in graph.parentsOf(commit)) {
-                assertTrue(
-                    now.any { it == parent },
-                    "$label: ${graph.describe(commit)} lost its original parent " +
-                        graph.describe(parent),
-                )
+            for (parent in commit.parents) {
+                assertTrue(parent in now, "$label: $commit lost its original parent $parent")
             }
             assertTrue(
-                now.size - graph.parentsOf(commit).size in 0..1,
-                "$label: ${graph.describe(commit)} gained more than one parent",
+                now.size - commit.parents.size in 0..1,
+                "$label: $commit gained more than one parent",
             )
         }
     }
 
     fun assertNoDuplicateParents(plan: MergePlan, label: String) {
-        for (commit in 0 until plan.graph.size) {
+        for (commit in plan.graph.commits) {
             val parents = plan.parentsOf(commit)
-            assertEquals(
-                parents.size,
-                parents.toSet().size,
-                "$label: duplicate parent on ${plan.graph.describe(commit)}",
-            )
+            assertEquals(parents.size, parents.toSet().size, "$label: duplicate parent on $commit")
         }
     }
 
     /** The braid covers exactly the union of the heads' first-parent chains, without duplicates. */
-    fun assertBraidIsTheFirstParentChains(plan: MergePlan, heads: IntArray, label: String) {
-        val expected = LinkedHashSet<Int>()
+    fun assertBraidIsTheFirstParentChains(plan: MergePlan, heads: List<Commit>, label: String) {
+        val expected = LinkedHashSet<Commit>()
         for (head in heads) {
-            var commit = head
-            while (commit != CommitGraph.NO_COMMIT && expected.add(commit)) {
-                commit = plan.graph.firstParentOf(commit)
+            var commit: Commit? = head
+            while (commit != null && expected.add(commit)) {
+                commit = commit.firstParent
             }
         }
 
         assertEquals(expected.size, plan.braid.size, "$label: braid has duplicates or gaps")
         assertEquals(expected, plan.braid.toSet(), "$label: braid covers the wrong commits")
-        for (commit in 0 until plan.graph.size) {
+        for (commit in plan.graph.commits) {
             assertEquals(
                 commit in expected,
                 plan.isOnBraid(commit),
-                "$label: wrong braid membership for ${plan.graph.describe(commit)}",
+                "$label: wrong braid membership for $commit",
             )
         }
     }
@@ -97,8 +85,7 @@ object PlanInvariants {
             assertEquals(
                 predecessor,
                 plan.parentsOf(commit)[0],
-                "$label: ${plan.graph.describe(commit)} does not follow " +
-                    plan.graph.describe(predecessor),
+                "$label: $commit does not follow $predecessor",
             )
         }
     }
@@ -109,19 +96,14 @@ object PlanInvariants {
      * symbolically, without a single git object.
      */
     fun assertAccumulation(plan: MergePlan, label: String) {
-        val graph = plan.graph
-        for (commit in 0 until graph.size) {
+        for (commit in plan.graph.commits) {
             val expected = when (val firstParent = plan.parentsOf(commit).firstOrNull()) {
-                null -> IntArray(graph.sourceCount) { CommitGraph.NO_COMMIT }
-                else -> plan.contentOf(firstParent).copyOf()
+                null -> LinkedHashMap()
+                else -> LinkedHashMap(plan.contentOf(firstParent))
             }
-            expected[graph.sourceOf(commit)] = commit
+            expected[commit.source] = commit
 
-            assertEquals(
-                expected.toList(),
-                plan.contentOf(commit).toList(),
-                "$label: wrong content map at ${graph.describe(commit)}",
-            )
+            assertEquals(expected, plan.contentOf(commit), "$label: wrong content map at $commit")
         }
     }
 }

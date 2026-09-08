@@ -3,89 +3,99 @@ package cz.loplex.timebraid.plan
 /**
  * One commit to be written, as the planner decided it.
  *
- * [parents] are dense commit indices in the graph's own index space, not shas: the planner has never
- * seen a sha and cannot know the identity of a commit that does not exist yet. Translating those
- * indices into the identities of the commits actually written is the writer's job, and it is always
- * possible because the plan is in write order — every parent has been written by the time its child
- * comes up.
+ * [parents] are the original commits, not shas: the planner has never seen a sha and cannot know the
+ * identity of a commit that does not exist yet. Translating them into the identities of the commits
+ * actually written is the writer's job, and it is always possible because the plan is in write order —
+ * every parent has been written by the time its child comes up.
  */
 class PlannedCommit internal constructor(
     /** The original commit being recreated. */
-    val commit: CommitId,
+    val commit: Commit,
     /** Subdirectory this commit's repository occupies, or `null` for the repository placed at the root. */
     val subdir: String?,
-    /** Parents after the braid edge was applied, first parent first; must not be modified. */
-    val parents: IntArray,
-    /** Whether this commit lies on the braid. */
-    @Suppress("unused") // Part of the plan's description of a commit; nothing reads it yet.
-    val onBraid: Boolean,
+    /** Parents after the braid edge was applied, first parent first. */
+    val parents: List<Commit>,
 )
 
 /**
  * The complete, deterministic description of the output repository's history — and the seam between
- * the planner and everything that touches git. Everything above this line is arithmetic on indices;
- * everything below it is objects and refs.
+ * the planner and everything that touches git. Everything above this line is commits and the
+ * decisions taken over them; everything below it is objects and refs.
  *
- * Building a plan runs the whole algorithm, in the order the two decisions actually depend on each
- * other: interleave the mainlines into the braid ([BraidInterleave]), apply the parent rule
- * ([Reparenter]) so every temporal decision becomes a real parent edge, then take a write order of
- * the braided history ([TopoOrder]) and accumulate the content map along it.
+ * Reached through [CommitGraph.braid] and [Braid.plan], which run the algorithm in the order the two
+ * decisions actually depend on each other: interleave the mainlines into the braid, apply the parent
+ * rule so every temporal decision becomes a real parent edge, then take a write order of the braided
+ * history and accumulate the content map along it.
  */
 class MergePlan private constructor(
     val graph: CommitGraph,
     /** The braid, in braid order. */
-    val braid: IntArray,
-    /** Write order: a topological order of the reparented history. */
-    val order: IntArray,
-    /** Subdirectory per input repository; exactly one may be `null`, meaning the repository root. */
-    val subdirs: List<String?>,
-    private val newParents: Array<IntArray>,
-    private val content: Array<IntArray>,
-    private val onBraid: BooleanArray,
+    val braid: List<Commit>,
+    private val order: List<Commit>,
+    private val subdirs: Map<Source, String?>,
+    private val newParents: Map<Commit, List<Commit>>,
+    private val columns: Map<Source, Int>,
+    private val content: Map<Commit, Array<Commit?>>,
+    private val onBraid: Set<Commit>,
 ) {
 
     /** Every commit to be written, in write order. */
     val commits: List<PlannedCommit> = order.map { commit ->
         PlannedCommit(
-            commit = CommitId(commit),
-            subdir = subdirs[graph.sourceOf(commit)],
-            parents = newParents[commit],
-            onBraid = onBraid[commit],
+            commit = commit,
+            subdir = subdirs.getValue(commit.source),
+            parents = newParents.getValue(commit),
         )
     }
 
-    /** Parents of [commit] after reparenting. The returned array must not be modified. */
-    fun parentsOf(commit: Int): IntArray = newParents[commit]
+    /** Parents of [commit] after reparenting, first parent first. */
+    fun parentsOf(commit: Commit): List<Commit> = newParents.getValue(commit)
 
     /** Whether [commit] lies on the braid. */
-    fun isOnBraid(commit: Int): Boolean = onBraid[commit]
+    fun isOnBraid(commit: Commit): Boolean = commit in onBraid
 
     /** Subdirectory of the repository [commit] came from, `null` for the root repository. */
-    fun subdirOf(commit: Int): String? = subdirs[graph.sourceOf(commit)]
+    fun subdirOf(commit: Commit): String? = subdirs.getValue(commit.source)
+
+    /** Subdirectory [source] occupies in the output, `null` for the repository placed at the root. */
+    fun subdirOf(source: Source): String? = subdirs.getValue(source)
+
+    private fun rowOf(commit: Commit): Array<Commit?> =
+        content[commit] ?: error("$commit is not a commit of this plan")
 
     /**
-     * The tree rule in symbolic form: for each input repository, the commit whose original tree is
-     * that repository's content at [commit], or [CommitGraph.NO_COMMIT] if the repository has no
-     * content there yet. Indexed by source index; the returned array must not be modified.
+     * The tree rule in symbolic form: for each input repository that has content at [commit], the
+     * commit whose original tree is that content. A repository that has committed nothing by this
+     * point in the braid is absent from the map rather than present as a blank.
      *
-     * The written tree of [commit] follows from this directly — one entry per repository that has
-     * content, each pointing at that commit's original tree — and so does the promise the whole tool
-     * is built on: whatever repository a commit came from, the other repositories are present at
-     * whatever they had last committed at that point in the braid.
+     * The written tree of [commit] follows from this directly — one entry per repository in the map,
+     * each pointing at that commit's original tree — and so does the promise the whole tool is built
+     * on: whatever repository a commit came from, the other repositories are present at whatever they
+     * had last committed at that point in the braid.
+     *
+     * Iterates in the order the repositories were read, which is what keeps the assembled tree and
+     * the merged `.gitmodules` a deterministic function of the inputs.
      */
-    fun contentOf(commit: Int): IntArray = content[commit]
+    fun contentOf(commit: Commit): Map<Source, Commit> {
+        val row = rowOf(commit)
+        val map = LinkedHashMap<Source, Commit>(graph.sources.size)
+        for (source in graph.sources) {
+            row[columns.getValue(source)]?.let { map[source] = it }
+        }
+        return map
+    }
 
     /** Counts, for `--dry-run`. */
     fun summary(): String {
         val histogram = HashMap<Int, Int>()
         for (commit in order) {
-            histogram.merge(newParents[commit].size, 1) { a, b -> a + b }
+            histogram.merge(newParents.getValue(commit).size, 1) { a, b -> a + b }
         }
         val counts = histogram.keys.sorted().joinToString(", ") { "$it -> ${histogram[it]}" }
         return buildString {
             appendLine("repositories:")
-            for (source in graph.sourceNames.indices) {
-                appendLine("  ${graph.sourceNames[source]} -> ${subdirs[source]?.plus("/") ?: "<root>"}")
+            for (source in graph.sources) {
+                appendLine("  ${source.name} -> ${subdirs.getValue(source)?.plus("/") ?: "<root>"}")
             }
             appendLine("commits: ${graph.size} (braid: ${braid.size})")
             appendLine("parent counts: $counts")
@@ -100,50 +110,45 @@ class MergePlan private constructor(
         append(summary())
         appendLine()
         for ((position, commit) in order.withIndex()) {
+            val row = rowOf(commit)
             append(position.toString().padStart(6, '0'))
-            append(if (onBraid[commit]) " * " else "   ")
-            append(graph.describe(commit))
-            append(" @").append(graph.timeOf(commit))
+            append(if (commit in onBraid) " * " else "   ")
+            append(commit)
+            append(" @").append(commit.time)
             append(" parents=[")
-            append(newParents[commit].joinToString(", ") { graph.describe(it) })
+            append(newParents.getValue(commit).joinToString(", "))
             append("] content=[")
             append(
-                (0 until graph.sourceCount)
-                    .filter { content[commit][it] != CommitGraph.NO_COMMIT }
-                    .joinToString(", ") { "${graph.sourceNames[it]}=${graph.idOf(content[commit][it])}" }
+                graph.sources
+                    .mapNotNull { source -> row[columns.getValue(source)]?.let { "${source.name}=${it.id}" } }
+                    .joinToString(", ")
             )
             appendLine("]")
         }
     }
 
-    companion object {
+    internal companion object {
 
         /**
-         * Plans the merge.
+         * Assembles the plan from the decisions [Braid] and [ReparentedGraph] have already made.
          *
-         * @param heads mainline tips, one per input repository.
-         * @param subdirs subdirectory per input repository, `null` for the one placed at the root.
-         * @param braid the braid, in braid order; the default is the interleave the tool actually
-         *   uses. This is the one temporal decision in the whole pipeline — everything after it
-         *   follows from the parent edges [Reparenter] derives from it.
+         * The braid needs no checking here: it can only have come from [CommitGraph.braid], which
+         * names commits of this graph, each at most once.
          */
-        fun build(
+        fun create(
             graph: CommitGraph,
-            heads: IntArray,
-            subdirs: List<String?>,
-            braid: IntArray = BraidInterleave.compute(graph, heads),
+            braid: List<Commit>,
+            order: List<Commit>,
+            newParents: Map<Commit, List<Commit>>,
+            subdirs: Map<Source, String?>,
         ): MergePlan {
             validateSubdirs(graph, subdirs)
-            validateBraid(graph, braid)
 
-            val newParents = Reparenter.reparent(graph, braid)
-            // Every braid edge is a real parent edge by now, so the write order has no temporal
-            // decision left to make: any topological order of the braided history writes correctly,
-            // and this one is deterministic.
-            val order = TopoOrder.compute(graph.withParents(newParents))
-
-            val onBraid = BooleanArray(graph.size)
-            for (commit in braid) onBraid[commit] = true
+            // The content table is addressed by repository, so it needs a column per repository —
+            // the one numbering this class derives, the way every pass of the package derives its
+            // own. A repository of another graph is simply not in it.
+            val columns = HashMap<Source, Int>(graph.sources.size * 2)
+            graph.sources.forEachIndexed { column, source -> columns[source] = column }
 
             return MergePlan(
                 graph = graph,
@@ -151,8 +156,9 @@ class MergePlan private constructor(
                 order = order,
                 subdirs = subdirs,
                 newParents = newParents,
-                content = accumulate(graph, order, newParents),
-                onBraid = onBraid,
+                columns = columns,
+                content = accumulate(graph, order, newParents, columns),
+                onBraid = braid.toHashSet(),
             )
         }
 
@@ -167,59 +173,52 @@ class MergePlan private constructor(
          */
         private fun accumulate(
             graph: CommitGraph,
-            order: IntArray,
-            newParents: Array<IntArray>,
-        ): Array<IntArray> {
-            val content = arrayOfNulls<IntArray>(graph.size)
+            order: List<Commit>,
+            newParents: Map<Commit, List<Commit>>,
+            columns: Map<Source, Int>,
+        ): Map<Commit, Array<Commit?>> {
+            // One row per commit, one column per repository: this is the largest thing the plan
+            // holds, and a map per commit over a corpus-sized history would cost far more than the
+            // rows are worth. It stays behind contentOf, which hands out a map of what is there.
+            val content = HashMap<Commit, Array<Commit?>>(order.size * 2)
             for (commit in order) {
-                val parents = newParents[commit]
+                val parents = newParents.getValue(commit)
                 val inherited = if (parents.isEmpty()) {
-                    IntArray(graph.sourceCount) { CommitGraph.NO_COMMIT }
+                    arrayOfNulls(graph.sources.size)
                 } else {
                     val firstParent = parents[0]
                     val parentContent = content[firstParent]
                         ?: error(
-                            "commit ${graph.describe(commit)} is written before its first parent " +
-                                "${graph.describe(firstParent)} — the write order is not topological"
+                            "commit $commit is written before its first parent $firstParent — " +
+                                "the write order is not topological"
                         )
                     parentContent.copyOf()
                 }
-                inherited[graph.sourceOf(commit)] = commit
+                inherited[columns.getValue(commit.source)] = commit
                 content[commit] = inherited
             }
-            @Suppress("UNCHECKED_CAST")
-            return content as Array<IntArray>
+            return content
         }
 
-        private fun validateSubdirs(graph: CommitGraph, subdirs: List<String?>) {
-            require(subdirs.size == graph.sourceCount) {
-                "got ${subdirs.size} subdirectories for ${graph.sourceCount} repositories"
+        private fun validateSubdirs(graph: CommitGraph, subdirs: Map<Source, String?>) {
+            for (source in graph.sources) {
+                require(source in subdirs) { "no subdirectory given for repository ${source.name}" }
             }
-            require(subdirs.count { it == null } <= 1) {
+            require(subdirs.size == graph.sources.size) {
+                "got ${subdirs.size} subdirectories for ${graph.sources.size} repositories"
+            }
+            require(subdirs.values.count { it == null } <= 1) {
                 "at most one repository can be placed at the root"
             }
             val seen = HashSet<String>()
-            for ((source, subdir) in subdirs.withIndex()) {
+            for ((source, subdir) in subdirs) {
                 if (subdir == null) continue
                 require(subdir.isNotBlank() && !subdir.contains('/') && subdir != "." && subdir != "..") {
-                    "'$subdir' is not a usable subdirectory name for ${graph.sourceNames[source]}"
+                    "'$subdir' is not a usable subdirectory name for $source"
                 }
                 require(seen.add(subdir)) {
                     "two repositories would be placed in the same subdirectory '$subdir'"
                 }
-            }
-        }
-
-        private fun validateBraid(graph: CommitGraph, braid: IntArray) {
-            require(braid.size <= graph.size) {
-                "braid has ${braid.size} entries, more than the graph's ${graph.size} commits"
-            }
-            val seen = BooleanArray(graph.size)
-            for (commit in braid) {
-                require(commit in 0 until graph.size) { "braid contains $commit, not a commit index" }
-                // A repeated braid member would become its own predecessor, i.e. a self-edge.
-                require(!seen[commit]) { "braid contains ${graph.describe(commit)} twice" }
-                seen[commit] = true
             }
         }
     }

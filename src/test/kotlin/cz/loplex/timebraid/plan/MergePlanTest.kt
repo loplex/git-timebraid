@@ -11,14 +11,14 @@ class MergePlanTest {
     @Test
     fun `plans two interleaved repositories`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
-        val heads = spec.ids("a3", "b2")
+        val heads = spec.commits("a3", "b2")
 
-        val plan = MergePlan.build(spec.graph, heads, spec.subdirs())
+        val plan = spec.graph.braid(heads).plan(spec.subdirs())
 
         assertEquals(listOf("a1", "b1", "a2", "b2", "a3"), spec.names(plan.braid))
         assertEquals(
             listOf("a1", "b1", "a2", "b2", "a3"),
-            plan.commits.map { spec.graph.idOf(it.commit.index) },
+            plan.commits.map { it.commit.id },
         )
         PlanInvariants.assertAll(plan, heads, "interleaved")
     }
@@ -26,7 +26,7 @@ class MergePlanTest {
     @Test
     fun `accumulates the content of every repository along the braid`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 <- a3@50 | B: b1@20 <- b2@40")
-        val plan = MergePlan.build(spec.graph, spec.ids("a3", "b2"), spec.subdirs())
+        val plan = spec.graph.braid(spec.commits("a3", "b2")).plan(spec.subdirs())
 
         // At b2 the world is: A as of a2, B as of b2 — the state at that moment, not an approximation.
         assertEquals(listOf("a2", "b2"), contentNames(spec, plan, "b2"))
@@ -39,7 +39,7 @@ class MergePlanTest {
     fun `a branch that exists in one repository still carries every repository`() {
         // f1 and f2 are a side branch of A cut after b1 was already braided in.
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 ; f1(a2)@60 <- f2@70 | B: b1@20 <- b2@40")
-        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b2"), spec.subdirs())
+        val plan = spec.graph.braid(spec.commits("a2", "b2")).plan(spec.subdirs())
 
         assertEquals(listOf("f2", "b1"), contentNames(spec, plan, "f2"))
         // B is frozen at whatever it was when the branch was cut, A follows the branch.
@@ -51,11 +51,11 @@ class MergePlanTest {
         val spec = GraphSpec.parse(
             "A: a1@10 <- a2@40 | B: b1@20 <- b2@30 ; f1(b1)@25 <- b3(b2,f1)@50"
         )
-        val heads = spec.ids("a2", "b3")
+        val heads = spec.commits("a2", "b3")
 
-        val plan = MergePlan.build(spec.graph, heads, spec.subdirs())
+        val plan = spec.graph.braid(heads).plan(spec.subdirs())
 
-        assertEquals(listOf("a2", "b2", "f1"), spec.names(plan.parentsOf(spec.id("b3"))))
+        assertEquals(listOf("a2", "b2", "f1"), spec.names(plan.parentsOf(spec.commit("b3"))))
         PlanInvariants.assertAll(plan, heads, "merge on the braid")
         assertTrue(plan.summary().contains("3 -> 1"), plan.summary())
     }
@@ -63,10 +63,10 @@ class MergePlanTest {
     @Test
     fun `one repository may be placed at the root`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
-        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b1"), listOf(null, "webui"))
+        val plan = spec.graph.braid(spec.commits("a2", "b1")).plan(spec.subdirs(null, "webui"))
 
-        assertNull(plan.subdirOf(spec.id("a1")))
-        assertEquals("webui", plan.subdirOf(spec.id("b1")))
+        assertNull(plan.subdirOf(spec.commit("a1")))
+        assertEquals("webui", plan.subdirOf(spec.commit("b1")))
         assertTrue(plan.summary().contains("A -> <root>"), plan.summary())
     }
 
@@ -75,7 +75,7 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         val failure = assertThrows<IllegalArgumentException> {
-            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("shared", "shared"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("shared", "shared"))
         }
 
         assertTrue(failure.message!!.contains("same subdirectory"))
@@ -86,7 +86,7 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf(null, null))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(null, null))
         }
     }
 
@@ -95,26 +95,26 @@ class MergePlanTest {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("a/b", "B"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("a/b", "B"))
         }
         assertThrows<IllegalArgumentException> {
-            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("..", "B"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("..", "B"))
         }
     }
 
     @Test
-    fun `rejects a subdirectory list that does not match the repositories`() {
+    fun `rejects a set of subdirectories that does not cover the repositories`() {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
         assertThrows<IllegalArgumentException> {
-            MergePlan.build(spec.graph, spec.ids("a1", "b1"), listOf("A"))
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("A"))
         }
     }
 
     @Test
     fun `renders a plan that can simply be diffed`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20 <- b2@40")
-        val plan = MergePlan.build(spec.graph, spec.ids("a2", "b2"), spec.subdirs())
+        val plan = spec.graph.braid(spec.commits("a2", "b2")).plan(spec.subdirs())
 
         assertEquals(
             """
@@ -136,14 +136,12 @@ class MergePlanTest {
     @Test
     fun `marks commits that are not on the braid`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 ; f1(a1)@20")
-        val plan = MergePlan.build(spec.graph, spec.ids("a2"), spec.subdirs())
+        val plan = spec.graph.braid(spec.commits("a2")).plan(spec.subdirs())
 
         assertTrue(plan.render().contains("   A/f1"), plan.render())
         assertTrue(plan.render().contains(" * A/a2"), plan.render())
     }
 
     private fun contentNames(spec: GraphSpec, plan: MergePlan, name: String): List<String> =
-        plan.contentOf(spec.id(name))
-            .filter { it != CommitGraph.NO_COMMIT }
-            .map { spec.graph.idOf(it) }
+        plan.contentOf(spec.commit(name)).values.map { it.id }
 }

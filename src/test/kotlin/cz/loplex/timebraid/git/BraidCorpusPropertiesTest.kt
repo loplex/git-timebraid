@@ -1,7 +1,7 @@
 package cz.loplex.timebraid.git
 
 import cz.loplex.timebraid.plan.BraidInterleave
-import cz.loplex.timebraid.plan.CommitGraph
+import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.MergePlan
 import cz.loplex.timebraid.plan.WholeGraphBraid
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -55,18 +55,18 @@ class BraidCorpusPropertiesTest {
 
         // build() reparents and orders, and fails loudly on a braid that contradicts ancestry, so
         // getting a plan back at all is already part of what is being checked here.
-        val plan = MergePlan.build(graph, braidInputs.heads, graph.sourceNames.toList())
+        val plan = graph.braid(braidInputs.heads).plan(graph.sources.associateWith { it.name })
         val wholeGraph = WholeGraphBraid.compute(graph, braidInputs.heads)
 
-        val futureEdges = futureBraidEdges(graph, plan.braid)
+        val futureEdges = futureBraidEdges(plan.braid)
         val report = buildString {
             appendLine("corpus: $dir")
-            appendLine("repositories: ${graph.sourceNames}")
+            appendLine("repositories: ${graph.sources}")
             appendLine("commits: ${graph.size}, braid: ${plan.braid.size}")
             appendLine("write order is topological: ${isTopological(plan)}")
             appendLine("braid edges pointing into the future: ${futureEdges.size}")
             futureEdges.take(10).forEach { appendLine("  $it") }
-            appendLine(interleavingDiff(graph, plan.braid, wholeGraph))
+            appendLine(interleavingDiff(plan.braid, wholeGraph))
         }
         println(report)
 
@@ -76,11 +76,11 @@ class BraidCorpusPropertiesTest {
 
     /** Every parent of every commit, after reparenting, precedes it in the plan's write order. */
     private fun isTopological(plan: MergePlan): Boolean {
-        val position = IntArray(plan.graph.size)
-        for ((index, commit) in plan.order.withIndex()) position[commit] = index
-        for (commit in plan.order) {
-            for (parent in plan.parentsOf(commit)) {
-                if (position[parent] >= position[commit]) return false
+        val position = HashMap<Commit, Int>()
+        for ((index, planned) in plan.commits.withIndex()) position[planned.commit] = index
+        for (planned in plan.commits) {
+            for (parent in planned.parents) {
+                if (position.getValue(parent) >= position.getValue(planned.commit)) return false
             }
         }
         return true
@@ -91,28 +91,28 @@ class BraidCorpusPropertiesTest {
      * Same-repository predecessors are exempt: their order is forced by ancestry, not decided by
      * time, and there the braid adds no edge at all — the predecessor already is the first parent.
      */
-    private fun futureBraidEdges(graph: CommitGraph, braid: IntArray): List<String> {
+    private fun futureBraidEdges(braid: List<Commit>): List<String> {
         val lines = ArrayList<String>()
         for (i in 1 until braid.size) {
             val commit = braid[i]
             val predecessor = braid[i - 1]
-            if (graph.sourceOf(predecessor) == graph.sourceOf(commit)) continue
-            if (graph.timeOf(predecessor) > graph.timeOf(commit)) {
-                lines += "${graph.describe(predecessor)} @${graph.timeOf(predecessor)} precedes " +
-                    "${graph.describe(commit)} @${graph.timeOf(commit)} but is later"
+            if (predecessor.source == commit.source) continue
+            if (predecessor.time > commit.time) {
+                lines += "$predecessor @${predecessor.time} precedes " +
+                    "$commit @${commit.time} but is later"
             }
         }
         return lines
     }
 
-    private fun interleavingDiff(graph: CommitGraph, braid: IntArray, other: IntArray): String {
+    private fun interleavingDiff(braid: List<Commit>, other: List<Commit>): String {
         if (other.size != braid.size) return "a whole-graph interleave covers a different commit set"
-        val position = IntArray(graph.size)
+        val position = HashMap<Commit, Int>()
         for ((index, commit) in braid.withIndex()) position[commit] = index
         var moved = 0
         var maxShift = 0
         for ((index, commit) in other.withIndex()) {
-            val shift = kotlin.math.abs(index - position[commit])
+            val shift = kotlin.math.abs(index - position.getValue(commit))
             if (shift != 0) moved++
             maxShift = maxOf(maxShift, shift)
         }

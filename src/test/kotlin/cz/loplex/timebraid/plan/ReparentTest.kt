@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
-class ReparenterTest {
+class ReparentTest {
 
     @Test
     fun `prepends the braid edge when the predecessor comes from another repository`() {
@@ -13,11 +13,11 @@ class ReparenterTest {
         val parents = reparented(spec, "a3", "b2")
 
         // b1 follows a1 in time, and a1 is not one of its parents, so the edge is added.
-        assertEquals(listOf("a1"), spec.names(parents[spec.id("b1")]))
+        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("b1"))))
         // a2 follows b1, and keeps its original parent a1 behind the braid edge.
-        assertEquals(listOf("b1", "a1"), spec.names(parents[spec.id("a2")]))
-        assertEquals(listOf("a2", "b1"), spec.names(parents[spec.id("b2")]))
-        assertEquals(listOf("b2", "a2"), spec.names(parents[spec.id("a3")]))
+        assertEquals(listOf("b1", "a1"), spec.names(parents.getValue(spec.commit("a2"))))
+        assertEquals(listOf("a2", "b1"), spec.names(parents.getValue(spec.commit("b2"))))
+        assertEquals(listOf("b2", "a2"), spec.names(parents.getValue(spec.commit("a3"))))
     }
 
     @Test
@@ -25,10 +25,10 @@ class ReparenterTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 <- a3@30")
         val parents = reparented(spec, "a3")
 
-        assertEquals(listOf("a1"), spec.names(parents[spec.id("a2")]))
-        assertEquals(listOf("a2"), spec.names(parents[spec.id("a3")]))
-        for (commit in 0 until spec.graph.size) {
-            assertEquals(spec.graph.parentsOf(commit).size, parents[commit].size)
+        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("a2"))))
+        assertEquals(listOf("a2"), spec.names(parents.getValue(spec.commit("a3"))))
+        for (commit in spec.graph.commits) {
+            assertEquals(commit.parents.size, parents.getValue(commit).size)
         }
     }
 
@@ -37,7 +37,7 @@ class ReparenterTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 | B: b1@20")
         val parents = reparented(spec, "a2", "b1")
 
-        assertEquals(emptyList<String>(), spec.names(parents[spec.id("a1")]))
+        assertEquals(emptyList<String>(), spec.names(parents.getValue(spec.commit("a1"))))
     }
 
     @Test
@@ -48,7 +48,7 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "a2", "b3")
 
-        assertEquals(listOf("a2", "b2", "f1"), spec.names(parents[spec.id("b3")]))
+        assertEquals(listOf("a2", "b2", "f1"), spec.names(parents.getValue(spec.commit("b3"))))
         assertOriginalEdgesKept(spec.graph, parents)
     }
 
@@ -57,8 +57,8 @@ class ReparenterTest {
         val spec = GraphSpec.parse("A: a1@10 <- a2@40 ; f1(a1)@20 <- f2@30 | B: b1@25")
         val parents = reparented(spec, "a2", "b1")
 
-        assertEquals(listOf("a1"), spec.names(parents[spec.id("f1")]))
-        assertEquals(listOf("f1"), spec.names(parents[spec.id("f2")]))
+        assertEquals(listOf("a1"), spec.names(parents.getValue(spec.commit("f1"))))
+        assertEquals(listOf("f1"), spec.names(parents.getValue(spec.commit("f2"))))
     }
 
     @Test
@@ -68,12 +68,9 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "a2", "b3")
 
-        for (commit in 0 until spec.graph.size) {
-            assertEquals(
-                parents[commit].size,
-                parents[commit].toSet().size,
-                "duplicate parent on ${spec.graph.describe(commit)}",
-            )
+        for (commit in spec.graph.commits) {
+            val row = parents.getValue(commit)
+            assertEquals(row.size, row.toSet().size, "duplicate parent on $commit")
         }
     }
 
@@ -84,7 +81,7 @@ class ReparenterTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = TopoOrder.compute(spec.graph.withParents(parents))
+        val order = topoOrder(spec.graph.commits) { parents.getValue(it) }
 
         assertEquals(spec.graph.size, order.size)
     }
@@ -95,9 +92,10 @@ class ReparenterTest {
         // does not respect ancestry produces — the braid edge from c to g closes a loop back through
         // p. Nothing may be written after that, so it has to be an exception and not a warning.
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
-        val braid = spec.ids("c", "g")
 
-        val failure = assertThrows<CyclicGraphException> { Reparenter.reparent(spec.graph, braid) }
+        val failure = assertThrows<CyclicGraphException> {
+            reparent(spec.graph.commits, spec.commits("c", "g")) { it.parents }
+        }
 
         assertTrue(failure.message!!.contains("cycle in the parent chain"), failure.message)
         for (name in listOf("g", "p", "c")) {
@@ -105,18 +103,19 @@ class ReparenterTest {
         }
     }
 
-    private fun reparented(spec: GraphSpec, vararg heads: String): Array<IntArray> {
-        val braid = BraidInterleave.compute(spec.graph, spec.ids(*heads))
-        return Reparenter.reparent(spec.graph, braid)
+    private fun reparented(spec: GraphSpec, vararg heads: String): Map<Commit, List<Commit>> {
+        val braid = BraidInterleave.compute(
+            spec.graph.commits,
+            spec.commits(*heads),
+            interleaveTips = emptyList(),
+        ) { it.parents }
+        return reparent(spec.graph.commits, braid) { it.parents }
     }
 
-    private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Array<IntArray>) {
-        for (commit in 0 until graph.size) {
-            for (parent in graph.parentsOf(commit)) {
-                assertTrue(
-                    parents[commit].any { it == parent },
-                    "${graph.describe(commit)} lost its original parent ${graph.describe(parent)}",
-                )
+    private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Map<Commit, List<Commit>>) {
+        for (commit in graph.commits) {
+            for (parent in commit.parents) {
+                assertTrue(parent in parents.getValue(commit), "$commit lost its original parent $parent")
             }
         }
     }

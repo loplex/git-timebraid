@@ -1,6 +1,5 @@
 package cz.loplex.timebraid.git
 
-import cz.loplex.timebraid.plan.MergePlan
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -42,11 +41,11 @@ class CommitGraphReaderTest {
 
             assertEquals("main", braid.mainlineBranch)
             assertEquals(3, braid.graph.size)
-            assertEquals(listOf("backend", "webui"), braid.graph.sourceNames)
-            assertEquals(a2, braid.graph.idOf(braid.heads[0]))
-            assertEquals(b1, braid.graph.idOf(braid.heads[1]))
+            assertEquals(listOf("backend", "webui"), braid.graph.sources.map { it.name })
+            assertEquals(a2, braid.heads[0].id)
+            assertEquals(b1, braid.heads[1].id)
 
-            val plan = MergePlan.build(braid.graph, braid.heads, subdirs = listOf("backend", "webui"))
+            val plan = braid.graph.braid(braid.heads).plan(braid.graph.sources.associateWith { it.name })
             assertEquals(3, plan.braid.size)
         }
     }
@@ -128,9 +127,9 @@ class CommitGraphReaderTest {
         open("backend", "webui").useAll { repos ->
             fun firstOnBraid(orderBy: OrderBy): String {
                 val braid = CommitGraphReader.read(repos, orderBy)
-                val plan = MergePlan.build(braid.graph, braid.heads, listOf("backend", "webui"))
-                val firstSha = braid.graph.idOf(plan.braid.first())
-                return if (firstSha == braid.graph.idOf(braid.heads[0])) "backend" else "webui"
+                val plan = braid.graph.braid(braid.heads).plan(braid.graph.sources.associateWith { it.name })
+                val firstSha = plan.braid.first().id
+                return if (firstSha == braid.heads[0].id) "backend" else "webui"
             }
             assertEquals("backend", firstOnBraid(OrderBy.AUTHOR))
             assertEquals("webui", firstOnBraid(OrderBy.COMMITTER))
@@ -157,7 +156,7 @@ class CommitGraphReaderTest {
                     OrderBy.COMMITTER,
                     interleaveRefs = patterns.toList(),
                 )
-                return inputs.interleaveTips.map { inputs.graph.idOf(it) }.toSet()
+                return inputs.interleaveTips.map { it.id }.toSet()
             }
 
             // A star spans path separators, so a prefix pattern reaches a nested branch name.

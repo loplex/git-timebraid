@@ -16,20 +16,27 @@ package cz.loplex.timebraid.plan
  *
  * Commit names are unique across the whole fixture, so a test can refer to a commit by name alone.
  */
-class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
+class GraphSpec internal constructor(
+    val graph: CommitGraph,
+    private val byName: Map<String, Commit>,
+) {
 
-    /** Index of the commit named [name]. */
-    fun id(name: String): Int =
+    /** The commit named [name]. */
+    fun commit(name: String): Commit =
         byName[name] ?: error("no commit named '$name' in this fixture")
 
-    /** Indices of the named commits, in the order given. */
-    fun ids(vararg names: String): IntArray = IntArray(names.size) { id(names[it]) }
+    /** The named commits, in the order given — heads, tips, and anything else the API takes. */
+    fun commits(vararg names: String): List<Commit> = names.map { commit(it) }
 
     /** Names of the given commits, in the order given — the readable form of an order or a braid. */
-    fun names(commits: IntArray): List<String> = commits.map { graph.idOf(it) }
+    fun names(commits: List<Commit>): List<String> = commits.map { it.id }
 
     /** One subdirectory per repository, named after the repository. */
-    fun subdirs(): List<String?> = graph.sourceNames
+    fun subdirs(): Map<Source, String?> = graph.sources.associateWith { it.name }
+
+    /** The given subdirectories, one per repository in the order the fixture declares them. */
+    fun subdirs(vararg values: String?): Map<Source, String?> =
+        graph.sources.take(values.size).withIndex().associate { (i, source) -> source to values[i] }
 
     companion object {
 
@@ -37,7 +44,7 @@ class GraphSpec(val graph: CommitGraph, private val byName: Map<String, Int>) {
 
         fun parse(spec: String): GraphSpec {
             val builder = CommitGraphBuilder()
-            val byName = LinkedHashMap<String, Int>()
+            val byName = LinkedHashMap<String, Commit>()
 
             for (strand in spec.split('|')) {
                 val parts = strand.split(':', limit = 2)

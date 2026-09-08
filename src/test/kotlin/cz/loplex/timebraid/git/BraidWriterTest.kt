@@ -1,6 +1,5 @@
 package cz.loplex.timebraid.git
 
-import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.ObjectId
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -72,11 +71,7 @@ class BraidWriterTest {
         val opened = names.map { SourceRepository.open(tmp.resolve("$it.git")) }
         try {
             val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER)
-            val plan = MergePlan.build(
-                inputs.graph,
-                inputs.heads,
-                names.map { if (it == rootRepo) null else subdirs[it] ?: it },
-            )
+            val plan = inputs.graph.braid(inputs.heads).plan(inputs.graph.sources.associateWith { if (it.name == rootRepo) null else subdirs[it.name] ?: it.name })
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
                 // The same order the runner uses: the inputs' objects arrive by fetch, the braid is
                 // written on top of them, and the refs the fetch needed are dropped afterwards.
