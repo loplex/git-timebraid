@@ -101,15 +101,21 @@ jobs:
       fail-fast: false
       matrix:
         # One leg per platform a jlink image can be built for. The two macOS entries are not a
-        # typo: macos-latest is Apple silicon and macos-13 is the last Intel runner, and an image
-        # built on one does not run on the other.
+        # typo: macos-latest is Apple silicon and macos-15-intel is x86_64, and an image built on
+        # one does not run on the other.
+        #
+        # That Intel leg has an end date. It is the last x86_64 image Actions will offer, retiring
+        # in August 2027, after which a macOS x86_64 archive needs a runner from somewhere else or
+        # stops being published. A retired label is not an error either: it queues until the job is
+        # cancelled a day later, so a leg that waits for a runner while its siblings finish in a
+        # minute has usually been retired out from under it.
         #
         # ubuntu-24.04-arm is free for public repositories and billed for private ones -- if this
         # repository ever goes private, that leg is the one to drop.
         include:
           - { os: ubuntu-latest,    label: linux-x64 }
           - { os: ubuntu-24.04-arm, label: linux-aarch64 }
-          - { os: macos-13,         label: macos-x64 }
+          - { os: macos-15-intel,   label: macos-x64 }
           - { os: macos-latest,     label: macos-aarch64 }
           - { os: windows-latest,   label: windows-x64 }
     steps:
