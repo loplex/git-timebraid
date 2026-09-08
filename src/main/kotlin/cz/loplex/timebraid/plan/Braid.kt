@@ -47,14 +47,14 @@ class Braid internal constructor(
 class ReparentedGraph internal constructor(
     private val graph: CommitGraph,
     private val braid: List<Commit>,
-    private val parents: Map<Commit, List<Commit>>,
+    private val parents: ParentEdges,
 ) {
-    private val braided: IndexedGraph<Commit> = graph.withParents(parents::getValue)
+    private val braided: IndexedGraph<Commit> = graph.withParents { parents[it] }
 
     private val order: List<Commit> by lazy { topoOrder(braided) }
 
     /** Parents of [commit] after reparenting, first parent first. */
-    fun parentsOf(commit: Commit): List<Commit> = parents.getValue(commit)
+    fun parentsOf(commit: Commit): List<Commit> = parents[commit]
 
     /**
      * The write order: every commit exactly once, parents before children, so a commit is never
