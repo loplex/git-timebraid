@@ -34,11 +34,11 @@ class RewiredGitmodules(
  * populated submodule under `.git/modules/`, so two inputs whose submodules happen to share a name
  * would otherwise be handed the same directory. Where no destination contains another, which the
  * planner enforces, `<subdir>/<name>` is unique by construction: `libs/a` with a section `b/x`
- * cannot collide with `libs/a/b` and its section `x`, because the pair never arrives. The
- * repository at the output root lets it arrive, since every destination is inside of it, and a
- * blank name, which [prefixed] leaves as it is, meets another blank one wherever it stands; there
- * the uniqueness is not a property of the destinations but a refusal in [merge], which names the
- * submodule and the commit carrying it.
+ * cannot collide with `libs/a/b` and its section `x`, because the pair never arrives. `--splice`
+ * lets it arrive, and so does the repository at the output root, which every destination is inside
+ * of, and a blank name, which [prefixed] leaves as it is, meets another blank one wherever it
+ * stands; in each the uniqueness is not a property of the destinations but a refusal in [merge],
+ * which names the submodule and the commit carrying it.
  */
 object SubmoduleWiring {
 

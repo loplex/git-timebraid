@@ -20,18 +20,18 @@ import kotlin.random.Random
 /**
  * The splice check and the writer answer one question twice — whether an input can be placed where
  * its destination puts it — the check before anything is written into the output, the writer while
- * it builds each tree. This holds them to the same answer: over random layouts, a dry run is refused
- * exactly when the writer fails.
+ * it builds each tree. This holds them to the same answer: over random three-level layouts, a dry
+ * run is refused exactly when the writer fails.
  *
  * The write is driven without the command line, because the command line runs the same check in
  * front of the writer: a check refusing a layout the writer would take refuses both runs alike, and
  * they agree. Given the plan on its own, as [write] gives it, the writer answers for itself, and a
  * check too strict disagrees with it as plainly as one too lenient.
  *
- * Each layout is platform at the output root and backend at `backend` or at `libs/backend`, with
- * commit times drawn at random, so platform's commits may come before backend's first or after it;
- * and with the entries that can meet backend drawn at random too, in platform's trees: at the
- * destination itself, or in the way of it.
+ * Each layout is platform at the output root, libs at `libs` and backend at `libs/backend`, with
+ * commit times drawn at random, so the middle repository may begin before backend or after it; and
+ * with the entries a splice can meet drawn at random too, in platform's and in libs' trees. One
+ * layout the draw seldom reaches on its own is fixed besides.
  */
 class SpliceAgreementIT {
 
@@ -61,34 +61,35 @@ class SpliceAgreementIT {
                     r.branch("main", parent!!)
                 }
 
-            // platform's own entries in backend's way only ever in its first commits, which makes
-            // them mostly gone before backend begins. Mostly: the times are drawn from one pool for
-            // both, so a first commit of platform's can still follow backend's first, and what it
-            // holds is then a collision, refused like any other. A layout whose stray is gone by the
-            // time backend begins is the one a check reading platform's trees without the braid
-            // would refuse; a `libs/` holding something else is the one a check refusing the whole
-            // path would.
-            val destination = random.pick("backend", "libs/backend")
+            // Mostly nothing in the way, so that a layout is not refused before the part that
+            // matters is reached; and platform's own libs/ only ever in its first commits, which
+            // makes it mostly gone before libs begins. Mostly: the times are drawn from one pool
+            // for all three, so a first commit of platform's can still follow libs' first, and its
+            // libs/ is then a collision at libs itself, refused like any other.
             val platformCommits = random.nextInt(1, 4)
             val strayUntil = random.nextInt(0, platformCommits + 1)
             repo("platform", List(platformCommits) {
                 mapOf("README.md" to "p$it") + if (it >= strayUntil) emptyMap() else random.pick(
-                    mapOf("$destination/stray.txt" to "p"),
-                    mapOf(destination to "a file"),
-                    mapOf("libs" to "a file"),
+                    mapOf("libs/backend/stray.txt" to "p"),
+                    mapOf("libs/backend/stray.txt" to "p"),
                     mapOf("libs/other.txt" to "p"),
+                    mapOf("libs" to "a file"),
+                )
+            })
+            repo("libs", List(random.nextInt(1, 3)) {
+                mapOf("shared.txt" to "l$it") + random.pick(
+                    emptyMap(),
+                    emptyMap(),
+                    emptyMap(),
+                    mapOf("backend" to "a file"),
+                    mapOf("backend/stray.txt" to "l"),
                 )
             })
             repo("backend", List(random.nextInt(1, 3)) { mapOf("src/Main.kt" to "a$it") })
 
-            val inputs = listOf(
-                "--root-repo", "platform",
-                dir.resolve("platform.git").toString(),
-                dir.resolve("backend.git").toString() + "::=$destination",
-            )
-            val dry = MergeCommand().test(listOf("--dry-run") + inputs)
+            val dry = MergeCommand().test(listOf("--dry-run") + inputs(dir))
             val out = dir.resolve("out.git")
-            val refusal = write(dir, out, destination)
+            val refusal = write(dir, out)
 
             assertEquals(
                 dry.statusCode == 0,
@@ -107,20 +108,54 @@ class SpliceAgreementIT {
         assertTrue(refused > 0 && written > 0, "refused $refused, written $written of $SEEDS")
     }
 
+    @Test
+    fun `backend placed inside the root repository's own libs is refused by both`() {
+        // The stretch the three levels exist for, which the draw above seldom reaches with nothing
+        // else in the way: backend begins before libs, so it lands inside platform's own `libs/`,
+        // and platform holds `libs/backend/` there until its second commit. Libs begins after both.
+        val dir = tmp.resolve("fixed")
+        TestRepoBuilder.create(dir.resolve("platform.git")).use { r ->
+            val p1 = r.commit("p1", files = mapOf("README.md" to "p1", "libs/backend/stray.txt" to "p"), at = start)
+            val p2 = r.commit("p2", listOf(p1), files = mapOf("README.md" to "p2"), at = start.plusSeconds(120))
+            r.branch("main", p2)
+        }
+        TestRepoBuilder.create(dir.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("b1", files = mapOf("src/Main.kt" to "b1"), at = start.plusSeconds(60)))
+        }
+        TestRepoBuilder.create(dir.resolve("libs.git")).use { r ->
+            r.branch("main", r.commit("l1", files = mapOf("shared.txt" to "l1"), at = start.plusSeconds(180)))
+        }
+
+        val dry = MergeCommand().test(listOf("--dry-run") + inputs(dir))
+        val refusal = write(dir, dir.resolve("out.git"))
+
+        assertEquals(1, dry.statusCode, dry.output)
+        assertTrue(refusal != null, "the writer put backend over platform's own libs/backend/")
+    }
+
+    /** Platform at the output root, libs at `libs` and backend at `libs/backend`, spliced. */
+    private fun inputs(dir: Path) = listOf(
+        "--splice",
+        "--root-repo", "platform",
+        dir.resolve("platform.git").toString(),
+        dir.resolve("libs.git").toString() + "::=libs",
+        dir.resolve("backend.git").toString() + "::=libs/backend",
+    )
+
     /**
      * The layout the dry run was given, written as the runner writes it but with no check in front:
-     * read, planned with the same destinations, fetched, and braided.
+     * read, planned with `--splice` and the same destinations, fetched, and braided.
      *
      * @return `null` when the output was written, or the writer's refusal.
      */
-    private fun write(dir: Path, out: Path, backendAt: String): String? {
-        val destinations = mapOf("platform" to null, "backend" to backendAt)
+    private fun write(dir: Path, out: Path): String? {
+        val destinations = mapOf("platform" to null, "libs" to "libs", "backend" to "libs/backend")
         val opened = destinations.keys.map { SourceRepository.open(dir.resolve("$it.git")) }
         try {
             val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER)
             val repoOf = inputs.sources.map { it.source }.zip(opened).toMap()
             val subdirs = inputs.graph.sources.associateWith { destinations.getValue(it.name) }
-            val plan = inputs.graph.braid(inputs.heads).plan(subdirs)
+            val plan = inputs.graph.braid(inputs.heads).plan(subdirs, splice = true)
             TargetRepository.create(out, inputs.mainlineBranch).use { target ->
                 for (input in inputs.sources) {
                     target.fetchFrom(repoOf.getValue(input.source), input.readRefs)

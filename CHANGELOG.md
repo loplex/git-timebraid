@@ -111,6 +111,11 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   `git-timebraid -o out backend::=libs/backend webui::=apps/webui`\
   Inputs sharing a prefix share the tree for it.
 
+- **`--splice`** — let one input's destination lie inside another's.\
+  The pair is refused without it: the paths alone cannot tell a typo from an intended layout.\
+  Every splice is checked against every tree before any object is written into the output,
+  `--dry-run` included.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\

@@ -22,6 +22,33 @@ class SubmoduleWiringTest {
         SubmoduleWiring.merge(parts.toList()) { "abc123" }
 
     @Test
+    fun `two inputs describing one submodule name are refused, naming it`() {
+        // The arrangement the class KDoc names: `libs/a` with a section `b/x` against `libs/a/b`
+        // with a section `x`. Both prefix to `libs/a/b/x`. --splice lets the pair arrive, and so
+        // does the repository at the output root; everywhere else no destination contains another,
+        // which is what makes `<subdir>/<name>` unique by construction.
+        val outer = """
+            [submodule "b/x"]
+            	path = b/x
+            	url = https://example.com/x.git
+        """.trimIndent()
+        val inner = """
+            [submodule "x"]
+            	path = x
+            	url = https://example.com/x.git
+        """.trimIndent()
+
+        val refused = assertThrows<IllegalArgumentException> {
+            merge(rewire(outer, subdir = "libs/a", repo = "A"), rewire(inner, subdir = "libs/a/b", repo = "B"))
+        }
+
+        assertTrue(
+            refused.message!!.contains("two inputs both describe a submodule named 'libs/a/b/x'"),
+            refused.message,
+        )
+    }
+
+    @Test
     fun `an input in a subdirectory has both its path and its section name prefixed`() {
         val rewired = rewire(
             """
@@ -148,9 +175,9 @@ class SubmoduleWiringTest {
 
     @Test
     fun `two inputs claiming one submodule name is a named error`() {
-        // Reachable across the root repository, whose names are not prefixed, and between two blank
-        // names; otherwise a subdirectory input cannot collide, because no destination lies inside
-        // another, which keeps every `<subdir>/<name>` unique.
+        // Reachable across the root repository, whose names are not prefixed, under --splice, and
+        // between two blank names. Everywhere else a subdirectory input cannot collide, because no
+        // destination lies inside another, which keeps every `<subdir>/<name>` unique.
         val root = rewire("[submodule \"A/lib\"]\n\tpath = A/lib\n\turl = r\n", subdir = null, repo = "root")
         val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = "A")
 

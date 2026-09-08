@@ -111,6 +111,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "themselves decide where the strands interleave."
         )
 
+    private val splice by option("--splice").flag()
+        .help(
+            "Let one input's destination lie inside another's (::=libs and ::=libs/backend), " +
+                "splicing the two into one directory instead of refusing the pair. The containing " +
+                "repository's own content stays where it is; anything it already holds at the " +
+                "inner destination is still a collision."
+        )
+
     private val tagPrefix by option("--tag-prefix").default("{repo}/")
         .help("Prefix prepended to every recreated tag; {repo} is substituted.")
 
@@ -216,6 +224,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             mainlineBranch = mainlineBranch,
             branches = branches.toSet().ifEmpty { null },
             interleaveRefs = interleaveRefs,
+            splice = splice,
             writeOptions = WriteOptions(subjectPrefix, tagPrefix, provenance),
             dryRun = dryRun,
         )
@@ -310,6 +319,18 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     private fun report(result: MergeResult) {
         echo("mainline branch: ${result.braid.mainlineBranch}", err = true)
+
+        // Only the splices --splice enabled are worth a line in the closing report. The repository
+        // at the output root contains every other input by definition, so saying so of each of them
+        // would say nothing here. The run's own progress does report them, under --verbose, where
+        // what each input cost is the point.
+        for (splice in result.splices.filter { it.splice.outerSubdir != null }) {
+            echo(
+                "spliced: ${splice.splice.innerSubdir} inside ${splice.splice.outerPath} at " +
+                    "${splice.commits} commits, no collision",
+                err = true,
+            )
+        }
         echo(result.plan.summary())
 
         planOut?.let { file ->

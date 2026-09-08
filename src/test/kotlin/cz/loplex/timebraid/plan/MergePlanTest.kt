@@ -124,6 +124,32 @@ class MergePlanTest {
                 spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(outer, inner))
             }
             assertTrue(error.message!!.contains("one contains the other"), error.message)
+            assertTrue(error.message!!.contains("--splice"), error.message)
+        }
+    }
+
+    @Test
+    fun `accepts one repository inside another when the splice was asked for`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        val plan = spec.graph.braid(spec.commits("a1", "b1"))
+            .plan(spec.subdirs("libs", "libs/b"), splice = true)
+
+        assertEquals("libs", plan.subdirOf(spec.commit("a1")))
+        assertEquals("libs/b", plan.subdirOf(spec.commit("b1")))
+    }
+
+    @Test
+    fun `the splice lifts the containment rule and nothing else`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        // Two repositories in the same directory, and a segment the output cannot hold, stay
+        // refused: neither is a question the splice has an answer for.
+        assertThrows<IllegalArgumentException> {
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("libs", "libs"), splice = true)
+        }
+        assertThrows<IllegalArgumentException> {
+            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("libs/.git", "b"), splice = true)
         }
     }
 

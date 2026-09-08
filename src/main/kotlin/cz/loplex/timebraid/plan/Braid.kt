@@ -33,8 +33,10 @@ class Braid internal constructor(
      *
      * @param subdirs where each input repository goes in the output, `null` for the one placed at
      *   the root. Every repository of the graph has to appear.
+     * @param splice whether one destination may lie inside another, which is refused without it.
      */
-    fun plan(subdirs: Map<Source, String?>): MergePlan = reparent().plan(subdirs)
+    fun plan(subdirs: Map<Source, String?>, splice: Boolean = false): MergePlan =
+        reparent().plan(subdirs, splice)
 }
 
 /**
@@ -69,7 +71,8 @@ class ReparentedGraph internal constructor(
      *
      * @param subdirs where each input repository goes in the output, `null` for the one placed at
      *   the root. Every repository of the graph has to appear.
+     * @param splice whether one destination may lie inside another, which is refused without it.
      */
-    fun plan(subdirs: Map<Source, String?>): MergePlan =
-        MergePlan.create(graph, braid, order, parents, subdirs)
+    fun plan(subdirs: Map<Source, String?>, splice: Boolean = false): MergePlan =
+        MergePlan.create(graph, braid, order, parents, subdirs, splice)
 }
