@@ -45,8 +45,13 @@ jobs:
       # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
       # and links a hand-written module list. Building it in the same matrix that runs the tests
       # means the archive a release uploads is one that has been built on every supported platform.
+      #
+      # The quotes around the property are load-bearing on Windows, where the default shell is
+      # PowerShell: it ends a parameter name at a dot, so a bare -Djlink.compress=2 reaches Maven
+      # as the two arguments `-Djlink` and `.compress=2` and the second is read as a lifecycle
+      # phase. Bash needs no such help, and takes the quotes without complaint.
       - name: Build the bundled-runtime archive
-        run: mvn -B -ntp -DskipTests -Pbundled-runtime -Djlink.compress=${{ matrix.jlink_compress }} package
+        run: mvn -B -ntp -DskipTests -Pbundled-runtime "-Djlink.compress=${{ matrix.jlink_compress }}" package
 
       # jlink proves the image links, not that it runs. The script unpacks the archive a user
       # would download and merges two repositories with it; it lives in .github/scripts/ so that
