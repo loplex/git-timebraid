@@ -116,7 +116,7 @@ class RootTreeAssembler(
                 require(clash == null) {
                     "subdirectory '$here' collides with an entry of the same name in the root " +
                         "repository at ${at()} — give that repository another subdirectory with " +
-                        "<repo>=<subdir>"
+                        "<repo>::=<subdir>"
                 }
                 continue
             }
@@ -127,7 +127,7 @@ class RootTreeAssembler(
             require(inside == null || inside.mode == FileMode.TREE) {
                 "'$here' is not a directory in the root repository at ${at()}, so no repository " +
                     "can be placed inside it — give that repository another subdirectory with " +
-                    "<repo>=<subdir>"
+                    "<repo>::=<subdir>"
             }
             val children = if (inside == null) emptyList() else rootTreeEntries(inside.id)
             val subtree = build(children, group.map { it.descend() }, null, here, at)

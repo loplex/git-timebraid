@@ -95,7 +95,7 @@ object SubmoduleWiring {
                 val first = claimed.putIfAbsent(name, index)
                 require(first == null) {
                     "two inputs both describe a submodule named '$name' at ${at()}; " +
-                        "give one of them another subdirectory with <repo>=<subdir>"
+                        "give one of them another subdirectory with <repo>::=<subdir>"
                 }
             }
         }

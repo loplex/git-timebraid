@@ -446,6 +446,83 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `nested destinations are built out and spliced into the root repository's own directory`() {
+        // platform owns libs/ already; backend is placed inside it, webui two levels down under a
+        // prefix nothing else has. The splice is the point: libs/ ends up holding both.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch(
+                "main",
+                r.commit(
+                    "p1",
+                    files = mapOf("libs/README.md" to "the platform's own", "build.txt" to "x"),
+                    at = at("09:00"),
+                ),
+            )
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("10:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", files = mapOf("index.html" to "b"), at = at("11:00")))
+        }
+
+        val out = tmp.resolve("nested.git")
+        braid(
+            "-o", out.toString(),
+            "--root-repo", "platform",
+            path("platform.git"),
+            path("backend.git") + "::=libs/backend",
+            path("webui.git") + "::=apps/frontend/webui",
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("apps", "build.txt", "libs"), names(""))
+            // The root repository's own file and the input placed beside it, in one tree.
+            assertEquals(listOf("README.md", "backend"), names("libs"))
+            assertEquals(listOf("src"), names("libs/backend"))
+            assertEquals(listOf("index.html"), names("apps/frontend/webui"))
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("a", GitCli.run(out, "show", "main:libs/backend/src/Main.kt"))
+            assertEquals("the platform's own", GitCli.run(out, "show", "main:libs/README.md"))
+        }
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+    }
+
+    @Test
+    fun `a nested destination reaching into a file of the root repository is a clear error`() {
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("libs" to "a stray file where a directory is wanted")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r -> r.branch("main", r.commit("b1")) }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                "--root-repo", "platform",
+                path("platform.git"),
+                path("webui.git") + "::=libs/webui",
+            ),
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'libs'"), result.output)
+        assertTrue(result.output.contains("not a directory"), result.output)
+    }
+
+    @Test
     fun `a-txt sorts before a-slash and CRLF content is left untouched`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             r.commitBytes(
