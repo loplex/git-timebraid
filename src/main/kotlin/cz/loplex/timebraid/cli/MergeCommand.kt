@@ -24,6 +24,7 @@ import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.WriteOptions
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -248,11 +249,46 @@ private fun parseRepoSpec(raw: String): RepoSpec {
     val remote = isRemoteLocation(location)
     val derived = name
         ?: if (remote) repoNameFromLocation(location)
-        else SourceRepository.defaultName(Path.of(location))
+        else SourceRepository.defaultName(localPath(location, raw))
     // The name becomes the default subdirectory, the tag prefix and the provenance label, so an
     // input that yields none is rejected here rather than failing later as an unusable subdirectory.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
+    // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
+    // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
+    // of descending into it, so such a name is refused before anything is written anywhere.
+    if (!isOneSegment(derived)) throw UsageError("'$derived' is not a usable name (in '$raw')")
     return RepoSpec(location, remote, derived, subdir)
+}
+
+/**
+ * [location] as a path, or a usage error naming it.
+ *
+ * A location the platform cannot spell as a path at all — `a::b` on Windows, where a colon is legal
+ * only in a drive letter — is the user's typo, not an internal failure, so it is reported the way
+ * every other unusable argument is instead of as an `InvalidPathException` from inside the parser.
+ */
+private fun localPath(location: String, raw: String): Path =
+    try {
+        Path.of(location)
+    } catch (e: InvalidPathException) {
+        throw UsageError("'$location' is not a usable path (in '$raw')")
+    }
+
+/**
+ * Whether [name] can serve as a single directory name on this platform.
+ *
+ * Which characters that admits is the platform's business, not this parser's: a backslash is an
+ * ordinary character in a POSIX filename and a separator in a Windows one, and Windows rejects a
+ * handful of others outright. Asking [Path] is what keeps the rule the filesystem's own.
+ */
+private fun isOneSegment(name: String): Boolean {
+    if (name.isBlank() || name == "." || name == "..") return false
+    val path = try {
+        Path.of(name)
+    } catch (e: InvalidPathException) {
+        return false
+    }
+    return !path.isAbsolute && path.nameCount == 1
 }
 
 /** [raw] split at the last [marker] that is followed by a bare word, or the whole of it and `null`. */
@@ -268,9 +304,16 @@ private val REMOTE_LOCATION = Regex("""^[a-zA-Z][a-zA-Z0-9+.\-]*://|^[^/\\]+@[^/
 
 private fun isRemoteLocation(location: String): Boolean = REMOTE_LOCATION.containsMatchIn(location)
 
-/** The repository name implied by a URL: its last path segment without a trailing `.git`. */
+/**
+ * The repository name implied by a URL: its last path segment without a trailing `.git`.
+ *
+ * A backslash separates segments here as well as a slash, because a location can be a Windows path
+ * wearing a URL scheme — `file://C:\repos\backend.git`, which is what concatenating `file://`
+ * with an absolute path produces there. Cutting that at the colon of the drive letter would read the
+ * name as `\repos\backend`, and the name is a directory name.
+ */
 private fun repoNameFromLocation(location: String): String {
-    val trimmed = location.trimEnd('/')
-    val lastSeparator = trimmed.lastIndexOfAny(charArrayOf('/', ':'))
+    val trimmed = location.trimEnd('/', '\\')
+    val lastSeparator = trimmed.lastIndexOfAny(charArrayOf('/', '\\', ':'))
     return trimmed.substring(lastSeparator + 1).removeSuffix(".git")
 }
