@@ -5,7 +5,6 @@ import cz.loplex.timebraid.plan.MergePlan
 import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
-import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
@@ -60,8 +59,17 @@ class BraidWriter(
     /** New identity of every original commit, filled in write order. */
     private val written = HashMap<Commit, ObjectId>(graph.size)
 
-    /** Top-level entries of the root repository's trees, which repeat across the whole braid. */
+    /**
+     * Entries of the root repository's trees, keyed by the tree, which repeat across the whole
+     * braid: the top-level one at every position that repository stood still for, and — where an
+     * input is placed inside one of its directories — that directory's at every one of them too.
+     */
     private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
+
+    /** The input placed at the output root, or `null` when every input has a subdirectory. */
+    private val rootSource: Source? = graph.sources.firstOrNull { plan.subdirOf(it) == null }
+
+    private val trees = target.treeAssembler(::rootEntriesOf)
 
     /**
      * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
@@ -101,7 +109,7 @@ class BraidWriter(
 
         return WriteSummary(
             commits = plan.commits.size,
-            trees = target.trees.treesWritten,
+            trees = trees.treesWritten,
             branches = refs.branches,
             tags = refs.tags,
             remoteBranches = refs.remoteBranches,
@@ -137,7 +145,7 @@ class BraidWriter(
      */
     private fun treeOf(commit: Commit): ObjectId {
         val content = plan.contentOf(commit)
-        val subdirEntries = ArrayList<TreeEntry>(content.size)
+        val placements = ArrayList<Placement>(content.size)
         val parts = ArrayList<RewiredGitmodules>(content.size)
         var root: List<TreeEntry> = emptyList()
         val at = { commit.toString() }
@@ -145,16 +153,23 @@ class BraidWriter(
         for ((source, holder) in content) {
             val tree = originalOf(holder).tree
             val subdir = plan.subdirOf(source)
-            if (subdir == null) {
-                root = rootEntries.getOrPut(tree) { repoOf.getValue(source).topLevelEntries(tree) }
-            } else {
-                subdirEntries += TreeEntry(subdir, FileMode.TREE, tree)
-            }
+            if (subdir == null) root = rootEntriesOf(tree)
+            else placements += Placement(subdir, tree)
             parts += wiringOf(source, tree, at)
         }
 
-        return target.trees.assemble(root, subdirEntries, gitmodulesOf(parts, at), at)
+        return trees.assemble(root, placements, gitmodulesOf(parts, at), at)
     }
+
+    /**
+     * Entries of one tree of the root repository, cached because the same trees are asked about over
+     * and over — see [rootEntries].
+     */
+    private fun rootEntriesOf(tree: ObjectId): List<TreeEntry> =
+        rootEntries.getOrPut(tree) {
+            val source = rootSource ?: error("no input is placed at the output root")
+            repoOf.getValue(source).entriesOf(tree)
+        }
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
     private fun wiringOf(source: Source, tree: ObjectId, at: () -> String): RewiredGitmodules =

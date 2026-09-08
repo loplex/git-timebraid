@@ -43,8 +43,15 @@ class TargetRepository private constructor(
         (repository.objectDatabase as? ObjectDirectory)?.newPackInserter()
             ?: repository.newObjectInserter()
 
-    /** Builds root trees into this repository, deduplicating identical ones. */
-    val trees: RootTreeAssembler = RootTreeAssembler(inserter)
+    /**
+     * Builds the braid's trees into this repository, deduplicating identical ones.
+     *
+     * [rootTreeEntries] is asked for the entries of a tree of the repository placed at the output
+     * root, which only a nested destination reaching into one of its directories needs — see
+     * [RootTreeAssembler].
+     */
+    fun treeAssembler(rootTreeEntries: (ObjectId) -> List<TreeEntry>): RootTreeAssembler =
+        RootTreeAssembler(inserter, rootTreeEntries)
 
     /**
      * Fetches everything reachable from [refs] in [source] into this repository, parking the refs

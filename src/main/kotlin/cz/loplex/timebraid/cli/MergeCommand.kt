@@ -196,7 +196,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         result.write?.let { summary ->
             echo(
-                "wrote ${summary.commits} commits and ${summary.trees} root trees on top",
+                "wrote ${summary.commits} commits and ${summary.trees} trees on top",
                 err = true,
             )
             val remotes =
