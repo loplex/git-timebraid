@@ -22,7 +22,7 @@ class CommitGraphTest {
         val parents = mapOf("a1" to listOf("a3"), "a2" to listOf("a1"), "a3" to listOf("a2"))
 
         val failure = assertThrows<CyclicGraphException> {
-            requireAcyclic(names, parents::getValue)
+            requireAcyclic(graphOf(names) { parents.getValue(it) }.numbered())
         }
 
         assertTrue(failure.message!!.startsWith("cycle in the parent chain:"))
@@ -34,6 +34,6 @@ class CommitGraphTest {
         val depth = 200_000
         val chain = (0 until depth).toList()
 
-        requireAcyclic(chain) { if (it == 0) emptyList() else listOf(it - 1) }
+        requireAcyclic(graphOf(chain) { if (it == 0) emptyList() else listOf(it - 1) }.numbered())
     }
 }

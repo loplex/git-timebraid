@@ -20,19 +20,14 @@ package cz.loplex.timebraid.plan
  * When `pred` is already a parent — the common case of two consecutive commits from the same
  * repository — nothing is added, which is also what keeps a parent from being listed twice.
  *
- * @param commits every commit the rule applies to, which is every commit of the graph.
+ * @param graph the commits the rule applies to, under their original edges.
  * @param braid the mainline in braid order, as produced by [BraidInterleave].
- * @param parentsOf the original parent edges.
  * @return the new parent list of every commit.
  * @throws CyclicGraphException if the braid order contradicts ancestry.
  */
-internal fun reparent(
-    commits: List<Commit>,
-    braid: List<Commit>,
-    parentsOf: (Commit) -> List<Commit>,
-): Map<Commit, List<Commit>> {
-    val parents = LinkedHashMap<Commit, List<Commit>>(commits.size * 2)
-    for (commit in commits) parents[commit] = parentsOf(commit)
+internal fun reparent(graph: CommitGraph, braid: List<Commit>): Map<Commit, List<Commit>> {
+    val parents = LinkedHashMap<Commit, List<Commit>>(graph.commits.size * 2)
+    for (commit in graph.commits) parents[commit] = graph.parentsOf(commit)
 
     for (i in 1 until braid.size) {
         val commit = braid[i]
@@ -43,7 +38,7 @@ internal fun reparent(
 
     // Fail loudly rather than write a broken repository: a braid order that respects ancestry
     // cannot produce a cycle here, so a cycle means the order itself was wrong.
-    requireAcyclic(commits, parents::getValue)
+    requireAcyclic(graph.withParents(parents::getValue))
 
     return parents
 }

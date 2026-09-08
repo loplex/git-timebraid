@@ -26,7 +26,7 @@ class Braid internal constructor(
      * @throws CyclicGraphException if the braid order contradicts ancestry.
      */
     fun reparent(): ReparentedGraph =
-        ReparentedGraph(graph, commits, reparent(graph.commits, commits) { it.parents })
+        ReparentedGraph(graph, commits, reparent(graph, commits))
 
     /**
      * The complete plan for the output history — [reparent] followed by [ReparentedGraph.plan].
@@ -49,7 +49,9 @@ class ReparentedGraph internal constructor(
     private val braid: List<Commit>,
     private val parents: Map<Commit, List<Commit>>,
 ) {
-    private val order: List<Commit> by lazy { topoOrder(graph.commits, ::parentsOf) }
+    private val braided: IndexedGraph<Commit> = graph.withParents(parents::getValue)
+
+    private val order: List<Commit> by lazy { topoOrder(braided) }
 
     /** Parents of [commit] after reparenting, first parent first. */
     fun parentsOf(commit: Commit): List<Commit> = parents.getValue(commit)

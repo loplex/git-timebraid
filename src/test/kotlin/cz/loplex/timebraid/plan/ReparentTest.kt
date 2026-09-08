@@ -81,7 +81,7 @@ class ReparentTest {
         )
         val parents = reparented(spec, "m", "b2")
 
-        val order = topoOrder(spec.graph.commits) { parents.getValue(it) }
+        val order = topoOrder(spec.graph.withParents(parents::getValue))
 
         assertEquals(spec.graph.size, order.size)
     }
@@ -94,7 +94,7 @@ class ReparentTest {
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
 
         val failure = assertThrows<CyclicGraphException> {
-            reparent(spec.graph.commits, spec.commits("c", "g")) { it.parents }
+            reparent(spec.graph, spec.commits("c", "g"))
         }
 
         assertTrue(failure.message!!.contains("cycle in the parent chain"), failure.message)
@@ -104,12 +104,8 @@ class ReparentTest {
     }
 
     private fun reparented(spec: GraphSpec, vararg heads: String): Map<Commit, List<Commit>> {
-        val braid = BraidInterleave.compute(
-            spec.graph.commits,
-            spec.commits(*heads),
-            interleaveTips = emptyList(),
-        ) { it.parents }
-        return reparent(spec.graph.commits, braid) { it.parents }
+        val braid = BraidInterleave.compute(spec.graph, spec.commits(*heads), interleaveTips = emptyList())
+        return reparent(spec.graph, braid)
     }
 
     private fun assertOriginalEdgesKept(graph: CommitGraph, parents: Map<Commit, List<Commit>>) {
