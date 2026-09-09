@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# git-timebraid, run out of a clone instead of an installed archive.
+#
+# doc/examples writes its invocations in terms of this, so one can be copied out of a README and run
+# from the repo root as it stands. The `$ git` lines beside them are written from the example's own
+# directory.
+#
+# src/main/scripts/git-timebraid is the launcher that ships, and it is the authority on how this
+# program starts. This is its counterpart for a build tree, and differs in three ways:
+#
+#   * the jar is target/git-timebraid.jar, not lib/git-timebraid.jar beside bin/;
+#   * there is no bundled runtime to prefer, since only the platform archive carries one;
+#   * $0 is taken as it stands, with no loop resolving symlinks: this is run from the repo root as
+#     ./git-timebraid, not from an entry on PATH, which is usually a link to somewhere else.
+#
+# TIMEBRAID_JAVA and JAVA_OPTS behave as they do there, so an example run from here and the same
+# command run from an install do not diverge on the JVM.
+#
+# It deliberately does not build. A documented command that quietly compiles is a surprise, and the
+# one thing a reader needs when the jar is missing is the command that makes one.
+
+set -e
+
+home=$(cd -- "$(dirname -- "$0")" > /dev/null && pwd)
+
+jar=$home/target/git-timebraid.jar
+if [ ! -f "$jar" ]; then
+    echo "git-timebraid: jar not found at $jar" >&2
+    echo "git-timebraid: run 'mvn -DskipTests package' to build it" >&2
+    exit 1
+fi
+
+if [ -n "${TIMEBRAID_JAVA:-}" ]; then
+    java=$TIMEBRAID_JAVA
+elif [ -n "${JAVA_HOME:-}" ]; then
+    java=$JAVA_HOME/bin/java
+else
+    java=java
+fi
+
+# No cd: the arguments are paths the caller wrote, and they are the caller's to resolve.
+# JAVA_OPTS is deliberately unquoted, as in the shipped launcher: it holds several options.
+# shellcheck disable=SC2086
+exec "$java" ${JAVA_OPTS} -jar "$jar" "$@"

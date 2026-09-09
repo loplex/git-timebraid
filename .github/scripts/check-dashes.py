@@ -36,8 +36,9 @@ can be confused with one, and a comment in a test is read in the same editor as 
 pom.xml because Maven's own vocabulary carries the ASCII mark in contexts this cannot tell from
 prose. The rest of what the scan below does not read is named here too:
 doc/examples/build-inputs.sh, the workflows and .gitattributes, for the first of those reasons,
-writing the ASCII mark and never the em dash; LICENSE and NOTICE, which are legal text; and
-.gitignore and the plan.txt dumps, which are not prose at all.
+writing the ASCII mark and never the em dash; the root git-timebraid wrapper, which writes neither;
+LICENSE and NOTICE, which are legal text; and .gitignore and the plan.txt dumps, which are not
+prose at all.
 
 **The pattern over-matches and is then filtered**, rather than enumerating the positions a dash can
 sit in. A list of them -- between words, and at the end of a line -- misses three more: a line that
