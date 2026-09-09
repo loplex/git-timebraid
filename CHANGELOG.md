@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Five changes alter what a command line written for 0.1.0 does:
+Six changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -31,6 +31,9 @@ Five changes alter what a command line written for 0.1.0 does:
   0.1.0's dry run passed it, and the run stopped on it only once the inputs were read and the braid planned.\
   Beside a remote input, one that could not be created stopped a dry run and a run alike,
   earlier, on the directory for the clones.
+
+- `GIT_DIR` and its kin no longer decide which repository an input is read from.\
+  0.1.0 read an input named by its working tree, or by a path holding no repository, from the one `GIT_DIR` named.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -86,6 +89,12 @@ Five changes alter what a command line written for 0.1.0 does:
 
 - **Two inputs that both describe a submodule with a blank name are refused with advice that fits.**\
   0.1.0 said to give one of them another subdirectory, which does not part them: a blank name is never prefixed.
+
+- **The environment no longer stands in for an input repository.**\
+  `GIT_DIR` replaced every input that was not itself a git directory, a working tree included.\
+  A path that was no repository at all passed the `no git repository at` check because of it.\
+  `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare input as well:
+  nothing overrode them, so they read its refs or its objects from another repository.
 
 ## [0.1.0] - 2026-09-08
 
