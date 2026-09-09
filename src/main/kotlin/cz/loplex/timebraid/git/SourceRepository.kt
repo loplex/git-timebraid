@@ -177,6 +177,24 @@ class SourceRepository private constructor(
         }
 
         /**
+         * Whether [location] is itself a git repository — bare, or a working tree whose `.git`
+         * resolves to one.
+         *
+         * The environment is deliberately not consulted, which is the one way this differs from
+         * [open]. A scan asks this of every directory it walks, and a `GIT_DIR` in the environment
+         * would otherwise answer yes for every one of them.
+         */
+        fun isRepository(location: Path): Boolean {
+            val dir = location.toFile()
+            if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) return true
+            if (!File(dir, Constants.DOT_GIT).exists()) return false
+            val builder = FileRepositoryBuilder()
+            dir.parentFile?.let { builder.addCeilingDirectory(it) }
+            builder.findGitDir(dir)
+            return builder.gitDir != null
+        }
+
+        /**
          * The repository name implied by a path: the last segment of its absolute, normalized form,
          * without a trailing `.git`.
          *
