@@ -91,14 +91,39 @@ class MergePlanTest {
     }
 
     @Test
-    fun `rejects a subdirectory name that is not a single directory`() {
+    fun `accepts a nested subdirectory path`() {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 
-        assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("a/b", "B"))
+        val plan = spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("libs/a", "apps/b"))
+
+        assertEquals("libs/a", plan.subdirOf(spec.commit("a1")))
+        assertEquals("apps/b", plan.subdirOf(spec.commit("b1")))
+    }
+
+    @Test
+    fun `rejects a subdirectory path with a segment the output cannot hold`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        val unusable = listOf(
+            "..", ".", " ", "a//b", "/a", "a/", "a/../b", "a/./b", ".git", ".GIT", "libs/.git/a", "libs/.Git/a",
+        )
+        for (subdir in unusable) {
+            assertThrows<IllegalArgumentException>("'$subdir' should not be a usable subdirectory") {
+                spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(subdir, "B"))
+            }
         }
-        assertThrows<IllegalArgumentException> {
-            spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs("..", "B"))
+    }
+
+    @Test
+    fun `rejects one repository placed inside another's subdirectory`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        // One level down as well as at the top: the containing destination can sit at any depth.
+        for ((outer, inner) in listOf("libs" to "libs/b", "libs/a" to "libs/a/b")) {
+            val error = assertThrows<IllegalArgumentException> {
+                spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(outer, inner))
+            }
+            assertTrue(error.message!!.contains("one contains the other"), error.message)
         }
     }
 

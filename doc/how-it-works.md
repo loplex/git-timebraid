@@ -13,8 +13,8 @@ For what the tool is for and how to run it, see the [README](../README.md).
 Vocabulary used throughout:
 
 - **input repository** — one of the repositories being merged;
-  contributes one subdirectory to the output, or, for the one `--root-repo` input,
-  its top-level entries at the root beside the other inputs' subdirectories
+  contributes one subdirectory to the output, at a path that may be nested, which is its destination;
+  or, for the one `--root-repo` input, the output root, whose entries it shares with the other inputs' destinations
 - **mainline** — the branch treated as each input's main line of development (`--mainline-branch`)
 - **ordering timestamp** — the timestamp the interleaving compares:
   the committer date, or the author date with `--order-by author`.\
@@ -85,15 +85,14 @@ So it keeps all three.
 
 A commit's tree in the braid is derived from its first parent:
 
-> **tree'(c)** = the tree of `parents'(c)[0]`,
-> with the entry for `c`'s own subdirectory replaced by `c`'s original tree.
+> **tree'(c)** = the tree of `parents'(c)[0]`, with the entry at `c`'s own destination replaced by `c`'s original tree.
 
-For the very first commit on the braid there is no parent, so its tree is built from that commit alone:
-its subdirectory, or its top-level entries for the `--root-repo` input.
+For the very first commit on the braid there is no parent,
+so its tree is built from that commit alone, at its destination.
 
-The input at the root (`--root-repo`) holds no subdirectory:
-its top-level entries stand in the root tree beside the other inputs' subdirectories,
-and its commits replace those entries.
+The input at the root (`--root-repo`) has the output root as its destination:
+its top-level entries stand in the root tree beside the other inputs' destinations,
+or around one that reaches into its directories, and its commits replace those entries.
 
 Because the first parent is the time predecessor, the map of *subdirectory → content* accumulates as you walk forward:
 
@@ -104,7 +103,36 @@ This is the mechanism behind the whole promise:
 "the state of every repository at that moment" is not computed on demand, it is simply what the commit's tree contains.
 
 A subdirectory entry *is* the input's own root tree object, so nothing is recursed into and no blob is copied:
-the output shares its content with the inputs, and each braided commit costs one small tree.
+the output shares its content with the inputs.\
+Where every destination is a single name, that makes a braided commit cost exactly one small tree — its own root.
+
+### Nested destinations
+
+A destination may be a path rather than a single name (`repo.git::=libs/backend`).\
+An entry name cannot hold a `/`, so the segments above the last one are trees the braid builds itself,
+and inputs sharing a prefix share the tree for it:
+
+| Input                        | Lands at        | Prefix trees the braid builds |
+|------------------------------|-----------------|-------------------------------|
+| `webui.git::=apps/webui`     | `apps/webui/`   | `apps/`                       |
+| `backend.git::=libs/backend` | `libs/backend/` | `libs/`                       |
+| `codegen.git::=libs/codegen` | `libs/codegen/` | `libs/`                       |
+
+`libs/` is one tree holding both entries, not one per input.
+
+Three things follow, and they are the whole of the rule:
+
+- A commit costs its root tree plus one tree per *changed* prefix, and no more than that:
+  an untouched prefix keeps the tree object the previous commit used, which is what content addressing gives for free.
+- **No destination may contain another.**
+  `libs` and `libs/backend` cannot both hold a repository,
+  because the entry written at a destination is the input's own tree object — there is no room beside it.\
+  The planner refuses the pair.
+- Where a destination reaches into a directory the **root repository** (`--root-repo`) already has,
+  the two are **spliced**: that repository's entries at `libs/` and the inputs placed inside it end up in one tree.\
+  This is the one place the braid descends into an input's tree,
+  and it descends only along the prefixes some destination names —
+  never into the destination itself, where a collision with the root repository's own content is still refused.
 
 ### The one exception: `.gitmodules`
 
@@ -115,7 +143,7 @@ describing paths that no longer say where the gitlink it names actually sits.\
 So it is the one file the braid writes for itself:
 
 > **`.gitmodules`** at the root of `tree'(c)` = the `[submodule]` sections of every input that has content at `c`,
-> with each section's `path` — and its name — prefixed by that input's subdirectory.
+> with each section's `path` — and its name — prefixed by that input's destination.
 
 The gitlink entries need no help; they ride along in their input's tree like any other entry,
 and the commit a gitlink names is fetched from the submodule's own url rather than from this repository.
