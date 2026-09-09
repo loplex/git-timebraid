@@ -6,6 +6,8 @@ import cz.loplex.timebraid.git.TestRepoBuilder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -137,10 +139,17 @@ class MergeCommandDryRunTest {
         val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/a=b/c"))
 
         assertEquals(1, result.statusCode, result.output)
-        assertTrue(result.output.contains("/nonexistent/a=b/c"), result.output)
+        // The segment carrying the `=` is the whole of what this is about: the rest of the location
+        // reaches the message as a path, and its separators are then the platform's rather than the
+        // ones written here.
+        assertTrue(result.output.contains("a=b"), result.output)
     }
 
     @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
+    )
     fun `a location holding the separator is ended by a bare one`() {
         // The remedy the parser offers, and the only thing a user has to know: append `::`.
         corpus()
@@ -164,6 +173,10 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
+    )
     fun `a directory whose own name holds the separator is named in the refusal`() {
         // The case the grammar cannot diagnose by itself: the part after `::` is a perfectly usable
         // name, so nothing in the parse looks wrong and the run would fail naming only the location
@@ -204,6 +217,10 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a name is a directory name, and a Windows one cannot hold a ':'",
+    )
     fun `a colon in the name or the subdirectory is written with a backslash`() {
         corpus()
 
