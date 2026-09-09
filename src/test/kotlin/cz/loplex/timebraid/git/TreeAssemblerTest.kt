@@ -16,20 +16,20 @@ import org.junit.jupiter.api.io.TempDir
 import org.eclipse.jgit.treewalk.CanonicalTreeParser
 import java.nio.file.Path
 
-class RootTreeAssemblerTest {
+class TreeAssemblerTest {
 
     @TempDir
     lateinit var tmp: Path
 
     private lateinit var repo: TestRepoBuilder
     private lateinit var inserter: ObjectInserter
-    private lateinit var assembler: RootTreeAssembler
+    private lateinit var assembler: TreeAssembler
 
     @BeforeEach
     fun open() {
         repo = TestRepoBuilder.create(tmp.resolve("r.git"))
         inserter = repo.repository.newObjectInserter()
-        assembler = RootTreeAssembler(inserter, ::entriesOf)
+        assembler = TreeAssembler(inserter)
     }
 
     @AfterEach
@@ -54,7 +54,7 @@ class RootTreeAssemblerTest {
         }
     }
 
-    /** Stands in for the root repository's reader — see [RootTreeAssembler]. */
+    /** Stands in for an input repository's reader — see [Placement.entriesOf]. */
     private fun entriesOf(tree: ObjectId): List<TreeEntry> {
         inserter.flush()
         repo.repository.newObjectReader().use { reader ->
@@ -68,16 +68,19 @@ class RootTreeAssemblerTest {
         }
     }
 
-    /** A tree of the given entries, as the root repository would hold it. */
+    /** A tree of the given entries, as an input repository would hold it. */
     private fun treeOf(vararg entries: TreeEntry): ObjectId {
         val formatter = TreeFormatter(entries.size)
-        for (entry in entries.sortedWith(RootTreeAssembler.GIT_TREE_ORDER)) {
+        for (entry in entries.sortedWith(TreeAssembler.GIT_TREE_ORDER)) {
             formatter.append(entry.name, entry.mode, entry.id)
         }
         return inserter.insert(formatter)
     }
 
-    private fun placement(subdir: String, tree: ObjectId) = Placement(subdir, tree)
+    private fun placement(subdir: String, tree: ObjectId) = Placement(subdir, tree, ::entriesOf)
+
+    /** The repository placed at the output root, holding the given entries at its top level. */
+    private fun root(vararg entries: TreeEntry) = Placement(null, treeOf(*entries), ::entriesOf)
 
     /** Every path below [tree], depth first, so a nested placement can be asserted whole. */
     private fun pathsOf(tree: ObjectId, prefix: String = ""): List<String> =
@@ -105,12 +108,14 @@ class RootTreeAssemblerTest {
         // The pair that catches a naive sort: '.' (0x2E) precedes '/' (0x2F), so the file wins,
         // but a plain name comparison would put the directory first.
         val tree = assembler.assemble(
-            rootEntries = listOf(
-                TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
-                TreeEntry("a-", FileMode.REGULAR_FILE, blob("b")),
-                TreeEntry("b", FileMode.REGULAR_FILE, blob("c")),
+            listOf(
+                root(
+                    TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+                    TreeEntry("a-", FileMode.REGULAR_FILE, blob("b")),
+                    TreeEntry("b", FileMode.REGULAR_FILE, blob("c")),
+                ),
+                placement("a", emptyTree()),
             ),
-            placements = listOf(placement("a", emptyTree())),
             at = { "test" },
         )
 
@@ -120,8 +125,10 @@ class RootTreeAssemblerTest {
     @Test
     fun `a file and a directory of the same name sort file first`() {
         val tree = assembler.assemble(
-            rootEntries = listOf(TreeEntry("x", FileMode.REGULAR_FILE, blob("x"))),
-            placements = listOf(placement("x-dir", emptyTree())),
+            listOf(
+                root(TreeEntry("x", FileMode.REGULAR_FILE, blob("x"))),
+                placement("x-dir", emptyTree()),
+            ),
             at = { "test" },
         )
         assertEquals(listOf("x", "x-dir"), namesOf(tree))
@@ -130,13 +137,13 @@ class RootTreeAssemblerTest {
     @Test
     fun `identical entry sets are written once and yield the same tree`() {
         val entries = listOf(placement("ui", emptyTree()))
-        val first = assembler.assemble(emptyList(), entries, at = { "c1" })
-        val second = assembler.assemble(emptyList(), entries, at = { "c2" })
+        val first = assembler.assemble(entries, at = { "c1" })
+        val second = assembler.assemble(entries, at = { "c2" })
 
         assertEquals(first, second)
         assertEquals(1, assembler.treesWritten)
 
-        assembler.assemble(emptyList(), listOf(placement("api", emptyTree())), at = { "c3" })
+        assembler.assemble(listOf(placement("api", emptyTree())), at = { "c3" })
         assertEquals(2, assembler.treesWritten)
     }
 
@@ -144,8 +151,10 @@ class RootTreeAssemblerTest {
     fun `a subdirectory colliding with an entry of the root repository is a named error`() {
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(
-                rootEntries = listOf(TreeEntry("webui", FileMode.REGULAR_FILE, blob("a script"))),
-                placements = listOf(placement("webui", emptyTree())),
+                listOf(
+                    root(TreeEntry("webui", FileMode.REGULAR_FILE, blob("a script"))),
+                    placement("webui", emptyTree()),
+                ),
                 at = { "backend/abc123" },
             )
         }
@@ -159,11 +168,13 @@ class RootTreeAssemblerTest {
         val wired = blob("[submodule \"A/lib\"]\n")
 
         val tree = assembler.assemble(
-            rootEntries = listOf(
-                TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original),
-                TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+            listOf(
+                root(
+                    TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original),
+                    TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+                ),
+                placement("A", emptyTree()),
             ),
-            placements = listOf(placement("A", emptyTree())),
             gitmodules = wired,
             at = { "test" },
         )
@@ -177,8 +188,10 @@ class RootTreeAssemblerTest {
         val original = blob("# only a comment\n")
 
         val tree = assembler.assemble(
-            rootEntries = listOf(TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original)),
-            placements = listOf(placement("A", emptyTree())),
+            listOf(
+                root(TreeEntry(".gitmodules", FileMode.REGULAR_FILE, original)),
+                placement("A", emptyTree()),
+            ),
             at = { "test" },
         )
 
@@ -188,8 +201,7 @@ class RootTreeAssemblerTest {
     @Test
     fun `a nested destination becomes one tree per segment`() {
         val tree = assembler.assemble(
-            rootEntries = emptyList(),
-            placements = listOf(placement("libs/backend", treeOf(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a"))))),
+            listOf(placement("libs/backend", treeOf(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a"))))),
             at = { "test" },
         )
 
@@ -200,8 +212,7 @@ class RootTreeAssemblerTest {
     @Test
     fun `two inputs under one prefix share the tree for it`() {
         val tree = assembler.assemble(
-            rootEntries = emptyList(),
-            placements = listOf(
+            listOf(
                 placement("libs/backend", treeOf(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")))),
                 placement("libs/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b")))),
             ),
@@ -218,11 +229,17 @@ class RootTreeAssemblerTest {
 
     @Test
     fun `a nested destination is spliced into a directory the root repository already has`() {
-        val existing = treeOf(TreeEntry("shared.txt", FileMode.REGULAR_FILE, blob("theirs")))
-
         val tree = assembler.assemble(
-            rootEntries = listOf(TreeEntry("libs", FileMode.TREE, existing)),
-            placements = listOf(placement("libs/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b"))))),
+            listOf(
+                root(
+                    TreeEntry(
+                        "libs",
+                        FileMode.TREE,
+                        treeOf(TreeEntry("shared.txt", FileMode.REGULAR_FILE, blob("theirs"))),
+                    ),
+                ),
+                placement("libs/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b")))),
+            ),
             at = { "test" },
         )
 
@@ -234,8 +251,10 @@ class RootTreeAssemblerTest {
     fun `a nested destination reaching into a file of the root repository is a named error`() {
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(
-                rootEntries = listOf(TreeEntry("libs", FileMode.REGULAR_FILE, blob("a stray file"))),
-                placements = listOf(placement("libs/webui", emptyTree())),
+                listOf(
+                    root(TreeEntry("libs", FileMode.REGULAR_FILE, blob("a stray file"))),
+                    placement("libs/webui", emptyTree()),
+                ),
                 at = { "webui/abc123" },
             )
         }
@@ -249,10 +268,16 @@ class RootTreeAssemblerTest {
         // the input's own tree object, so there is no room beside it.
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(
-                rootEntries = listOf(
-                    TreeEntry("libs", FileMode.TREE, treeOf(TreeEntry("webui", FileMode.TREE, emptyTree()))),
+                listOf(
+                    root(
+                        TreeEntry(
+                            "libs",
+                            FileMode.TREE,
+                            treeOf(TreeEntry("webui", FileMode.TREE, emptyTree())),
+                        ),
+                    ),
+                    placement("libs/webui", emptyTree()),
                 ),
-                placements = listOf(placement("libs/webui", emptyTree())),
                 at = { "webui/abc123" },
             )
         }
@@ -260,16 +285,54 @@ class RootTreeAssemblerTest {
     }
 
     @Test
-    fun `one destination containing another is refused rather than silently dropped`() {
-        // The planner rejects this pair before the assembler sees it; this is the backstop.
+    fun `a destination inside another is spliced the way one inside the root repository is`() {
+        // What the root repository gets for free -- its content read into entries so an input can
+        // be placed beside it -- is not special to the root: any containing input is spliced the
+        // same way. Whether the pair is allowed at all is the planner's decision, not this class's.
+        val tree = assembler.assemble(
+            listOf(
+                placement(
+                    "libs",
+                    treeOf(
+                        TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+                        TreeEntry("docs", FileMode.TREE, treeOf(TreeEntry("d.txt", FileMode.REGULAR_FILE, blob("d")))),
+                    ),
+                ),
+                placement("libs/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b")))),
+            ),
+            at = { "test" },
+        )
+
+        assertEquals(
+            listOf("libs", "libs/a.txt", "libs/docs", "libs/docs/d.txt", "libs/webui", "libs/webui/b.txt"),
+            pathsOf(tree),
+        )
+    }
+
+    @Test
+    fun `a destination inside another still collides with what that repository holds there`() {
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(
-                rootEntries = emptyList(),
-                placements = listOf(placement("libs", emptyTree()), placement("libs/webui", emptyTree())),
+                listOf(
+                    placement("libs", treeOf(TreeEntry("webui", FileMode.REGULAR_FILE, blob("a stray file")))),
+                    placement("libs/webui", emptyTree()),
+                ),
                 at = { "webui/abc123" },
             )
         }
-        assertTrue(error.message!!.contains("'libs'"), error.message)
+        assertTrue(error.message!!.contains("'libs/webui'"), error.message)
+        assertTrue(error.message!!.contains("webui/abc123"), error.message)
+    }
+
+    @Test
+    fun `two repositories at the output root are refused rather than one of them dropped`() {
+        val error = assertThrows<IllegalArgumentException> {
+            assembler.assemble(
+                listOf(root(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a"))), root()),
+                at = { "test" },
+            )
+        }
+        assertTrue(error.message!!.contains("output root"), error.message)
     }
 
     @Test
@@ -277,11 +340,10 @@ class RootTreeAssemblerTest {
         val backend = placement("libs/backend", treeOf(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a"))))
         val webui = placement("apps/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b"))))
 
-        assembler.assemble(emptyList(), listOf(backend, webui), at = { "c1" })
+        assembler.assemble(listOf(backend, webui), at = { "c1" })
         val written = assembler.treesWritten
         // A second commit where only 'apps' moves reuses the 'libs' tree of the first.
         assembler.assemble(
-            emptyList(),
             listOf(backend, placement("apps/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b2"))))),
             at = { "c2" },
         )
@@ -293,11 +355,12 @@ class RootTreeAssemblerTest {
     @Test
     fun `a non-ASCII name round-trips as its UTF-8 bytes`() {
         val tree = assembler.assemble(
-            rootEntries = listOf(
-                TreeEntry("zebra", FileMode.REGULAR_FILE, blob("z")),
-                TreeEntry("ěšč", FileMode.REGULAR_FILE, blob("e")),
+            listOf(
+                root(
+                    TreeEntry("zebra", FileMode.REGULAR_FILE, blob("z")),
+                    TreeEntry("ěšč", FileMode.REGULAR_FILE, blob("e")),
+                ),
             ),
-            placements = emptyList(),
             at = { "test" },
         )
         // UTF-8 puts the multi-byte name last: 0xC4 is above every ASCII letter.

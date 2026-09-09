@@ -153,8 +153,9 @@ class MergePlan private constructor(
             order: List<Commit>,
             newParents: ParentEdges,
             subdirs: Map<Source, String?>,
+            splice: Boolean = false,
         ): MergePlan {
-            validateSubdirs(graph, subdirs)
+            validateSubdirs(graph, subdirs, splice)
 
             // The content table is addressed by repository, so it needs a column per repository —
             // the one numbering this class derives, the way every pass of the package derives its
@@ -212,7 +213,20 @@ class MergePlan private constructor(
             return content
         }
 
-        private fun validateSubdirs(graph: CommitGraph, subdirs: Map<Source, String?>) {
+        /**
+         * Everything about the destinations that can be settled without looking at a single tree.
+         *
+         * [splice] lifts one rule and one only: that no destination may contain another. Whether
+         * the containing repository actually has something in the way at the path the inner one
+         * lands on is a question about its trees, which change from commit to commit and which this
+         * package has never seen — the writer answers that one, and refuses the commit it happens
+         * at.
+         */
+        private fun validateSubdirs(
+            graph: CommitGraph,
+            subdirs: Map<Source, String?>,
+            splice: Boolean,
+        ) {
             for (source in graph.sources) {
                 require(source in subdirs) { "no subdirectory given for repository ${source.name}" }
             }
@@ -224,6 +238,10 @@ class MergePlan private constructor(
             }
             val seen = LinkedHashSet<String>()
             for ((source, subdir) in subdirs) {
+                // The repository at the output root never enters `seen`, and so is never half of a
+                // pair the containment rule below can refuse. That is deliberate: every other
+                // destination lies inside it, and splicing it open is precisely what --root-repo
+                // asked for. It is the one containment that needs no flag.
                 if (subdir == null) continue
                 require(isUsableSubdir(subdir)) {
                     "'$subdir' is not a usable subdirectory path for $source"
@@ -232,14 +250,16 @@ class MergePlan private constructor(
                     "two repositories would be placed in the same subdirectory '$subdir'"
                 }
             }
+            if (splice) return
             for (subdir in seen) {
                 var slash = subdir.indexOf('/')
                 while (slash >= 0) {
                     val above = subdir.substring(0, slash)
                     require(above !in seen) {
-                        "'$above' and '$subdir' cannot both hold a repository — one contains the " +
-                            "other, and content placed as a single tree object leaves no room " +
-                            "beside it"
+                        "'$above' and '$subdir' cannot both hold a repository — one contains " +
+                            "the other, and content placed as a single tree object leaves no room " +
+                            "beside it. Pass --splice to open the containing repository's tree " +
+                            "and place the other inside it."
                     }
                     slash = subdir.indexOf('/', slash + 1)
                 }

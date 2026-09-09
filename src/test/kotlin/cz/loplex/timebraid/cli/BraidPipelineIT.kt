@@ -7,6 +7,7 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
 import org.eclipse.jgit.lib.ObjectId
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -15,6 +16,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 
 /**
  * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command
@@ -520,6 +522,160 @@ class BraidPipelineIT {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("'libs'"), result.output)
         assertTrue(result.output.contains("not a directory"), result.output)
+    }
+
+    @Test
+    fun `one destination inside another is refused until --splice asks for it`() {
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("README.md" to "the platform's own")))
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a")))
+        }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                path("platform.git") + "::=libs",
+                path("backend.git") + "::=libs/backend",
+            ),
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("one contains the other"), result.output)
+        assertTrue(result.output.contains("--splice"), result.output)
+    }
+
+    @Test
+    fun `--splice places one input inside another, both repositories' content in one directory`() {
+        // The same shape --root-repo has always allowed, one level down: platform holds libs/ and
+        // backend is placed inside it. Without --splice the planner refuses the pair outright.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch(
+                "main",
+                r.commit(
+                    "p1",
+                    files = mapOf("README.md" to "the platform's own", "docs/guide.md" to "g"),
+                    at = at("09:00"),
+                ),
+            )
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("10:00")))
+        }
+
+        val out = tmp.resolve("spliced.git")
+        val result = braid(
+            "-o", out.toString(),
+            "--splice",
+            path("platform.git") + "::=libs",
+            path("backend.git") + "::=libs/backend",
+        )
+
+        // The run says which splice it made and that it checked out clean, because a flag that
+        // silently changes the layout is the thing --splice exists to avoid.
+        assertTrue(result.output.contains("spliced: libs/backend inside libs"), result.output)
+        assertTrue(result.output.contains("no collision"), result.output)
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("libs"), names(""))
+            // The containing repository's own entries, with the input placed in beside them.
+            assertEquals(listOf("README.md", "backend", "docs"), names("libs"))
+            assertEquals(listOf("src"), names("libs/backend"))
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("a", GitCli.run(out, "show", "main:libs/backend/src/Main.kt"))
+            assertEquals("the platform's own", GitCli.run(out, "show", "main:libs/README.md"))
+        }
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+    }
+
+    @Test
+    fun `--splice still refuses an input landing on something the containing repository holds`() {
+        // The flag says the nesting is intended, not that anything goes: what the containing
+        // repository already has at the inner destination is a collision either way. And because
+        // that is a property of a tree rather than of the destinations, it is checked against every
+        // tree the plan uses before a single object is written -- on a dry run as much as on a real
+        // one, so a dry run never reports a plan the writer would then choke on.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("backend" to "a stray file")))
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a")))
+        }
+        val inputs = listOf(
+            "--splice",
+            path("platform.git") + "::=libs",
+            path("backend.git") + "::=libs/backend",
+        )
+
+        val dry = MergeCommand().test(listOf("--dry-run") + inputs)
+        assertEquals(1, dry.statusCode, dry.output)
+        assertTrue(dry.output.contains("'libs/backend'"), dry.output)
+        assertTrue(dry.output.contains("collides"), dry.output)
+
+        val out = tmp.resolve("out.git")
+        val result = MergeCommand().test(listOf("-o", out.toString()) + inputs)
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'libs/backend'"), result.output)
+        assertFalse(out.exists(), "the output was created before the collision was found")
+    }
+
+    @Test
+    fun `a splice inside a splice reaches the tree the middle repository actually contributes`() {
+        // Three levels: platform at the root, libs inside it, backend inside libs. What the output
+        // holds at libs/ is the middle repository's tree, so that is the one backend can collide
+        // with -- platform's own libs/ was already refused a level up, and never reaches here.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("README.md" to "p"), at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("libs.git")).use { r ->
+            r.branch("main", r.commit("l1", files = mapOf("shared.txt" to "l"), at = at("10:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("11:00")))
+        }
+
+        val out = tmp.resolve("deep.git")
+        braid(
+            "-o", out.toString(),
+            "--splice",
+            "--root-repo", "platform",
+            path("platform.git"),
+            path("libs.git") + "::=libs",
+            path("backend.git") + "::=libs/backend",
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("README.md", "libs"), names(""))
+            assertEquals(listOf("backend", "shared.txt"), names("libs"))
+            assertEquals(listOf("src"), names("libs/backend"))
+        }
+
+        if (GitCli.available) GitCli.fsck(out)
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
     }
 
     @Test

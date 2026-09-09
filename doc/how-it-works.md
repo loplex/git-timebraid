@@ -104,19 +104,26 @@ libs/backend/src/Main.kt
 libs/codegen/gen.py
 ```
 
-Three things follow, and they are the whole of the rule:
+What follows from that is the whole of the rule:
 
 - A commit costs one tree per *changed* prefix rather than one, and no more than that: an untouched
   prefix keeps the tree object the previous commit used, which is what content addressing gives for
   free.
-- **No destination may contain another.** `libs` and `libs/backend` cannot both hold a repository,
-  because the entry written at a destination is the input's own tree object — there is no room
-  beside it. The planner refuses the pair.
-- Where a destination reaches into a directory the **root repository** (`--root-repo`) already has,
-  the two are **spliced**: that repository's entries at `libs/` and the inputs placed inside it end
-  up in one tree. This is the one place the braid descends into an input's tree, and it descends
-  only along the prefixes some destination names — never into the destination itself, where a
-  collision with the root repository's own content is still refused.
+- **No destination may contain another, unless `--splice` says so.** The entry written at a
+  destination is the input's own tree object, and there is no room beside it, so `libs` and
+  `libs/backend` cannot both hold a repository the cheap way. The planner refuses the pair by
+  default.
+- **`--splice` opens the containing repository's tree instead.** Its content at `libs/` is read into
+  entries and the input placed inside it goes in beside them, so the directory ends up holding both.
+  This is the one place the braid descends into an input's tree, and it descends only along the
+  prefixes some destination names.
+- **The repository at the output root is spliced without the flag.** Every destination lies inside
+  it, which is what `--root-repo` asked for; the flag exists for the containments that are implicit
+  in the paths, where a typo and an intention look alike.
+- **A splice is not a merge of two repositories' files.** What the containing repository already
+  holds at the inner destination is a collision, and so is a prefix segment that is not a directory
+  there. Both depend on the tree at that commit, which the planner has never seen, so both are
+  refused by the writer and named against the commit they happen at.
 
 ### The one exception: `.gitmodules`
 
