@@ -108,7 +108,7 @@ internal object BraidInterleave {
         // The scope is a part of the graph and keeps its numbering, which is also what keeps the
         // walk's tie-break the same as it would be over the whole graph: for any two commits in
         // scope, their indices here and there rank them alike.
-        val order = KahnOrder(Part(graph, inScope), compareBy(Commit::time)).order()
+        val order = KahnOrder(Part(graph, inScope), Commit.EARLIEST_FIRST).order()
 
         return order.filter { onBraid[graph.indexOf(it)] }
     }
