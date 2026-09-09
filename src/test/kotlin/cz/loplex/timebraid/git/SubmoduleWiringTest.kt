@@ -22,11 +22,21 @@ class SubmoduleWiringTest {
     private val RewiredGitmodules.names: Set<String>
         get() = sections.mapTo(LinkedHashSet()) { it.name }
 
+    /**
+     * The sections as one config text, which nothing but these assertions asks for either:
+     * [SubmoduleWiring.merge] joins the sections it kept, not every section it was given.
+     */
+    private val RewiredGitmodules.text: String
+        get() = sections.joinToString("") { it.text }
+
     private fun rewire(text: String, subdir: String?, repo: String = "A") =
         SubmoduleWiring.rewire(text, subdir, repo) { "$repo/abc123" }
 
     private fun merge(vararg parts: RewiredGitmodules) =
         SubmoduleWiring.merge(parts.toList()) { "abc123" }
+
+    private fun merge(dissolved: Set<String>, vararg parts: RewiredGitmodules) =
+        SubmoduleWiring.merge(parts.toList(), dissolved) { "abc123" }
 
     @Test
     fun `two inputs describing one submodule name are refused, naming it`() {
@@ -154,6 +164,65 @@ class SubmoduleWiringTest {
 
         assertEquals(emptySet<String>(), rewired.names)
         assertNull(merge(rewired))
+    }
+
+    @Test
+    fun `a dissolved path loses its section, because the output has real content there`() {
+        val a = rewire(
+            "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = a\n" +
+                "[submodule \"vendor/other\"]\n\tpath = vendor/other\n\turl = b\n",
+            subdir = null,
+        )
+
+        assertEquals(
+            "[submodule \"vendor/other\"]\n\tpath = vendor/other\n\turl = b\n",
+            merge(setOf("vendor/lib"), a),
+        )
+    }
+
+    @Test
+    fun `dissolving the only section leaves no file rather than an empty one`() {
+        val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = null)
+
+        assertNull(merge(setOf("lib"), a))
+    }
+
+    @Test
+    fun `a dissolved section frees its name, so no collision is reported for it`() {
+        // Both inputs describe a submodule the output would call 'lib', at different paths. Without
+        // the dissolve that is the name collision merge exists to report; with it, the section that
+        // would have claimed the name is not in the file at all, so there is nothing to collide.
+        val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = null)
+        val b = rewire("[submodule \"lib\"]\n\tpath = other\n\turl = b\n", subdir = null, repo = "B")
+
+        assertThrows<IllegalArgumentException> { merge(a, b) }
+        assertEquals(
+            "[submodule \"lib\"]\n\tpath = other\n\turl = b\n",
+            merge(setOf("lib"), a, b),
+        )
+    }
+
+    @Test
+    fun `a dissolved path is matched in output coordinates, not the input's own`() {
+        val a = rewire("[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = a\n", subdir = "A")
+
+        assertEquals(a.text, merge(setOf("vendor/lib"), a), "the input's own path names nothing here")
+        assertNull(merge(setOf("A/vendor/lib"), a))
+    }
+
+    @Test
+    fun `a repeated path is read the way git reads it, by its last value`() {
+        val a = rewire("[submodule \"lib\"]\n\tpath = old\n\tpath = lib\n\turl = a\n", subdir = null)
+
+        assertNull(merge(setOf("lib"), a))
+        assertEquals(a.text, merge(setOf("old"), a), "the first value is not where the gitlink sits")
+    }
+
+    @Test
+    fun `a section with no path is kept, since nothing can have landed on it`() {
+        val a = rewire("[submodule \"lib\"]\n\turl = a\n", subdir = null)
+
+        assertEquals(a.text, merge(setOf("lib"), a))
     }
 
     @Test

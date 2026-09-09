@@ -9,7 +9,8 @@ import org.eclipse.jgit.lib.Config
  * The sections are held apart rather than as one blob of text because a section is the unit this
  * class works in: [SubmoduleWiring.rewire] prefixes a name and a path one section at a time, and
  * [SubmoduleWiring.merge] joins them without a second parse, which is only valid because a
- * `[submodule "…"]` section is self-contained.
+ * `[submodule "…"]` section is self-contained. Holding them apart is also what lets
+ * [SubmoduleWiring.merge] leave one out — see the dissolve there.
  */
 class RewiredGitmodules(val sections: List<Section>) {
 
@@ -17,12 +18,11 @@ class RewiredGitmodules(val sections: List<Section>) {
     class Section(
         /** The section's subsection name, prefixed for the output. */
         val name: String,
+        /** Where the section says its gitlink sits, or `null` when it records no usable `path`. */
+        val path: String?,
         /** The section on its own, as config text. */
         val text: String,
     )
-
-    /** The sections as one config text. */
-    val text: String get() = sections.joinToString("") { it.text }
 }
 
 /**
@@ -38,6 +38,7 @@ class RewiredGitmodules(val sections: List<Section>) {
  *
  * The gitlink entries themselves need no help — they ride along in their input's tree like any other
  * entry, and the commit they name is fetched from the submodule's own url, not from this repository.
+ * The one exception is a gitlink an input's own content replaces; see [merge].
  *
  * A section's *name* is prefixed as well, not just its path. The name is what git uses to store a
  * populated submodule under `.git/modules/`, so two inputs whose submodules happen to share a name
@@ -84,27 +85,46 @@ object SubmoduleWiring {
         for (name in input.getSubsections(SUBMODULE)) {
             val outputName = prefixed(name, subdir)
             val output = Config()
+            var path: String? = null
             for (key in input.getNames(SUBMODULE, name)) {
                 val values = input.getStringList(SUBMODULE, name, key).toList()
-                val rewritten =
-                    if (key.equals(PATH, ignoreCase = true)) values.map { prefixed(it, subdir) }
-                    else values
+                val isPath = key.equals(PATH, ignoreCase = true)
+                val rewritten = if (isPath) values.map { prefixed(it, subdir) } else values
+                // git reads the last value of a repeated key, so that is the one that says where
+                // this section's gitlink sits.
+                if (isPath) path = rewritten.lastOrNull()?.takeIf { it.isNotBlank() }
                 output.setStringList(SUBMODULE, outputName, key, rewritten)
             }
-            sections += RewiredGitmodules.Section(outputName, output.toText())
+            sections += RewiredGitmodules.Section(outputName, path, output.toText())
         }
         return RewiredGitmodules(sections)
     }
 
     /**
-     * The one file the output root gets, or `null` when [parts] describe no submodule at all — an
-     * input may well carry a `.gitmodules` holding only comments, and an empty file at the root
-     * would be a change to the tree for no reason.
+     * The one file the output root gets, or `null` when no section is left to write — either
+     * because [parts] describe no submodule at all, an input may well carry a `.gitmodules`
+     * holding only comments, or because the dissolve below left out every section they did
+     * describe. An empty file at the root would be a change to the tree for no reason.
+     *
+     * [occupied] names output paths where an input's own content sits. A section pointing at one of
+     * them is left out: the output has a real tree there, not a gitlink, so a section still calling
+     * it a submodule would describe something that is no longer in the repository, and `git
+     * submodule status` would report a path it cannot resolve. The set is empty unless the run asked
+     * for `--dissolve-submodules`, which is the only thing that lets an input land on a gitlink at
+     * all.
      */
-    fun merge(parts: List<RewiredGitmodules>, at: () -> String): String? {
+    fun merge(
+        parts: List<RewiredGitmodules>,
+        occupied: Set<String> = emptySet(),
+        at: () -> String,
+    ): String? {
+        val kept = parts.map { part ->
+            part.sections.filter { it.path == null || it.path !in occupied }
+        }
+
         val claimed = HashSet<String>()
-        for (part in parts) {
-            for (section in part.sections) {
+        for (sections in kept) {
+            for (section in sections) {
                 require(claimed.add(section.name)) {
                     // A blank name takes no prefix, so no subdirectory moves one off another.
                     if (section.name.isBlank()) {
@@ -118,7 +138,7 @@ object SubmoduleWiring {
             }
         }
 
-        val merged = parts.joinToString("") { it.text }
+        val merged = kept.joinToString("") { sections -> sections.joinToString("") { it.text } }
         return merged.ifEmpty { null }
     }
 

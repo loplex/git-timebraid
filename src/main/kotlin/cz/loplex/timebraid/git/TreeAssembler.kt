@@ -68,8 +68,20 @@ class Placement(
  * and refuses the pair unless the run asked for the splice; what is refused here is what only the
  * trees can show, and only for the commit they show it at: an input landing where the repository
  * around it already has an entry of that name, or reaching through one that is not a directory.
+ *
+ * [dissolveSubmodules] carves one case out of the first of those. Where the entry in the way is a
+ * **gitlink**, the repository around it was already saying that this exact path holds another
+ * repository, and an input placed there is that repository's history arriving for real — so the
+ * gitlink gives way to the input's tree instead of colliding with it. The submodule's own section is
+ * dropped from the output's `.gitmodules` to match; see [SubmoduleWiring.merge]. It stays opt-in
+ * because the substitution is not faithful: a gitlink names one commit of the submodule, and what
+ * lands in its place is whatever that input had reached at this point of the braid.
  */
-class TreeAssembler(private val inserter: ObjectInserter) {
+class TreeAssembler(
+    private val inserter: ObjectInserter,
+    /** Whether an input may land on a gitlink of the repository around it, replacing it. */
+    private val dissolveSubmodules: Boolean = false,
+) {
 
     /** Distinct trees written so far, keyed by their entry list. */
     private val cache = HashMap<String, ObjectId>()
@@ -85,11 +97,17 @@ class TreeAssembler(private val inserter: ObjectInserter) {
      *   input describes a submodule here. It replaces the root repository's own entry of that name
      *   rather than colliding with it. Where that entry is a file, this one already holds its
      *   sections; a symlink or a tree of that name is not read as one, and is dropped.
+     * @param dissolved whether a section was left out of [gitmodules] because an input's own content
+     *   now sits where it pointed. It matters only when [gitmodules] is `null`, which then means the
+     *   output has no wiring *on purpose* rather than for want of anything to say: the root
+     *   repository's own copy of the file goes with it, since leaving it would publish the input's
+     *   text describing a submodule the output no longer has.
      * @param at describes the commit being built, used only to make a collision error locatable.
      */
     fun assemble(
         placements: List<Placement>,
         gitmodules: ObjectId? = null,
+        dissolved: Boolean = false,
         at: () -> String,
     ): ObjectId {
         val roots = placements.filter { it.path.isEmpty() }
@@ -100,6 +118,7 @@ class TreeAssembler(private val inserter: ObjectInserter) {
             entriesOf = root?.entriesOf ?: NOTHING_TO_DESCEND_INTO,
             cursors = placements.filter { it.path.isNotEmpty() }.map { Cursor(it, 0) },
             gitmodules = gitmodules,
+            dissolved = dissolved,
             path = "",
             at = at,
         )
@@ -110,14 +129,15 @@ class TreeAssembler(private val inserter: ObjectInserter) {
      * with every placement that reaches this level put in beside it. [entriesOf] reads further into
      * that same repository, for the level below.
      *
-     * [gitmodules] belongs to the root of the output and is therefore only ever passed to the
-     * outermost call.
+     * [gitmodules] and [dissolved] belong to the root of the output and are therefore only ever
+     * passed to the outermost call.
      */
     private fun build(
         existing: List<TreeEntry>,
         entriesOf: (ObjectId) -> List<TreeEntry>,
         cursors: List<Cursor>,
         gitmodules: ObjectId?,
+        dissolved: Boolean,
         path: String,
         at: () -> String,
     ): ObjectId {
@@ -139,7 +159,7 @@ class TreeAssembler(private val inserter: ObjectInserter) {
                 // The ordinary case, and the cheap one: the entry written here is the input's own
                 // tree object, which is what keeps the output sharing objects with its inputs.
                 val clash = byName.put(name, TreeEntry(name, FileMode.TREE, landing.placement.tree))
-                require(clash == null) { collision(here, at) }
+                require(clash == null || dissolves(clash)) { collision(here, clash, at) }
                 continue
             }
 
@@ -150,7 +170,8 @@ class TreeAssembler(private val inserter: ObjectInserter) {
             val inside: List<TreeEntry>
             val deeper: (ObjectId) -> List<TreeEntry>
             if (landing != null) {
-                require(name !in byName) { collision(here, at) }
+                val clash = byName[name]
+                require(clash == null || dissolves(clash)) { collision(here, clash, at) }
                 inside = landing.placement.entriesOf(landing.placement.tree)
                 deeper = landing.placement.entriesOf
             } else {
@@ -163,13 +184,16 @@ class TreeAssembler(private val inserter: ObjectInserter) {
                 inside = if (occupant == null) emptyList() else entriesOf(occupant.id)
                 deeper = entriesOf
             }
-            val subtree = build(inside, deeper, below.map { it.descend() }, null, here, at)
+            val subtree =
+                build(inside, deeper, below.map { it.descend() }, null, false, here, at)
             byName[name] = TreeEntry(name, FileMode.TREE, subtree)
         }
 
         if (gitmodules != null) {
             byName[Constants.DOT_GIT_MODULES] =
                 TreeEntry(Constants.DOT_GIT_MODULES, FileMode.REGULAR_FILE, gitmodules)
+        } else if (dissolved) {
+            byName.remove(Constants.DOT_GIT_MODULES)
         }
 
         val entries = byName.values.sortedWith(GIT_TREE_ORDER)
@@ -181,6 +205,13 @@ class TreeAssembler(private val inserter: ObjectInserter) {
             inserter.insert(formatter)
         }
     }
+
+    /**
+     * Whether [clash] is an entry the input landing on it may replace: a gitlink, on a run that
+     * asked for the dissolve. Anything else in the way is a collision, gitlink or not.
+     */
+    private fun dissolves(clash: TreeEntry): Boolean =
+        dissolveSubmodules && clash.mode == FileMode.GITLINK
 
     /** A [Placement] being walked segment by segment, with [depth] segments already behind it. */
     private class Cursor(val placement: Placement, private val depth: Int) {
@@ -206,10 +237,16 @@ class TreeAssembler(private val inserter: ObjectInserter) {
             error("no repository at the output root to descend into")
         }
 
-        private fun collision(here: String, at: () -> String): String =
+        private fun collision(here: String, clash: TreeEntry?, at: () -> String): String =
             "subdirectory '$here' collides with an entry of the same name in the repository that " +
-                "holds it at ${at()} -- give that repository another subdirectory with " +
-                "<repo>::=<subdir>"
+                "holds it at ${at()} -- " +
+                if (clash?.mode == FileMode.GITLINK) {
+                    "that entry is a submodule, so --dissolve-submodules would replace it with " +
+                        "this repository's own content; otherwise give the repository another " +
+                        "subdirectory with <repo>::=<subdir>"
+                } else {
+                    "give that repository another subdirectory with <repo>::=<subdir>"
+                }
 
         /**
          * The order git stores tree entries in, which [TreeFormatter] does not apply on its own:
