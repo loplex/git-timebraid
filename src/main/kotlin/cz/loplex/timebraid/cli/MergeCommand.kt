@@ -227,6 +227,16 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     private fun report(result: MergeResult) {
         echo("mainline branch: ${result.braid.mainlineBranch}", err = true)
+
+        // Only the splices --splice enabled are worth a line. The repository at the output root
+        // contains every other input by definition, so saying so of each of them would say nothing.
+        for (splice in result.splices.filter { it.splice.outerSubdir != null }) {
+            echo(
+                "spliced: ${splice.splice.innerSubdir} inside ${splice.splice.outerPath} at " +
+                    "${splice.commits} commits, no collision",
+                err = true,
+            )
+        }
         echo(result.plan.summary())
 
         planOut?.let { file ->

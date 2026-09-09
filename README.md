@@ -373,7 +373,9 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::[<name>][=<subdir>]]...
       --interleave-ref PATTERN  let this ref's commits delay a mainline merge that merges
                                 them in (repeatable; glob over full ref names; default: none)
       --splice                  let one input's destination lie inside another's, the two
-                                spliced into one directory (default: the pair is refused)
+                                spliced into one directory (default: the pair is refused);
+                                every splice is checked against every tree before anything
+                                is written, --dry-run included
       --tag-prefix FMT          default "{repo}/"
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)
