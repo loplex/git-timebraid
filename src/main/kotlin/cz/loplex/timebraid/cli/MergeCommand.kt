@@ -101,7 +101,18 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help("Timestamp used to interleave the strands.")
 
     private val branches by option("-b", "--branch").multiple()
-        .help("Recreate only these branches (repeatable; default: all).")
+        .help(
+            "Carry over only these branches, by short name (repeatable). Shorthand for " +
+                "--ref refs/heads/<name>, and so subject to the same rule: naming any ref at all " +
+                "leaves out every ref not named, tags included."
+        )
+
+    private val refs by option("--ref").multiple()
+        .help(
+            "Carry over only the refs matching this pattern, over branches and tags alike " +
+                "(repeatable; glob over full ref names, e.g. refs/tags/v1.*; '*' is everything). " +
+                "Default: every branch and every tag. The mainline is always carried over."
+        )
 
     private val interleaveRefs by option("--interleave-ref").multiple()
         .help(
@@ -154,7 +165,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help(
             "Add each input as a remote of the output, its branches under refs/remotes/<name>/* " +
                 "and its tags under refs/remotes/<name>/tags/*, pointing at the original commits, its " +
-                "mainline among the branches whether -b took it or not."
+                "mainline among the branches whether the selection took it or not."
         )
 
     private val dryRun by option("--dry-run").flag()
@@ -224,7 +235,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             keepRemotes = keepRemotes,
             orderBy = orderBy,
             mainlineBranch = mainlineBranch,
-            branches = branches.toSet().ifEmpty { null },
+            refs = branches.map(CommitGraphReader::branchPattern) + refs,
             interleaveRefs = interleaveRefs,
             splice = splice,
             dissolveSubmodules = dissolveSubmodules,

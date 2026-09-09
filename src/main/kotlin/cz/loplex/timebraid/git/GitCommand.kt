@@ -52,7 +52,7 @@ class GitCommand(private val log: (String) -> Unit = {}) {
      * so a later `git fetch <name>` picks up whatever the input has gained since the merge.
      *
      * `--no-tags` is set on the remote for when that day comes:
-     * the output already carries every tag under its own prefixed name,
+     * the output already carries every tag the run carried over, under its own prefixed name,
      * and fetching them again unprefixed would collide.
      */
     fun addRemote(repo: Path, name: String, url: String) {
