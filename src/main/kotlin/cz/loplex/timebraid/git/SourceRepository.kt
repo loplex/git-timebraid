@@ -157,10 +157,24 @@ class SourceRepository private constructor(
          * Inputs are named one by one on the command line, so walking up the tree could only ever
          * substitute an enclosing repository for the one that was asked for — silently, and under
          * the name of the path that was written.
+         *
+         * The environment is not consulted, for the same reason and one more. `readEnvironment()`
+         * would let `GIT_DIR` satisfy the `require` below on its own, so a path that is no
+         * repository at all would open as whatever that variable named — the exact substitution the
+         * paragraph above refuses to make by walking up. `GIT_OBJECT_DIRECTORY` and
+         * `GIT_ALTERNATE_OBJECT_DIRECTORIES` are worse still, since nothing here overrides them:
+         * they would apply to a perfectly good input too, and read its refs against someone else's
+         * objects.
+         *
+         * The one more is that this program opens *several* repositories at once. A single
+         * process-wide variable naming one repository or one object store cannot be right for a set
+         * of inputs, however it is spelled — which is why the same variables are stripped from every
+         * git subprocess ([GitCommand.dropRedirectingVariables]) rather than being honoured
+         * anywhere.
          */
         fun open(location: Path, name: String = defaultName(location)): SourceRepository {
             val dir = location.toFile()
-            val builder = FileRepositoryBuilder().setMustExist(true).readEnvironment()
+            val builder = FileRepositoryBuilder().setMustExist(true)
             if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) {
                 builder.setGitDir(dir)
             } else if (File(dir, Constants.DOT_GIT).exists()) {
@@ -180,9 +194,9 @@ class SourceRepository private constructor(
          * Whether [location] is itself a git repository — bare, or a working tree whose `.git`
          * resolves to one.
          *
-         * The environment is deliberately not consulted, which is the one way this differs from
-         * [open]. A scan asks this of every directory it walks, and a `GIT_DIR` in the environment
-         * would otherwise answer yes for every one of them.
+         * A scan asks this of every directory it walks, so a `GIT_DIR` in the environment answering
+         * yes for every one of them would be its own kind of wrong; [open] does not consult the
+         * environment either, for reasons written out there.
          */
         fun isRepository(location: Path): Boolean {
             val dir = location.toFile()
