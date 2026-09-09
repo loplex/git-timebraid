@@ -229,6 +229,28 @@ $ git ls-tree esbuild-experiment      # a branch that only ever existed in webui
 `codegen/` and `backend/` are frozen at whatever they were when the branch was cut, and `webui/`
 follows the branch. Which is exactly what you want, and it costs no configuration.
 
+### Which refs are carried over
+
+Which refs a run carries over is not only a question about the output's refs: it decides which
+commits are read at all. Each input is read from the refs that were selected, so a ref left out
+contributes no commits, and the side branch it pointed at is absent from the graph rather than
+merely unnamed.
+
+- The selection is a glob over **full** ref names — `refs/heads/*`, `refs/tags/v1.*` — and applies
+  to branches and tags alike (`--ref`, repeatable). A short name cannot say whether `v1.0` is a
+  branch or a tag, so the patterns are matched against the full name and a `*` spans path
+  separators.
+- No selection means **every** ref. `-b`/`--branch` is shorthand for one pattern,
+  `--ref refs/heads/<name>`; since a branch name cannot contain a `*`, the short form desugars
+  exactly — and it therefore selects that branch *and no tags*.
+- The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
+- Tags are recreated under a prefix, `{repo}/` by default (`--tag-prefix`), so two inputs that both
+  tagged `v1.0` do not collide.
+
+`--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
+is every ref, no interleave pattern is none of them. It is also matched against what the selection
+already admitted, so widening the interleave cannot widen what is read.
+
 ---
 
 ## Caveats

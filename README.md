@@ -473,8 +473,8 @@ git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
 
 - Cloning the inputs — a local path or a URL — reading them, and planning the interleaving.
 - Writing the output, bare or with a working tree.
-- Recreating every branch and prefixed tag, the provenance trailer, keeping the inputs as remotes,
-  and progress on stderr.
+- Recreating the branches and prefixed tags a run carries over — every ref by default, narrowed
+  with `--ref` — the provenance trailer, keeping the inputs as remotes, and progress on stderr.
 - A URL input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
   refreshes that clone instead of downloading it again.
 
