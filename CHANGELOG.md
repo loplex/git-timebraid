@@ -142,6 +142,10 @@ Twenty changes alter what a command line written for 0.1.0 does:
   A gitlink names the one commit the superproject pinned.\
   What takes its place is whatever that input had reached at that point of the braid.
 
+- **`doc/examples` covers what the output holds, not only what order it is in.**\
+  Each example is a README quoting what the tool prints, over inputs `build-inputs.sh` builds.\
+  Three show the refusal beside the result.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\

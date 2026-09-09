@@ -40,6 +40,12 @@ WIDTH = 100
 def documents() -> list[pathlib.Path]:
     """Every Markdown file git tracks.
 
+    `git ls-files` and not a filesystem glob, because the worked examples generate Markdown under
+    `doc/examples/*/input/` and `*/output/`. .gitignore covers those, a glob does not, and they are
+    not documentation anyone here can hold to a rule. A CI runner never sees them: this runs in the
+    `docs` job, which builds no example.
+    Whoever has run the examples locally does see them, and that is the case being guarded against.
+
     Everything tracked, rather than README.md plus CHANGELOG.md plus a doc/ glob: a hand-kept list
     of where the documentation lives is a claim that rots the moment a document is written outside
     it, and .github/release-notes.md sits outside it already.
