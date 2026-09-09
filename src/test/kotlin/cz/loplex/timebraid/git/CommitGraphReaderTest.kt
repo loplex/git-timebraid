@@ -85,25 +85,56 @@ class CommitGraphReaderTest {
     }
 
     @Test
-    fun `a branch filter narrows what is loaded but always keeps the mainline`() {
+    fun `a ref selection narrows what is loaded, over branches and tags alike`() {
+        lateinit var a2: org.eclipse.jgit.lib.ObjectId
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val a1 = repo.commit("a1")
-            val a2 = repo.commit("a2", parents = listOf(a1))
+            a2 = repo.commit("a2", parents = listOf(a1))
             val side = repo.commit("side", parents = listOf(a1))
             repo.branch("main", a2)
             repo.branch("experiment", side)
-            repo.annotatedTag("v1", a1)
+            repo.annotatedTag("v1.0", a1)
+            // Deliberately on the side branch, so a pattern that keeps it has to drag `side` back in.
+            repo.lightweightTag("v2.0", side)
         }
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
             repo.branch("main", repo.commit("b1"))
         }
 
         open("backend", "webui").useAll { repos ->
-            assertEquals(4, CommitGraphReader.read(repos, OrderBy.COMMITTER).graph.size)
+            fun read(vararg patterns: String) =
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
 
-            // "experiment" filtered out; a1 and a2 survive via the mainline (and the tag on a1).
-            val narrowed = CommitGraphReader.read(repos, OrderBy.COMMITTER, branches = setOf("main"))
-            assertEquals(3, narrowed.graph.size)
+            fun branchesOf(inputs: BraidInputs) = inputs.sources[0].branches.map { it.name }.sorted()
+            fun tagsOf(inputs: BraidInputs) = inputs.sources[0].tags.map { it.name }.sorted()
+
+            // No pattern is every ref, which is what a plain run does.
+            val everything = read()
+            assertEquals(4, everything.graph.size)
+            assertEquals(listOf("experiment", "main"), branchesOf(everything))
+            assertEquals(listOf("v1.0", "v2.0"), tagsOf(everything))
+
+            // Naming one branch leaves out every ref not named -- the tags included. This is what
+            // -b could not do before the selection covered both kinds: `side` goes, and so do both
+            // tags, one of which was the only thing keeping it reachable.
+            val mainOnly = read("refs/heads/main")
+            assertEquals(3, mainOnly.graph.size)
+            assertEquals(listOf("main"), branchesOf(mainOnly))
+            assertEquals(emptyList<String>(), tagsOf(mainOnly))
+
+            // Which is also how the old behaviour is written out, for a run that wants it back.
+            val mainAndTags = read("refs/heads/main", "refs/tags/*")
+            assertEquals(4, mainAndTags.graph.size)
+            assertEquals(listOf("main"), branchesOf(mainAndTags))
+            assertEquals(listOf("v1.0", "v2.0"), tagsOf(mainAndTags))
+
+            // A selection that matches no branch at all still loads the mainline, since the braid
+            // is built along it -- it is simply not among the branches carried over by name.
+            val tagsOnly = read("refs/tags/v1.*")
+            assertEquals(3, tagsOnly.graph.size)
+            assertEquals(emptyList<String>(), branchesOf(tagsOnly))
+            assertEquals(listOf("v1.0"), tagsOf(tagsOnly))
+            assertEquals(a2.name, tagsOnly.heads[0].id)
         }
     }
 

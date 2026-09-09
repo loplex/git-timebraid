@@ -209,6 +209,37 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `-b is shorthand for a --ref pattern, and narrowing leaves the tags out`() {
+        corpus()
+
+        // Branches and tags of an output built with the given selection, as the CLI sees them.
+        fun refsOf(name: String, vararg select: String): Pair<List<String>, List<String>> {
+            val out = tmp.resolve(name)
+            run(
+                "-o", out.toString(), *select,
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+            return SourceRepository.open(out).use { repo ->
+                repo.branches().map { it.name }.sorted() to repo.tags().map { it.name }.sorted()
+            }
+        }
+
+        // Nothing named: every branch and every tag, which is what a plain run has always done.
+        assertEquals(listOf("main") to listOf("backend/v1"), refsOf("all.git"))
+
+        // -b main is refs/heads/main and nothing else, so backend's tag is not carried over. This
+        // is the point of the option and what it could not do while tags were loaded regardless.
+        assertEquals(listOf("main") to emptyList<String>(), refsOf("narrow.git", "-b", "main"))
+
+        // The old behaviour, for a run that wants it: say so, rather than have it implied.
+        assertEquals(
+            listOf("main") to listOf("backend/v1"),
+            refsOf("both.git", "--ref", "refs/heads/main", "--ref", "refs/tags/*"),
+        )
+    }
+
+    @Test
     fun `a file URL input is cloned next to the output`() {
         corpus()
         val out = tmp.resolve("merged.git")
