@@ -105,8 +105,9 @@ moment" is not computed on demand, it is simply what the commit's tree contains.
 
 [**doc/how-it-works.md**](doc/how-it-works.md) works the construction out properly — the exact parent
 rule, why a merge on the braid can end up with three parents, and what happens to side branches.
-[**doc/examples/**](doc/examples/README.md) is the same thing on four small histories you can build
-and walk yourself.
+[**doc/examples/**](doc/examples/README.md) is the same thing on nine small histories you can build
+and walk yourself — four on the order the commits end up in, five on where their content lands and
+which refs come with it.
 
 ---
 
@@ -177,6 +178,11 @@ the last segment of its path. Name and placement are set separately:
   option asked for. Its own entries at a path and the inputs placed inside it end up in one
   directory.
 
+Worked through on repositories you can build and walk: [nested destinations and a shared
+prefix](doc/examples/05-nested-layout/README.md), and [`--splice`](doc/examples/06-splice/README.md)
+— which also shows the pair being refused without the flag, and the collision the flag does not
+excuse.
+
 ### Dissolving a submodule into its content
 
 Where an input lands on exactly the path the repository around it keeps a **gitlink**, that
@@ -197,6 +203,9 @@ the output's `vendor/lib` moves with the braid rather than with the superproject
 it deliberately does not do: a gitlink at a segment *above* a destination stays an error (nothing is
 placed at that path, so there is no content to put in the submodule's stead), and an ordinary file or
 directory in the way stays a collision.
+
+[Example 07](doc/examples/07-dissolve-submodule/README.md) is this on a real superproject with two
+submodules, one of them dissolved and one left alone, with the `.gitmodules` of every commit shown.
 
 ### Taking the layout off a directory tree
 
@@ -225,6 +234,10 @@ git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::tools-core
 
 Anything the scan skipped, or a repository from outside the tree entirely, is added the same way:
 as an ordinary argument.
+
+[Example 08](doc/examples/08-scan/README.md) scans a tree holding all of these cases at once — a
+bare repository, a dot-name, a repository nested inside another, and the two findings that derive
+the same name.
 
 ### How an input is written
 
@@ -418,6 +431,8 @@ git-timebraid \
 ```
 
 Without that `--ref`, this run would carry no tags at all: naming any ref leaves out the rest.
+[Example 09](doc/examples/09-ref-selection/README.md) runs four selections over one pair of
+repositories and shows what each output ends up holding, down to the commit that only a tag reaches.
 
 ### Options
 
