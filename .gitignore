@@ -16,4 +16,4 @@ Thumbs.db
 # Only the recipe is tracked; these are rebuilt on demand and are byte-identical when they are.
 doc/examples/*/input/
 doc/examples/*/output/
-doc/examples/*/output-whole-graph/
+doc/examples/*/output-*/

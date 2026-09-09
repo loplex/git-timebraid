@@ -1,0 +1,10 @@
+repositories:
+  platform -> libs/
+  backend -> libs/backend/
+commits: 4 (braid: 4)
+parent counts: 0 -> 1, 1 -> 2, 2 -> 1
+
+000000 * platform/2b0e8878c75add6eb8a97fc615b24256ecdab7d7 @1700036000 parents=[] content=[platform=2b0e8878c75add6eb8a97fc615b24256ecdab7d7]
+000001 * backend/54a23409f7f4912fcb6845ca3c48a2c1a5a406eb @1700072000 parents=[platform/2b0e8878c75add6eb8a97fc615b24256ecdab7d7] content=[platform=2b0e8878c75add6eb8a97fc615b24256ecdab7d7, backend=54a23409f7f4912fcb6845ca3c48a2c1a5a406eb]
+000002 * backend/356b60b2df3eb1fb9ebaf7b561d4adee0cd30741 @1700108000 parents=[backend/54a23409f7f4912fcb6845ca3c48a2c1a5a406eb] content=[platform=2b0e8878c75add6eb8a97fc615b24256ecdab7d7, backend=356b60b2df3eb1fb9ebaf7b561d4adee0cd30741]
+000003 * platform/8214a27b3c04dc09d4860305fef3a3c4ef37af19 @1700144000 parents=[backend/356b60b2df3eb1fb9ebaf7b561d4adee0cd30741, platform/2b0e8878c75add6eb8a97fc615b24256ecdab7d7] content=[platform=8214a27b3c04dc09d4860305fef3a3c4ef37af19, backend=356b60b2df3eb1fb9ebaf7b561d4adee0cd30741]

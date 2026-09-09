@@ -132,6 +132,10 @@ What follows from that is the whole of the rule:
   [dissolving a submodule](#dissolving-a-submodule) below, which is where the `.gitmodules` side of
   it is worked out.
 
+[Example 05](examples/05-nested-layout/README.md) is the plain case on three repositories, with the
+reused prefix trees shown by sha; [example 06](examples/06-splice/README.md) is the splice, together
+with both refusals above.
+
 ### The one exception: `.gitmodules`
 
 `.gitmodules` is the only file whose *location* is part of its meaning — git reads it from the
@@ -204,6 +208,10 @@ moves with the braid, not with the pin. That is the reason it is opt-in rather t
 paths, and the reason a gitlink at a segment *above* a destination stays an error: nothing is placed
 at that path, so there is no content that could stand in for the submodule.
 
+[Example 07](examples/07-dissolve-submodule/README.md) carries this out on a superproject with two
+submodules — one dissolved, one left alone — and shows the root `.gitmodules` at every commit of the
+braid, including the ones before either gitlink existed.
+
 ---
 
 ## Branches
@@ -250,6 +258,10 @@ merely unnamed.
 `--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
 is every ref, no interleave pattern is none of them. It is also matched against what the selection
 already admitted, so widening the interleave cannot widen what is read.
+
+[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+and lists what each output holds — including the commit that disappears entirely under `-b main`,
+and comes back when the tags are asked for.
 
 ---
 

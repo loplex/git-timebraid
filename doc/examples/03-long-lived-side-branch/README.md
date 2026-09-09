@@ -25,7 +25,13 @@ mvn -q exec:java -Dexec.args="-o doc/examples/03-long-lived-side-branch/output -
     doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B"
 ```
 
-`output-whole-graph` generated the same way as example 02 (see the top-level README).
+The whole-graph contrast, from the same CLI with every ref opted in:
+
+```
+mvn -q exec:java -Dexec.args="-o doc/examples/03-long-lived-side-branch/output-whole-graph --no-bare \
+    --order-by committer --interleave-ref * \
+    doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B"
+```
 
 ## Result
 

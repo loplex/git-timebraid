@@ -1,0 +1,12 @@
+repositories:
+  backend -> libs/backend/
+  codegen -> libs/codegen/
+  webui -> apps/webui/
+commits: 5 (braid: 5)
+parent counts: 0 -> 1, 1 -> 2, 2 -> 2
+
+000000 * backend/c28627b5a6b5e222fd02f726cf65b3da6db6a728 @1700036000 parents=[] content=[backend=c28627b5a6b5e222fd02f726cf65b3da6db6a728]
+000001 * codegen/ca5b17b680579e71d8f18b54312ada07e1779b69 @1700072000 parents=[backend/c28627b5a6b5e222fd02f726cf65b3da6db6a728] content=[backend=c28627b5a6b5e222fd02f726cf65b3da6db6a728, codegen=ca5b17b680579e71d8f18b54312ada07e1779b69]
+000002 * webui/08cdbc9027c528e0a57df8991d437b092c6fbfd3 @1700090000 parents=[codegen/ca5b17b680579e71d8f18b54312ada07e1779b69] content=[backend=c28627b5a6b5e222fd02f726cf65b3da6db6a728, codegen=ca5b17b680579e71d8f18b54312ada07e1779b69, webui=08cdbc9027c528e0a57df8991d437b092c6fbfd3]
+000003 * backend/d83bd476df949d6a17d72b278e3ca63b6cec5474 @1700108000 parents=[webui/08cdbc9027c528e0a57df8991d437b092c6fbfd3, backend/c28627b5a6b5e222fd02f726cf65b3da6db6a728] content=[backend=d83bd476df949d6a17d72b278e3ca63b6cec5474, codegen=ca5b17b680579e71d8f18b54312ada07e1779b69, webui=08cdbc9027c528e0a57df8991d437b092c6fbfd3]
+000004 * webui/4c8d9291f10e759bd9b480041f297f63d1c07185 @1700144000 parents=[backend/d83bd476df949d6a17d72b278e3ca63b6cec5474, webui/08cdbc9027c528e0a57df8991d437b092c6fbfd3] content=[backend=d83bd476df949d6a17d72b278e3ca63b6cec5474, codegen=ca5b17b680579e71d8f18b54312ada07e1779b69, webui=4c8d9291f10e759bd9b480041f297f63d1c07185]
