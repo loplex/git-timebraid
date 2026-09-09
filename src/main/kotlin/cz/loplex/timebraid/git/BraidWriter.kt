@@ -308,9 +308,9 @@ class BraidWriter(
     }
 
     /**
-     * Adds a ref under `refs/remotes/<name>/` for every branch `-b` took and every tag of every
-     * input, and for each input's mainline whether `-b` took it or not, each pointing at that
-     * input's *original* commit.
+     * Adds a ref under `refs/remotes/<name>/` for every branch and tag the run carried over, and for
+     * each input's mainline whether the selection took it or not, each pointing at that input's
+     * *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
      * across everything the refs that were read reach, commits included, with their shas intact —
@@ -325,9 +325,9 @@ class BraidWriter(
      * once git's grace period for unreachable objects, two weeks by default, has passed. They go
      * under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
      * input do not land on the same name. That keeps the usual pair apart, and not every pair git
-     * accepts: a branch `-b` took that is literally named `tags/v1.0` still meets the tag `v1.0`
-     * here, and that is refused, since either write winning would leave the other ref's originals
-     * with no mirror.
+     * accepts: a branch the selection took that is literally named `tags/v1.0` still meets the tag
+     * `v1.0` here, and that is refused, since either write winning would leave the other ref's
+     * originals with no mirror.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
      * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its

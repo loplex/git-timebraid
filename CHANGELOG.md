@@ -13,12 +13,16 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Nineteen changes alter what a command line written for 0.1.0 does:
+Twenty changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::=subdir`.
 
 - A location holding a `::` of its own, an IPv6 URL for one, now ends with a bare `::`:
   `https://[fe80::1]/repo.git::`.
+
+- `-b` takes a pattern, as `--ref refs/heads/<value>` does, rather than a branch's exact name.\
+  `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
+  A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.
 
 - `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::=.git` now, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -105,11 +109,21 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   A bare `:` is refused there rather than passed through.\
   That is what makes the last `::` the separator: a colon is written `\:`, so no suffix holds one.
 
+- **`-b`/`--branch` no longer carries the tags.**\
+  It narrowed the branches but not the tags, which were all read.\
+  A run asking for one branch still pulled in whatever the tags could reach.\
+  It is now shorthand for `--ref refs/heads/<name>`, and naming any ref leaves out the rest.\
+  The old behaviour is one pattern away: `--ref refs/heads/main --ref 'refs/tags/*'`.
+
 ### Added
 
 - **A destination may be a nested path.**\
   `git-timebraid -o out backend::=libs/backend webui::=apps/webui`\
   Inputs sharing a prefix share the tree for it.
+
+- **`--ref PATTERN`** — carry over only the refs matching this glob (repeatable).\
+  Branches and tags alike.\
+  The default is every ref, and the mainline is kept whatever the patterns say.
 
 - **`--splice`** — let one input's destination lie inside another's.\
   The pair is refused without it: the paths alone cannot tell a typo from an intended layout.\
@@ -202,14 +216,14 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   Under `--scan`, new in this release, that would have left nothing to act on at all, since the
   directories were never typed.
 
-- **`--keep-remotes` mirrors each input's mainline whether `-b` took it or not.**\
+- **`--keep-remotes` mirrors each input's mainline whether the selection took it or not.**\
   A run narrowed away from the mainline, `-b feature` for one, left its original commits in the
   output with nothing naming them.\
   They were fetched and rewritten under the output's own branch, and `git gc` pruned them once
   they were older than its grace period for unreachable objects, two weeks by default.
 
-- **A branch `-b` took and a tag of one input meeting on one `--keep-remotes` mirror name are
-  refused.**\
+- **A branch the selection took and a tag of one input meeting on one `--keep-remotes` mirror
+  name are refused.**\
   A branch literally called `tags/v1.0` mirrors to the name the tag `v1.0` does.\
   0.1.0 kept the tag's mirror, leaving the branch's originals unnamed, and the closing report
   counted both.\
@@ -251,7 +265,7 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   one, did nothing.\
   From any other ref the walk stopped where it met a mainline, leaving out what the earlier merges
   on that mainline had merged, so a bare star was not the pass over the whole graph it was
-  documented to be, as it now is while `-b` leaves none of the mainlines out.\
+  documented to be, as it now is while the selection carries the mainline branches.\
   A side branch timestamped after the merge that took it in can now hold that merge back, and the
   mainline after it, whenever a ref above the merge is opted in: that is what opting in asks for.
 

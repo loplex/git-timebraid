@@ -2,7 +2,7 @@
 
 Merge several independent git repositories into one — **braided together along the time axis**.
 
-- Every commit of every input repository is recreated.
+- Every commit the selected refs reach is recreated, and by default that is every branch and tag.
 - Every original parent edge is kept.
 - On top of that, artificial edges chain commits *across* repositories in chronological order — by
   committer date, unless you ask for author date.
@@ -261,7 +261,7 @@ A name is held to what git takes as one segment of a ref name: no `/`, no `:`, n
 not a gap: the name becomes a directory name for the clone of a remote input and a segment of a tag
 name, so one segment is what it means.
 
-**All branches**, recreated at the corresponding new commits (restrict with `-b`):
+**All branches**, recreated at the corresponding new commits (narrow with `-b` or `--ref`):
 
 - The mainline branch collapses into one: every input contributed its own to the same braid, so the
   output has a single branch of that name, at the braid's tip.
@@ -272,14 +272,29 @@ name, so one segment is what it means.
 so tags from different repositories cannot collide. An annotated tag stays annotated, keeping its
 tagger and its message.
 
+`-b` and `--ref` are one selection rather than two: `-b main` *is* `--ref refs/heads/main`, and
+naming any ref at all leaves out every ref not named. So a run narrowed to a branch carries no tags
+unless it says so — write both halves out to keep them:
+
+```bash
+--ref 'refs/heads/main' --ref 'refs/tags/*'
+```
+
+`*` is the only metacharacter and it spans path separators, so `refs/heads/release/*` reaches a
+nested branch name however deep. Matching is against the *full* ref name because a short one cannot
+say whether `v1.0` is a branch or a tag. The mainline is loaded whatever the patterns say — the
+braid is built along it — and the output's branch of that name comes from the braid's tip.
+
 **The original commits**, with their own shas intact, next to the rewritten ones. The output is
 filled by fetching into it everything the refs that were read reach — that is what puts the inputs'
 trees and blobs there, which the braid then reuses — and a fetch cannot leave the commits out.
 Nothing points at them by default, so they are invisible to `git log` and `git gc --prune=now`
-reclaims them; `--keep-remotes` points `refs/remotes/<name>/*` at every branch `-b` took, at each
-input's mainline, and — under `tags/` — at every tag of each input instead, so the originals those
-reach stay one `git log` away.
-Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
+reclaims them; `--keep-remotes` points `refs/remotes/<name>/*` at every branch the run carried over,
+each input's mainline among them, and — under `tags/` — at every tag it carried over instead, so
+the originals those reach stay one `git log` away.
+Either way the fetch covers the refs that were read, so narrowing the selection narrows what
+arrives: a commit only an unselected ref could reach is not merely unreferenced in the output, its
+objects are not there.
 
 **A provenance trailer** on every commit message:
 
@@ -397,15 +412,18 @@ git-timebraid -o /tmp/merged \
     ~/repos/backend.git ~/repos/webui.git::=ui ~/repos/codegen.git
 ```
 
-Recreate only two branches, and inspect the plan without writing the output repository:
+Carry over two branches and the tags of one release series, and inspect the plan without writing
+the output repository:
 
 ```bash
 git-timebraid \
     --mainline-branch main \
-    -b main -b release/2.2 \
+    -b main -b release/2.2 --ref 'refs/tags/v2.*' \
     --dry-run --plan-out /tmp/plan.txt \
     ~/repos/backend.git ~/repos/webui.git
 ```
+
+Without that `--ref`, this run would carry no tags at all: naming any ref leaves out the rest.
 
 ### Options
 
@@ -428,7 +446,11 @@ git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
       --order-by author|committer
                                 timestamp used to interleave the strands
                                 (default: committer)
-  -b, --branch NAME             recreate only these branches (repeatable; default: all)
+  -b, --branch NAME             carry over only these branches, by short name (repeatable);
+                                shorthand for --ref refs/heads/<name>
+      --ref PATTERN             carry over only the refs matching this pattern, over branches
+                                and tags alike (repeatable; glob over full ref names; default:
+                                every branch and every tag; the mainline is always kept)
       --interleave-ref PATTERN  let this ref's commits delay a mainline merge that merges
                                 them in (repeatable; glob over full ref names; default: none)
       --splice                  let one input's destination lie inside another's, the two
@@ -445,7 +467,8 @@ git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
       --bare / --no-bare        default: bare
       --keep-remotes            add inputs as remotes, their branches and (under tags/) their
                                 tags at their original commits under refs/remotes/<name>/*,
-                                each mainline among the branches whether -b took it or not
+                                each mainline among the branches whether the selection took
+                                it or not
       --dry-run                 compute and summarize the plan, write no output
       --plan-out FILE           dump the deterministic plan as text
   -q, --quiet / -v, --verbose
@@ -459,8 +482,8 @@ git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
 
 - Reading the inputs — a local path in place, a URL through a clone — and planning the interleaving.
 - Writing the output, bare or with a working tree.
-- Recreating every branch and prefixed tag, the provenance trailer, keeping the inputs as remotes,
-  and progress on stderr.
+- Recreating the branches and prefixed tags a run carries over — every ref by default, narrowed
+  with `--ref` — the provenance trailer, keeping the inputs as remotes, and progress on stderr.
 - A URL input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
   refreshes that clone instead of downloading it again.
 

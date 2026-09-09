@@ -101,7 +101,7 @@ class Commit internal constructor(
 }
 
 /**
- * DAG of every commit of every input repository.
+ * DAG of the input repositories' commits that a run carries over, which need not be all of them.
  *
  * This is the planner's entire input. It deliberately knows nothing about git: a commit's identity is
  * an opaque string supplied by whoever built the graph, and its timestamp is a single `Long` resolved
@@ -119,7 +119,7 @@ class Commit internal constructor(
 class CommitGraph internal constructor(
     /** The input repositories, in the order they were read. */
     val sources: List<Source>,
-    /** Every commit of every input repository, in the order they were first named. */
+    /** The commits carried over from every input repository, in the order they were first named. */
     val commits: List<Commit>,
 ) : IndexedGraph<Commit> {
 

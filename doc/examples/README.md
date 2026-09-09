@@ -12,7 +12,7 @@ The interleave is `src/main/kotlin/cz/loplex/timebraid/plan/BraidInterleave.kt`,
 reduces to a k-way merge of one queue per repository, always taking the queue whose front carries
 the earliest timestamp. Opt in a ref and a mainline merge that merges it in waits for it, so the
 merge can land later than its own timestamp; opt in every ref and you get a pass over the whole
-graph, whenever `-b` leaves none of the mainlines out. These examples contrast the two ends.
+graph, whenever the selection carries the mainline branches. These examples contrast the two ends.
 
 **Only the recipe is tracked**: this README, `build-inputs.sh`, each example's README and its
 `plan.txt`. The `input/`, `output/` and `output-whole-graph/` directories are generated — they are

@@ -47,7 +47,11 @@ class MergeRequest(
     val keepRemotes: Boolean,
     val orderBy: OrderBy,
     val mainlineBranch: String?,
-    val branches: Set<String>?,
+    /**
+     * Glob patterns over full ref names selecting which of each input's branches and tags are
+     * loaded and recreated. Empty selects every ref, which is the default.
+     */
+    val refs: List<String>,
     /**
      * Glob patterns over full ref names whose ancestry may delay a braid commit. Empty means the
      * default scope, the mainline chains alone.
@@ -118,7 +122,7 @@ class MergeRunner(
                 repositories = sources,
                 orderBy = request.orderBy,
                 mainlineBranch = request.mainlineBranch,
-                branches = request.branches,
+                refs = request.refs,
                 interleaveRefs = request.interleaveRefs,
             )
 

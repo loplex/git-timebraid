@@ -169,9 +169,10 @@ class BraidPipelineIT {
         val ids = reference()
         val out = tmp.resolve("narrowed.git")
 
-        // Only backend's feature is selected, so neither mainline is among the branches carried
-        // over. Both are read regardless — that is what the braid is built from — so their commits
-        // are in the output, and without a mirrored ref they would be there unreachable.
+        // Only backend's feature is selected, so neither mainline is among the refs carried over,
+        // and no tag is either. Both mainlines are read regardless — that is what the braid is built
+        // from — so their commits are in the output, and without a mirrored ref they would be there
+        // unreachable.
         braid(
             "-o", out.toString(), "--keep-remotes", "-b", "feature",
             path("backend.git"), path("webui.git"),
@@ -182,9 +183,7 @@ class BraidPipelineIT {
             listOf(
                 "refs/remotes/backend/feature",
                 "refs/remotes/backend/main",
-                "refs/remotes/backend/tags/v1.0",
                 "refs/remotes/webui/main",
-                "refs/remotes/webui/tags/v2.0",
             ),
             GitCli.run(out, "for-each-ref", "--format=%(refname)", "refs/remotes").lines().sorted(),
         )

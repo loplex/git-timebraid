@@ -274,6 +274,48 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `-b is shorthand for a --ref pattern, and narrowing leaves the tags out`() {
+        corpus()
+        // A side branch too, so that -b is seen to name a branch: the mainline is written from the
+        // braid whatever the selection says, so -b main alone could not tell -b from nothing.
+        val a2 = SourceRepository.open(tmp.resolve("backend.git")).use { it.resolveBranch("main")!! }
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            val f1 = repo.commit("f1", parents = listOf(a2), at = Instant.parse("2021-01-01T12:00:00Z"))
+            repo.branch("feature", f1)
+        }
+
+        // Branches and tags of an output built with the given selection, as the CLI sees them.
+        fun refsOf(name: String, vararg select: String): Pair<List<String>, List<String>> {
+            val out = tmp.resolve(name)
+            run(
+                "-o", out.toString(), *select,
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+            return SourceRepository.open(out).use { repo ->
+                repo.branches().map { it.name }.sorted() to repo.tags().map { it.name }.sorted()
+            }
+        }
+
+        // Nothing named: every branch and every tag, which is what a plain run has always done.
+        assertEquals(listOf("feature", "main") to listOf("backend/v1"), refsOf("all.git"))
+
+        // -b main is refs/heads/main and nothing else, so backend's tag is not carried over. This
+        // is the point of the option and what it could not do while tags were loaded regardless.
+        assertEquals(listOf("main") to emptyList<String>(), refsOf("narrow.git", "-b", "main"))
+        assertEquals(
+            listOf("feature", "main") to emptyList<String>(),
+            refsOf("side.git", "-b", "feature"),
+        )
+
+        // The old behaviour, for a run that wants it: say so, rather than have it implied.
+        assertEquals(
+            listOf("main") to listOf("backend/v1"),
+            refsOf("both.git", "--ref", "refs/heads/main", "--ref", "refs/tags/*"),
+        )
+    }
+
+    @Test
     fun `a branch and a tag of one input meeting on one mirror name are refused`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))

@@ -50,7 +50,8 @@ class GitCommand(private val log: (String) -> Unit = {}) {
      * since the merge.
      *
      * `--no-tags` is set on the remote for when that day comes: the output already carries every tag
-     * under its own prefixed name, and fetching them again unprefixed would collide.
+     * the run carried over, under its own prefixed name, and fetching them again unprefixed would
+     * collide.
      */
     fun addRemote(repo: Path, name: String, url: String) {
         exec(repo, "remote", "add", "--no-tags", name, url)
