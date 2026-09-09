@@ -50,6 +50,11 @@ class MergeRequest(
     val interleaveRefs: List<String>,
     /** Whether one input's destination may lie inside another's, the two spliced into one tree. */
     val splice: Boolean,
+    /**
+     * Whether an input landing on a gitlink of the repository around it replaces that gitlink with
+     * its own content, rather than colliding with it — see [cz.loplex.timebraid.git.TreeAssembler].
+     */
+    val dissolveSubmodules: Boolean,
     val writeOptions: WriteOptions,
     val dryRun: Boolean,
 )
@@ -123,11 +128,15 @@ class MergeRunner(
             // Before anything is written, and on a dry run too — a splice that collides does so at
             // one commit of the braid rather than at all of them, so a dry run that skipped this
             // would report a plan it cannot carry out.
-            val splices = SpliceCheck(plan, braid, repoOf).check()
+            val splices = SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules).check()
             for (splice in splices) {
+                val dissolved =
+                    if (splice.dissolved == 0) ""
+                    else ", dissolving a submodule there at ${splice.dissolved} of them"
                 progress.detail(
                     "${splice.splice.innerSubdir} lies inside ${splice.splice.outerPath}, " +
-                        "spliced at ${splice.commits} commits over ${splice.trees} distinct trees"
+                        "spliced at ${splice.commits} commits over ${splice.trees} distinct " +
+                        "trees$dissolved"
                 )
             }
 
@@ -173,6 +182,7 @@ class MergeRunner(
                 plan = plan,
                 options = request.writeOptions,
                 mirrorRemotes = request.keepRemotes,
+                dissolveSubmodules = request.dissolveSubmodules,
             ).write()
 
             target.dropFetchRefs()

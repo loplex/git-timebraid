@@ -123,7 +123,14 @@ What follows from that is the whole of the rule:
 - **A splice is not a merge of two repositories' files.** What the containing repository already
   holds at the inner destination is a collision, and so is a prefix segment that is not a directory
   there. Both depend on the tree at that commit, which the planner has never seen, so both are
-  refused by the writer and named against the commit they happen at.
+  answered ahead of the write pass instead — one walk over the plan, examining each containing
+  repository's tree once per *distinct* tree rather than once per commit — and named against the
+  commit they happen at.
+- **`--dissolve-submodules` excepts one entry: a gitlink at the destination itself.** There the
+  containing repository was already saying another repository belongs at that exact path, so the
+  input landing there replaces the gitlink instead of colliding with it. See
+  [dissolving a submodule](#dissolving-a-submodule) below, which is where the `.gitmodules` side of
+  it is worked out.
 
 ### The one exception: `.gitmodules`
 
@@ -159,6 +166,43 @@ Two consequences worth knowing:
 - A **relative** `url` (`../lib.git`) resolves against the superproject's own remote. The output's
   remote is not the input's, so a relative url points somewhere else after the merge. Making those
   absolute in the inputs, before merging, is the fix.
+
+### Dissolving a submodule
+
+A superproject and the repository its `vendor/lib` gitlink points at are two inputs of the same
+merge often enough to be worth naming. Placed at `vendor/lib`, the second one lands exactly where the
+first keeps its gitlink, which is a collision under the rule above — the tool cannot tell from the
+paths whether that is the point or an accident.
+
+`--dissolve-submodules` says it is the point, and two things follow:
+
+> At a commit where an input's content occupies a path, the **gitlink** there gives way to that
+> input's tree, and any `[submodule]` section whose `path` is that path is left out of the root
+> `.gitmodules`.
+
+```
+$ git ls-tree -r HEAD                      # without the flag: refused before anything is written
+$ git ls-tree -r HEAD                      # with it
+100644 blob 7898192…    a.txt
+100644 blob 41f2e91…    vendor/lib/src/lib.kt   <- the library's own tree, and its own commits
+```
+
+The section has to go with the gitlink because the two describe each other: a `path` naming a
+directory git finds no gitlink at is a mapping `git submodule` reports as broken. When that was the
+only section, no root `.gitmodules` is written at all — and the containing repository's own copy is
+taken out of the tree with it, since leaving it would publish the input's text describing a submodule
+the output no longer has.
+
+Both halves are decided per commit rather than per run, for the same reason every other tree question
+is: an input that has no content yet occupies nothing, and the gitlink standing in for it is still
+the truth at that point of the braid.
+
+What the flag is **not** is a faithful expansion of the submodule. A gitlink names one commit of the
+submodule — the one the superproject pinned — and what takes its place is whatever that input had
+reached at that point of the braid, which the interleave decides. The output's `vendor/lib` therefore
+moves with the braid, not with the pin. That is the reason it is opt-in rather than inferred from the
+paths, and the reason a gitlink at a segment *above* a destination stays an error: nothing is placed
+at that path, so there is no content that could stand in for the submodule.
 
 ---
 

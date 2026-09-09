@@ -44,7 +44,8 @@ class TargetRepository private constructor(
             ?: repository.newObjectInserter()
 
     /** Builds the braid's trees into this repository, deduplicating identical ones. */
-    fun treeAssembler(): TreeAssembler = TreeAssembler(inserter)
+    fun treeAssembler(dissolveSubmodules: Boolean = false): TreeAssembler =
+        TreeAssembler(inserter, dissolveSubmodules)
 
     /**
      * Fetches everything reachable from [refs] in [source] into this repository, parking the refs
