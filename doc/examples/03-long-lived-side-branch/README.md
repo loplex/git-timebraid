@@ -21,13 +21,18 @@ so there is no clock-skew anomaly here.
 ## Commands
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/03-long-lived-side-branch/output --no-bare \
+./git-timebraid -o doc/examples/03-long-lived-side-branch/output --no-bare \
     --order-by committer --plan-out doc/examples/03-long-lived-side-branch/plan.txt \
-    doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B"
+    doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B
 ```
 
-`output-whole-graph` is generated the same way as example 02's
-(see [its commands](../02-merge-with-late-branch/README.md#commands)).
+The whole-graph contrast, from the same CLI with every ref opted in:
+
+```
+./git-timebraid -o doc/examples/03-long-lived-side-branch/output-whole-graph --no-bare \
+    --order-by committer --interleave-ref '*' \
+    doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B
+```
 
 ## Result
 

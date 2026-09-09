@@ -64,6 +64,10 @@ The arithmetic follows:
 A merge of more parents goes the same way:
 it keeps them all, and gains the braided edge only where its predecessor comes from a different repo.
 
+[Example 01](examples/01-two-linear-repos/README.md) is the rule on two linear repositories,
+and [example 04](examples/04-clock-skew-in-repo/README.md) on a child timestamped before its own parent,
+which its chain still keeps after that parent.
+
 ### Why three parents
 
 The three-parent case is not a curiosity, it is the price of the guarantee.
@@ -151,6 +155,11 @@ What follows from that is the whole of the rule:
   See [dissolving a submodule](#dissolving-a-submodule) below,
   which is where the `.gitmodules` side of it is worked out.
 
+[Example 05](examples/05-nested-layout/README.md) is the plain case on three repositories,
+with the reused prefix trees shown by sha;
+[example 06](examples/06-splice/README.md) is the splice,
+together with the pair refused without the flag and the collision the flag does not excuse.
+
 ### The one exception: `.gitmodules`
 
 `.gitmodules` is the only file whose *location* is part of its meaning —
@@ -205,7 +214,8 @@ the tool cannot tell from the paths whether that is the point or an accident.
 > At a commit where an input's content occupies a path, the **gitlink** there gives way to that input's tree,
 > and any `[submodule]` section whose `path` is that path is left out of the root `.gitmodules`.
 
-Without the flag there is nothing to list: the pair is refused before anything is written into the output.\
+Without the flag there is nothing to list: the pair is refused before anything is written into the output,
+and [example 07](examples/07-dissolve-submodule/README.md) shows the message it is refused with.\
 With the flag, the superproject at the root and the library at `vendor/lib` give:
 
 | Entry                   | Where it came from                          |
@@ -232,6 +242,10 @@ That is the reason it is opt-in rather than inferred from the paths,
 and the reason a gitlink at a segment *above* a destination stays an error:
 nothing is placed at that path, so there is no content that could stand in for the submodule.
 
+[Example 07](examples/07-dissolve-submodule/README.md) carries this out on a superproject with two submodules —
+one dissolved, one left alone — and lists the output's trees at four points of the braid,
+including ones from before either gitlink existed, with the root `.gitmodules` quoted at the tip.
+
 ---
 
 ## Branches
@@ -254,6 +268,10 @@ Checking out `esbuild-experiment`, a branch that only ever existed in `webui`:
 
 Which is exactly what you want, and it costs no configuration.
 
+[Example 03](examples/03-long-lived-side-branch/README.md) shows a side branch
+that spans nearly the whole of its repository's history:
+the other repository's commits interleave throughout, since only the mainline chains make up the braid.
+
 ### Which refs are carried over
 
 Which refs a run carries over is not only a question about the output's refs: it decides which commits are read at all.
@@ -275,6 +293,10 @@ and the side branch it pointed at is absent from the graph rather than merely un
 `--interleave-ref` uses the same matcher and reads its empty case the other way round:
 no selection is every ref, no interleave pattern is none of them.\
 It is also matched against what the selection already admitted, so widening the interleave cannot widen what is read.
+
+[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+and lists what each output holds —
+including the commit that disappears entirely under `-b main`, and comes back when the tags are asked for.
 
 ---
 

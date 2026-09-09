@@ -18,9 +18,9 @@ but stamps `a1`'s committer date at offset 50 and `a2`'s at offset 10 — `a2` i
 ## Command
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/04-clock-skew-in-repo/output --no-bare \
+./git-timebraid -o doc/examples/04-clock-skew-in-repo/output --no-bare \
     --order-by committer --plan-out doc/examples/04-clock-skew-in-repo/plan.txt \
-    doc/examples/04-clock-skew-in-repo/input/A doc/examples/04-clock-skew-in-repo/input/B"
+    doc/examples/04-clock-skew-in-repo/input/A doc/examples/04-clock-skew-in-repo/input/B
 ```
 
 ## Result
