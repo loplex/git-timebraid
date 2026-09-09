@@ -77,6 +77,28 @@ This used to need a temporary JUnit test and a hand-rolled topological order. It
 which is worth noting because it is the same seam twice: the braid is a parameter, and the write order
 is derived from the braided graph rather than supplied alongside it.
 
+## What keeps these honest
+
+`.github/scripts/check-examples.py`, run by the `examples reproduce` job in CI: it clears the
+generated directories, reruns `build-inputs.sh`, replays every invocation these READMEs document,
+and compares what came back against what they show — 18 invocations and 33 quoted `git` outputs, plus
+`git diff --exit-code` over the tracked `plan.txt` files. Run it locally the same way, after a
+`mvn -DskipTests package`.
+
+**Which means the format below is load-bearing.** Editing an example means keeping to it:
+
+| In a fenced block | What it means |
+|-------------------|---------------|
+| `mvn -q exec:java -Dexec.args="…"` | an invocation that must succeed; its output is not compared |
+| `$ mvn -q exec:java -Dexec.args="…"` | an invocation whose output must contain the lines below it — its closing report, or the refusal being demonstrated |
+| `$ git …` | run in the example's own directory; its output must match the lines below it exactly |
+
+Lines belong to the command above them and nowhere else, so a block with no command in it is never
+read as output — which is what leaves the `<name>@<n>` input notation and example 02's summary of the
+two orderings free to be what they are. Three liberties are taken when comparing: an object id
+written with a trailing `…` matches any id starting that way (written out in full, it has to match in
+full), runs of whitespace collapse, and an inline `# …` annotation is stripped.
+
 ## How the braid is built — examples 01–04
 
 The interleave is `plan/BraidInterleave.kt`, and it takes a *scope*: the mainline first-parent chains,
