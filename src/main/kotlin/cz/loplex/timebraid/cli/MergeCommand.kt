@@ -129,6 +129,15 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "inner destination is still a collision."
         )
 
+    private val dissolveSubmodules by option("--dissolve-submodules").flag()
+        .help(
+            "Where an input lands exactly on a gitlink of the repository around it, replace that " +
+                "submodule with the input's own content instead of refusing the pair, and drop " +
+                "its section from the output's .gitmodules. The gitlink names one commit of the " +
+                "submodule; what takes its place is whatever that input had reached at each point " +
+                "of the braid, so the two are not the same history."
+        )
+
     private val tagPrefix by option("--tag-prefix").default("{repo}/")
         .help("Prefix prepended to every recreated tag; {repo} is substituted.")
 
@@ -218,6 +227,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             branches = branches.toSet().ifEmpty { null },
             interleaveRefs = interleaveRefs,
             splice = splice,
+            dissolveSubmodules = dissolveSubmodules,
             writeOptions = WriteOptions(subjectPrefix, tagPrefix, provenance),
             dryRun = dryRun,
         )
@@ -455,6 +465,18 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             echo(
                 "spliced: ${splice.splice.innerSubdir} inside ${splice.splice.outerPath} at " +
                     "${splice.commits} commits, no collision",
+                err = true,
+            )
+        }
+
+        // A dissolve is worth a line wherever it happened, the output root included: unlike the
+        // containment itself, it is not implied by the layout and it changes what the output holds
+        // at that path.
+        for (splice in result.splices.filter { it.dissolved > 0 }) {
+            echo(
+                "dissolved: the submodule at ${splice.splice.innerSubdir} in " +
+                    "${splice.splice.outer.name} replaced by its own content at " +
+                    "${splice.dissolved} commits",
                 err = true,
             )
         }

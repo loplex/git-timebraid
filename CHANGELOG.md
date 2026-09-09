@@ -122,6 +122,12 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   A repository is not descended into, and the run's own output is left out.\
   A `<repo>` argument naming one corrects that finding rather than adding a second input.
 
+- **`--dissolve-submodules`** — let an input take the place of the gitlink it lands on.\
+  The `[submodule]` section naming that path is left out of `.gitmodules` with it.\
+  Opt-in, because it is not a faithful expansion.\
+  A gitlink names the one commit the superproject pinned.\
+  What takes its place is whatever that input had reached at that point of the braid.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\

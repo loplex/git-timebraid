@@ -143,12 +143,71 @@ class SpliceAgreementIT {
     )
 
     /**
+     * The same agreement where what is in the way is a gitlink, with `--dissolve-submodules` drawn
+     * too: a gitlink at the destination gives way under the flag, and one above it never does, since
+     * no input's content can take the submodule's place on the way down.
+     */
+    @Test
+    fun `a dry run is refused exactly where the write fails, with gitlinks in the way`() {
+        val pinned = ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234")
+        var refused = 0
+        var written = 0
+        for (seed in 0 until SEEDS) {
+            val random = Random(seed)
+            val dir = tmp.resolve("gitlinks-$seed")
+            val minutes = (0 until 60).shuffled(random).iterator()
+
+            fun repo(name: String, gitlinks: List<Map<String, ObjectId>>) =
+                TestRepoBuilder.create(dir.resolve("$name.git")).use { r ->
+                    var parent: ObjectId? = null
+                    val times = gitlinks.map { start.plusSeconds(60L * minutes.next()) }.sorted()
+                    for ((links, time) in gitlinks.zip(times)) {
+                        val files = mapOf("$name.txt" to "$time")
+                        parent = r.commit(name, listOfNotNull(parent), files, links, at = time)
+                    }
+                    r.branch("main", parent!!)
+                }
+
+            repo("platform", List(random.nextInt(1, 3)) {
+                random.pick(emptyMap(), mapOf("libs" to pinned), mapOf("libs/backend" to pinned))
+            })
+            repo("libs", List(random.nextInt(1, 3)) {
+                random.pick(emptyMap(), mapOf("backend" to pinned), mapOf("backend/x" to pinned))
+            })
+            repo("backend", List(random.nextInt(1, 3)) { emptyMap() })
+            val dissolve = random.nextBoolean()
+
+            val inputs = listOfNotNull(
+                "--splice",
+                "--dissolve-submodules".takeIf { dissolve },
+                "--root-repo", "platform",
+                dir.resolve("platform.git").toString(),
+                dir.resolve("libs.git").toString() + "::=libs",
+                dir.resolve("backend.git").toString() + "::=libs/backend",
+            )
+            val dry = MergeCommand().test(listOf("--dry-run") + inputs)
+            val out = dir.resolve("out.git")
+            val refusal = write(dir, out, dissolve)
+
+            assertEquals(
+                dry.statusCode == 0,
+                refusal == null,
+                "seed $seed (dissolve $dissolve): the dry run and the write disagree\n" +
+                    "dry run:\n${dry.output}\nwrite: ${refusal ?: "written"}",
+            )
+            if (refusal == null) written++ else refused++
+        }
+        assertTrue(refused > 0 && written > 0, "refused $refused, written $written of $SEEDS")
+    }
+
+    /**
      * The layout the dry run was given, written as the runner writes it but with no check in front:
-     * read, planned with `--splice` and the same destinations, fetched, and braided.
+     * read, planned with `--splice` and the same destinations, fetched, and braided, dissolving a
+     * gitlink at a destination when [dissolveSubmodules] says so.
      *
      * @return `null` when the output was written, or the writer's refusal.
      */
-    private fun write(dir: Path, out: Path): String? {
+    private fun write(dir: Path, out: Path, dissolveSubmodules: Boolean = false): String? {
         val destinations = mapOf("platform" to null, "libs" to "libs", "backend" to "libs/backend")
         val opened = destinations.keys.map { SourceRepository.open(dir.resolve("$it.git")) }
         try {
@@ -161,7 +220,7 @@ class SpliceAgreementIT {
                     target.fetchFrom(repoOf.getValue(input.source), input.readRefs)
                 }
                 try {
-                    BraidWriter(target, repoOf, inputs, plan).write()
+                    BraidWriter(target, repoOf, inputs, plan, dissolveSubmodules = dissolveSubmodules).write()
                 } catch (e: IllegalArgumentException) {
                     return e.message ?: "refused"
                 }

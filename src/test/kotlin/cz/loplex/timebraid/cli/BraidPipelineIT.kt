@@ -5,6 +5,7 @@ import cz.loplex.timebraid.GitCli
 import cz.loplex.timebraid.git.OutputRepo
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
+import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -882,6 +883,101 @@ class BraidPipelineIT {
         if (GitCli.available) {
             GitCli.fsck(out)
             assertEquals("line one\r\nline two", GitCli.run(out, "show", "main:crlf.txt"))
+        }
+    }
+
+    /**
+     * A superproject whose `vendor/lib` is a submodule, and the submodule's own repository beside
+     * it — the arrangement a scan of an initialised superproject finds, and the one a dissolve is
+     * for. [pinned] is what the superproject recorded; nothing has to be able to resolve it.
+     */
+    private fun superproject(pinned: ObjectId) {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", files = mapOf("a.txt" to "a\n"), at = at("09:00"))
+            val a2 = r.commit(
+                "a2, vendor the library",
+                parents = listOf(a1),
+                files = mapOf(
+                    "a.txt" to "a\n",
+                    ".gitmodules" to "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n" +
+                        "\turl = https://example.com/lib.git\n",
+                ),
+                gitlinks = mapOf("vendor/lib" to pinned),
+                at = at("11:00"),
+            )
+            r.branch("main", a2)
+        }
+        TestRepoBuilder.create(tmp.resolve("lib.git")).use { r ->
+            r.branch("main", r.commit("b1", files = mapOf("src/lib.kt" to "b\n"), at = at("10:00")))
+        }
+    }
+
+    @Test
+    fun `an input landing on a gitlink is refused until --dissolve-submodules asks for it`() {
+        superproject(ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234"))
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                "--root-repo", "backend",
+                path("backend.git"),
+                path("lib.git") + "::=vendor/lib",
+            ),
+        )
+
+        // The pre-flight check, not the writer: nothing is written for a run that cannot finish.
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'vendor/lib' is a submodule of backend"), result.output)
+        assertTrue(result.output.contains("--dissolve-submodules"), result.output)
+    }
+
+    @Test
+    fun `--dissolve-submodules replaces the gitlink with the repository's own history`() {
+        val pinned = ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234")
+        superproject(pinned)
+
+        val out = tmp.resolve("dissolved")
+        val result = braid(
+            "-o", out.toString(),
+            // A working tree, so `git submodule status` below has one to answer about.
+            "--no-bare",
+            "--root-repo", "backend",
+            "--dissolve-submodules",
+            path("backend.git"),
+            path("lib.git") + "::=vendor/lib",
+        )
+
+        // A dissolve changes what the output holds at that path, so the run says where it happened.
+        assertTrue(
+            result.output.contains("dissolved: the submodule at vendor/lib in backend"),
+            result.output,
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+
+            val root = repo.entriesOf(tip.tree)
+            // The synthesized wiring is gone with the gitlink it described: dropping the section but
+            // keeping the file would leave a .gitmodules the superproject never had.
+            assertEquals(listOf("a.txt", "vendor"), root.map { it.name })
+
+            val vendor = repo.entriesOf(root.single { it.name == "vendor" }.id).single()
+            assertEquals("lib", vendor.name)
+            assertEquals(FileMode.TREE, vendor.mode, "a real directory, not the pin")
+            assertEquals(listOf("src"), repo.entriesOf(vendor.id).map { it.name })
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("b", GitCli.run(out, "show", "main:vendor/lib/src/lib.kt").trim())
+            // Nothing left for git to resolve, which is the whole point of dissolving it.
+            assertEquals("", GitCli.run(out, "submodule", "status"))
+            // The library's own history is in the output under its own commits, not as one sha.
+            assertTrue(
+                GitCli.run(out, "log", "--format=%s", "main").contains("vendor/lib: b1"),
+                "the submodule's commits should be part of the braid",
+            )
         }
     }
 

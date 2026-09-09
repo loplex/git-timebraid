@@ -79,6 +79,12 @@ class TreeAssemblerTest {
 
     private fun placement(subdir: String, tree: ObjectId) = Placement(subdir, tree, ::entriesOf)
 
+    /** An assembler that lets an input land on a gitlink instead of colliding with it. */
+    private fun dissolving() = TreeAssembler(inserter, dissolveSubmodules = true)
+
+    /** The sha a superproject pinned its submodule at. Nothing here has to be able to resolve it. */
+    private val pinned: ObjectId = ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234")
+
     /** The repository placed at the output root, holding the given entries at its top level. */
     private fun root(vararg entries: TreeEntry) = Placement(null, treeOf(*entries), ::entriesOf)
 
@@ -372,6 +378,88 @@ class TreeAssemblerTest {
         }
         assertTrue(error.message!!.contains("subdirectory 'libs' collides"), error.message)
         assertTrue(error.message!!.contains("libs/abc123"), error.message)
+    }
+
+    @Test
+    fun `a gitlink at an input's destination collides until the run asks to dissolve it`() {
+        val error = assertThrows<IllegalArgumentException> {
+            assembler.assemble(
+                listOf(
+                    root(TreeEntry("vendor", FileMode.TREE, treeOf(TreeEntry("lib", FileMode.GITLINK, pinned)))),
+                    placement("vendor/lib", emptyTree()),
+                ),
+                at = { "backend/abc123" },
+            )
+        }
+        assertTrue(error.message!!.contains("'vendor/lib'"), error.message)
+        // The remedy is named, because a gitlink here is the one collision that has a second one.
+        assertTrue(error.message!!.contains("--dissolve-submodules"), error.message)
+    }
+
+    @Test
+    fun `a gitlink at a destination with another inside it collides until the run asks to dissolve it`() {
+        // The landing that gets spliced open is held to the same rule as one that does not.
+        val inputs = listOf(
+            root(TreeEntry("libs", FileMode.GITLINK, pinned)),
+            placement("libs", treeOf(TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")))),
+            placement("libs/webui", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b")))),
+        )
+
+        val error = assertThrows<IllegalArgumentException> { assembler.assemble(inputs, at = { "libs/abc123" }) }
+        assertTrue(error.message!!.contains("'libs'"), error.message)
+        assertTrue(error.message!!.contains("--dissolve-submodules"), error.message)
+
+        val tree = dissolving().assemble(inputs, at = { "libs/abc123" })
+        assertEquals(listOf("libs", "libs/a.txt", "libs/webui", "libs/webui/b.txt"), pathsOf(tree))
+    }
+
+    @Test
+    fun `dissolving puts the input's own tree where the gitlink was`() {
+        val tree = dissolving().assemble(
+            listOf(
+                root(
+                    TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
+                    TreeEntry("vendor", FileMode.TREE, treeOf(TreeEntry("lib", FileMode.GITLINK, pinned))),
+                ),
+                placement("vendor/lib", treeOf(TreeEntry("b.txt", FileMode.REGULAR_FILE, blob("b")))),
+            ),
+            at = { "backend/abc123" },
+        )
+
+        assertEquals(listOf("a.txt", "vendor", "vendor/lib", "vendor/lib/b.txt"), pathsOf(tree))
+        val lib = entriesOf(entriesOf(tree).first { it.name == "vendor" }.id).single()
+        assertEquals(FileMode.TREE, lib.mode, "the gitlink is gone, not merely pointed elsewhere")
+    }
+
+    @Test
+    fun `dissolving reaches only the destination, not a gitlink on the way to it`() {
+        // 'vendor' is a submodule and 'vendor/lib' is a path inside it, which is a path this braid
+        // never writes: there is no input at 'vendor' whose content could take the submodule's place.
+        val error = assertThrows<IllegalArgumentException> {
+            dissolving().assemble(
+                listOf(
+                    root(TreeEntry("vendor", FileMode.GITLINK, pinned)),
+                    placement("vendor/lib", emptyTree()),
+                ),
+                at = { "backend/abc123" },
+            )
+        }
+        assertTrue(error.message!!.contains("'vendor' is not a directory"), error.message)
+    }
+
+    @Test
+    fun `dissolving does not excuse an ordinary entry in the way`() {
+        val error = assertThrows<IllegalArgumentException> {
+            dissolving().assemble(
+                listOf(
+                    root(TreeEntry("vendor", FileMode.TREE, treeOf(TreeEntry("lib", FileMode.REGULAR_FILE, blob("x"))))),
+                    placement("vendor/lib", emptyTree()),
+                ),
+                at = { "backend/abc123" },
+            )
+        }
+        assertTrue(error.message!!.contains("'vendor/lib'"), error.message)
+        assertTrue(!error.message!!.contains("--dissolve-submodules"), error.message)
     }
 
     @Test
