@@ -26,7 +26,7 @@ import java.nio.file.Path
  * The output repository, opened for writing.
  *
  * The inputs' own objects arrive by [fetchFrom]; everything the braid invents on top of them —
- * the rewritten commits, the new root trees, the tag objects — is written through a single
+ * the rewritten commits, the new trees, the tag objects — is written through a single
  * [ObjectInserter], and where the storage backend allows it that inserter is a *pack* inserter,
  * because one pack file is the difference between a repository that opens instantly and a directory
  * holding tens of thousands of loose files.
@@ -44,8 +44,8 @@ class TargetRepository private constructor(
         (repository.objectDatabase as? ObjectDirectory)?.newPackInserter()
             ?: repository.newObjectInserter()
 
-    /** Builds root trees into this repository, deduplicating identical ones. */
-    val trees: RootTreeAssembler = RootTreeAssembler(inserter)
+    /** Builds the braid's trees into this repository, deduplicating identical ones. */
+    fun treeAssembler(): TreeAssembler = TreeAssembler(inserter)
 
     /**
      * Fetches everything reachable from [refs] in [source] into this repository, parking the refs

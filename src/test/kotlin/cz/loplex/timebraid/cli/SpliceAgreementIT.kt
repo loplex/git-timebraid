@@ -28,9 +28,10 @@ import kotlin.random.Random
  * they agree. Given the plan on its own, as [write] gives it, the writer answers for itself, and a
  * check too strict disagrees with it as plainly as one too lenient.
  *
- * Each layout is platform at the output root and backend at `backend`, with commit times drawn at
- * random, so platform's commits may come before backend's first or after it; and with the entry that
- * can meet backend drawn at random too, in platform's trees.
+ * Each layout is platform at the output root and backend at `backend` or at `libs/backend`, with
+ * commit times drawn at random, so platform's commits may come before backend's first or after it;
+ * and with the entries that can meet backend drawn at random too, in platform's trees: at the
+ * destination itself, or in the way of it.
  */
 class SpliceAgreementIT {
 
@@ -60,17 +61,22 @@ class SpliceAgreementIT {
                     r.branch("main", parent!!)
                 }
 
-            // platform's own backend/ only ever in its first commits, which makes it mostly gone
-            // before backend begins. Mostly: the times are drawn from one pool for both, so a first
-            // commit of platform's can still follow backend's first, and its backend/ is then a
-            // collision, refused like any other. A layout whose backend/ is gone by the time backend
-            // begins is the one a check reading platform's trees without the braid would refuse.
+            // platform's own entries in backend's way only ever in its first commits, which makes
+            // them mostly gone before backend begins. Mostly: the times are drawn from one pool for
+            // both, so a first commit of platform's can still follow backend's first, and what it
+            // holds is then a collision, refused like any other. A layout whose stray is gone by the
+            // time backend begins is the one a check reading platform's trees without the braid
+            // would refuse; a `libs/` holding something else is the one a check refusing the whole
+            // path would.
+            val destination = random.pick("backend", "libs/backend")
             val platformCommits = random.nextInt(1, 4)
             val strayUntil = random.nextInt(0, platformCommits + 1)
             repo("platform", List(platformCommits) {
                 mapOf("README.md" to "p$it") + if (it >= strayUntil) emptyMap() else random.pick(
-                    mapOf("backend/stray.txt" to "p"),
-                    mapOf("backend" to "a file"),
+                    mapOf("$destination/stray.txt" to "p"),
+                    mapOf(destination to "a file"),
+                    mapOf("libs" to "a file"),
+                    mapOf("libs/other.txt" to "p"),
                 )
             })
             repo("backend", List(random.nextInt(1, 3)) { mapOf("src/Main.kt" to "a$it") })
@@ -78,11 +84,11 @@ class SpliceAgreementIT {
             val inputs = listOf(
                 "--root-repo", "platform",
                 dir.resolve("platform.git").toString(),
-                dir.resolve("backend.git").toString(),
+                dir.resolve("backend.git").toString() + "::=$destination",
             )
             val dry = MergeCommand().test(listOf("--dry-run") + inputs)
             val out = dir.resolve("out.git")
-            val refusal = write(dir, out)
+            val refusal = write(dir, out, destination)
 
             assertEquals(
                 dry.statusCode == 0,
@@ -107,8 +113,8 @@ class SpliceAgreementIT {
      *
      * @return `null` when the output was written, or the writer's refusal.
      */
-    private fun write(dir: Path, out: Path): String? {
-        val destinations = mapOf("platform" to null, "backend" to "backend")
+    private fun write(dir: Path, out: Path, backendAt: String): String? {
+        val destinations = mapOf("platform" to null, "backend" to backendAt)
         val opened = destinations.keys.map { SourceRepository.open(dir.resolve("$it.git")) }
         try {
             val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER)

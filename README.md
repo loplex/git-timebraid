@@ -83,7 +83,7 @@ Three rules, in short:
 - **Parents.** The commit preceding `c` in that sequence is *prepended* to `c`'s parent list. Nothing
   is ever removed, so every original edge survives — and because the braided edge comes first,
   `git log --first-parent` walks the braid.
-- **Trees.** A commit's tree is its first parent's tree with its own subdirectory swapped in. Content
+- **Trees.** A commit's tree is its first parent's tree with its own destination swapped in. Content
   therefore accumulates along the braid: each subdirectory holds whatever its repository last
   committed at or before this point, and a repository that did not exist yet is simply not there.
   A subdirectory entry *is* the input's own tree object, so no blob is copied — the one file the braid
@@ -157,9 +157,52 @@ the last segment of its path. Name and placement are set separately:
 - `repo.git::name` is the repository's **identity** — the tag prefix, the provenance label, what
   `--root-repo` matches, and what has to be unique. It is how two inputs whose directories happen to
   share a name are told apart.
-- `repo.git=subdir` says **where the content lands**, and under the default `--subject-prefix` it
-  also heads the subject of each commit from that repository.
-- One repository may be placed at the root instead, with `--root-repo <name>`.
+- `repo.git::=subdir` says **where the content lands**, and under the default `--subject-prefix` it
+  also heads the subject of each commit from that repository. It may be a nested path
+  (`repo.git::=libs/backend`), and inputs sharing a prefix share the directory for it — so
+  `backend.git::=libs/backend webui.git::=apps/webui` gives the output a `libs/` and an `apps/`.
+  What no two inputs may do is contain each other: `libs` and `libs/backend` cannot both hold a
+  repository, because an input's content is placed as its own tree object and nothing fits beside it.
+- One repository may be placed at the root instead, with `--root-repo <name>`. A nested destination
+  reaching into a directory *that* repository already has is spliced: its own entries there and the
+  inputs placed inside it end up in one directory.
+
+### How an input is written
+
+```
+<path-or-url>[::[<name>][=<subdir>]]
+```
+
+Everything before the **last `::`** is the location, taken verbatim; everything after it is the name
+and the subdirectory. That is the whole rule — nothing is guessed, and an argument that cannot be
+read this way is refused rather than quietly reread.
+
+Two things follow, and between them they cover every location there is:
+
+- **The location needs no escaping**, `=` and `::` included. `~/repos/a=b` is simply a path. When
+  the location itself holds a `::`, end the argument with a bare `::` to say where it stops:
+  `~/repos/odd::name::` is that whole path with no name given, which asks for the derived one. That
+  settles the location, not the name: a name derived from a last segment git would not take in a
+  ref is refused, so the working spelling here is `~/repos/odd::name::oddname`. The bare `::` is
+  also what an IPv6 URL needs —
+  `https://[fe80::1]/repo.git::` — and what every refusal that comes out of a suffix suggests.
+- **In the name and the subdirectory**, `\` escapes: `\=`, `\\` and `\:` in the subdirectory, and
+  `\=` alone in a name, which cannot hold a `\` or a `:` (git refuses both in a ref). A bare `:` is
+  refused in either, which is what guarantees that an encoded suffix can never contain a `::` of its
+  own — so the last `::` in the argument is always the separator.
+
+```bash
+~/repos/webui.git                     # name and subdirectory both 'webui'
+~/repos/webui.git::frontend           # name 'frontend', subdirectory 'frontend'
+~/repos/webui.git::=apps/webui        # derived name 'webui', subdirectory 'apps/webui'
+~/repos/webui.git::ui=apps/webui      # name 'ui', subdirectory 'apps/webui'
+~/repos/a=b/c                         # a location holding a '='
+~/repos/odd::name::oddname            # a location holding a '::', named
+```
+
+A name is held to what git takes as one segment of a ref name: no `/`, no `:`, no space. That is
+not a gap: the name becomes a directory name for the clone of a remote input and a segment of a tag
+name, so one segment is what it means.
 
 **All branches**, recreated at the corresponding new commits (restrict with `-b`):
 
@@ -279,13 +322,22 @@ git-timebraid -o /tmp/merged \
     ~/repos/backend.git ~/repos/webui.git ~/repos/codegen.git
 ```
 
+Group the inputs under a layout of your own, two of them sharing `libs/`:
+
+```bash
+git-timebraid -o /tmp/merged \
+    ~/repos/backend.git::=libs/backend \
+    ~/repos/codegen.git::=libs/codegen \
+    ~/repos/webui.git::=apps/webui
+```
+
 Put the backend at the repository root and place `webui` in `ui/`, keeping its own name (so its
 tags stay `webui/v1.2`):
 
 ```bash
 git-timebraid -o /tmp/merged \
     --root-repo backend --mainline-branch main \
-    ~/repos/backend.git ~/repos/webui.git=ui ~/repos/codegen.git
+    ~/repos/backend.git ~/repos/webui.git::=ui ~/repos/codegen.git
 ```
 
 Recreate only two branches, and inspect the plan without writing the output repository:
@@ -301,7 +353,10 @@ git-timebraid \
 ### Options
 
 ```
-git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
+git-timebraid -o <dir> [OPTIONS] <repo>[::[<name>][=<subdir>]]...
+
+  the location is everything before the last '::', verbatim
+  <subdir> may be nested: <repo>::=libs/backend
 
   -o, --output DIR              output repository (must not exist, or must be an empty
                                 directory; --force also takes a non-empty one)

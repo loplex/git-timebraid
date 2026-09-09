@@ -271,7 +271,7 @@ class BraidPipelineIT {
 
         val a3 = OutputRepo.read(out).byOriginalSha.getValue(ids.getValue("a3").name)
         SourceRepository.open(out).use { repo ->
-            val top = repo.topLevelEntries(a3.tree).map { it.name }
+            val top = repo.entriesOf(a3.tree).map { it.name }
             // "f" is TestRepoBuilder's default file; it lands at the root, next to webui/.
             assertTrue(top.contains("f"), top.toString())
             assertTrue(top.contains("webui"), top.toString())
@@ -288,7 +288,7 @@ class BraidPipelineIT {
         val written = OutputRepo.read(out)
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(written.byOriginalSha.getValue(ids.getValue(name).name).tree)
+                repo.entriesOf(written.byOriginalSha.getValue(ids.getValue(name).name).tree)
                     .single { it.name == "webui" }.id
             // f1 forked off a2 (11:00) while webui was at b1 (10:00); the braid went on to b2 (13:00).
             assertEquals(webuiTreeOf("b1"), webuiTreeOf("f1"))
@@ -340,7 +340,7 @@ class BraidPipelineIT {
 
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(rewritten(name).tree).single { it.name == "webui" }.id
+                repo.entriesOf(rewritten(name).tree).single { it.name == "webui" }.id
             // The observable consequence: m shows webui/ as it stood before m's own recorded moment.
             assertEquals(webuiTreeOf("b1"), webuiTreeOf("m"))
             assertNotEquals(webuiTreeOf("b2"), webuiTreeOf("m"))
@@ -373,7 +373,7 @@ class BraidPipelineIT {
 
         SourceRepository.open(out).use { repo ->
             fun webuiTreeOf(name: String): ObjectId =
-                repo.topLevelEntries(rewritten(name).tree).single { it.name == "webui" }.id
+                repo.entriesOf(rewritten(name).tree).single { it.name == "webui" }.id
             assertEquals(webuiTreeOf("b2"), webuiTreeOf("m"))
         }
 
@@ -450,7 +450,7 @@ class BraidPipelineIT {
         val result = braid("-o", out.toString(), path("backend.git"), path("webui.git"))
 
         // The report states how many trees were written; it is well below one per commit.
-        val trees = Regex("(\\d+) root trees").find(result.output)?.groupValues?.get(1)?.toInt()
+        val trees = Regex("(\\d+) trees").find(result.output)?.groupValues?.get(1)?.toInt()
             ?: error("no tree count in:\n${result.output}")
         assertTrue(trees < 3, "expected tree reuse, wrote $trees trees for 3 commits")
         if (GitCli.available) GitCli.fsck(out)
@@ -472,6 +472,83 @@ class BraidPipelineIT {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("'webui'"), result.output)
         assertTrue(result.output.contains("collides"), result.output)
+    }
+
+    @Test
+    fun `nested destinations are built out and spliced into the root repository's own directory`() {
+        // platform owns libs/ already; backend is placed inside it, webui two levels down under a
+        // prefix nothing else has. The splice is the point: libs/ ends up holding both.
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch(
+                "main",
+                r.commit(
+                    "p1",
+                    files = mapOf("libs/README.md" to "the platform's own", "build.txt" to "x"),
+                    at = at("09:00"),
+                ),
+            )
+        }
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("10:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", files = mapOf("index.html" to "b"), at = at("11:00")))
+        }
+
+        val out = tmp.resolve("nested.git")
+        braid(
+            "-o", out.toString(),
+            "--root-repo", "platform",
+            path("platform.git"),
+            path("backend.git") + "::=libs/backend",
+            path("webui.git") + "::=apps/frontend/webui",
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("apps", "build.txt", "libs"), names(""))
+            // The root repository's own file and the input placed beside it, in one tree.
+            assertEquals(listOf("README.md", "backend"), names("libs"))
+            assertEquals(listOf("src"), names("libs/backend"))
+            assertEquals(listOf("index.html"), names("apps/frontend/webui"))
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("a", GitCli.run(out, "show", "main:libs/backend/src/Main.kt"))
+            assertEquals("the platform's own", GitCli.run(out, "show", "main:libs/README.md"))
+        }
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+    }
+
+    @Test
+    fun `a nested destination reaching into a file of the root repository is a clear error`() {
+        TestRepoBuilder.create(tmp.resolve("platform.git")).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("libs" to "a stray file where a directory is wanted")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r -> r.branch("main", r.commit("b1")) }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"),
+                "--root-repo", "platform",
+                path("platform.git"),
+                path("webui.git") + "::=libs/webui",
+            ),
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'libs'"), result.output)
+        assertTrue(result.output.contains("not a directory"), result.output)
     }
 
     @Test
@@ -570,8 +647,8 @@ class BraidPipelineIT {
         assertTrue(written.commits.any { it.message.contains(subject) }, "the subject was mangled")
         SourceRepository.open(out).use { repo ->
             val tip = repo.readReachable(listOf(repo.resolveBranch("main")!!)).first { it.message.contains(subject) }
-            val backend = repo.topLevelEntries(tip.tree).single { it.name == "backend" }
-            assertTrue(repo.topLevelEntries(backend.id).any { it.name == "café.txt" })
+            val backend = repo.entriesOf(tip.tree).single { it.name == "backend" }
+            assertTrue(repo.entriesOf(backend.id).any { it.name == "café.txt" })
         }
         if (GitCli.available) GitCli.fsck(out)
     }
@@ -666,7 +743,7 @@ class BraidPipelineIT {
 
         val tip = OutputRepo.read(out).byOriginalSha.getValue(b1.name)
         SourceRepository.open(out).use { repo ->
-            val top = repo.topLevelEntries(tip.tree).map { it.name }
+            val top = repo.entriesOf(tip.tree).map { it.name }
             assertTrue(top.contains("webui"), top.toString())
             assertTrue(top.none { it.isEmpty() || it == ".git" }, top.toString())
         }

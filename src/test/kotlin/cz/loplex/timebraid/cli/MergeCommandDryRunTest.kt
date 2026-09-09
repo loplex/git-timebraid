@@ -24,6 +24,8 @@ class MergeCommandDryRunTest {
     @TempDir
     lateinit var tmp: Path
 
+    private fun path(name: String) = tmp.resolve(name).toString()
+
     private fun corpus() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val a1 = repo.commit("a1", at = java.time.Instant.parse("2021-01-01T09:00:00Z"))
@@ -451,13 +453,13 @@ class MergeCommandDryRunTest {
                 "--dry-run",
                 "--root-repo", "backend",
                 tmp.resolve("backend.git").toString(),
-                tmp.resolve("webui.git").toString() + "=ui",
+                tmp.resolve("webui.git").toString() + "::=ui",
             )
         )
 
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("backend -> <root>"), result.output)
-        // "=ui" places the content; the repository is still called webui.
+        // "::=ui" places the content; the repository is still called webui.
         assertTrue(result.output.contains("webui -> ui/"), result.output)
     }
 
@@ -483,6 +485,74 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `an equals sign is part of the location unless a separator precedes it`() {
+        // `=<subdir>` lives inside the suffix, so a location holding a `=` needs no escaping and no
+        // guard: with no `::` in the argument, the whole of it is the location.
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/a=b/c"))
+
+        assertEquals(1, result.statusCode, result.output)
+        // Refused as a location that is not there. Every refusal quotes the argument, so the `=`
+        // turning up in the message would not tell one reading from another on its own.
+        assertTrue(result.output.contains("no git repository"), result.output)
+        // The segment carrying the `=` is the whole of what this is about: the rest of the location
+        // reaches the message as a path, and its separators are then the platform's rather than the
+        // ones written here.
+        assertTrue(result.output.contains("a=b"), result.output)
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
+    )
+    fun `a location holding the separator is ended by a bare one, and then named`() {
+        corpus()
+        val holding = tmp.resolve("odd::name")
+        tmp.resolve("backend.git").toFile().renameTo(holding.toFile())
+
+        // The location is now whole — but the name derived from it is not one git would take in a
+        // ref, so the argument has to say what the input is called.
+        val derived = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
+        assertEquals(1, derived.statusCode, derived.output)
+        assertTrue(derived.output.contains("cannot be a repository name"), derived.output)
+        assertTrue(derived.output.contains("give the input a name with <repo>::<name>"), derived.output)
+
+        val named = MergeCommand().test(
+            listOf("--dry-run", "$holding::oddname", path("webui.git"))
+        )
+        assertEquals(0, named.statusCode, named.output)
+        assertTrue(named.output.contains("oddname -> oddname/"), named.output)
+    }
+
+    @Test
+    fun `a location holding the separator without the remedy is refused, and the message says how`() {
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/a::b/c"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("is not a usable name"), result.output)
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
+    )
+    fun `a directory whose own name holds the separator is named in the refusal`() {
+        // The case the grammar cannot diagnose by itself: the part after `::` is a perfectly usable
+        // name, so nothing in the parse looks wrong and the run would fail naming only the location
+        // it was cut down to.
+        val holding = tmp.resolve("odd::name")
+        holding.createDirectories()
+
+        val result = MergeCommand().test(listOf("--dry-run", holding.toString()))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("its name holds a '::'"), result.output)
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
     fun `two inputs of one name are refused naming both locations`() {
         val first = tmp.resolve("libs/core")
         val second = tmp.resolve("tools/core")
@@ -501,37 +571,147 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `a separator that belongs to the location is left there`() {
-        // Both suffixes are recognised only before a bare word, so a path that happens to contain
-        // one is not split behind the user's back. Refused as a location: one that is not there,
-        // or on Windows, whose paths cannot hold a ':', one that is no path at all. A refusal of
-        // a suffix quotes the argument too, so the segment turning up in the message
-        // would not tell one reading from another on its own. The segment is still what the report
-        // is read for: the rest of the location reaches the message as a path, and its separators
-        // are then the platform's rather than the ones written here.
-        for (segment in listOf("a=b", "a::b")) {
-            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/$segment/c"))
+    fun `an IPv6 URL is refused with the remedy rather than read as a name`() {
+        // Both spellings git accepts for a literal address carry a `::`, and no guard second-guesses
+        // it any more: the argument is read as written and the way out is stated.
+        for (url in listOf("https://[fe80::1]/repo.git", "git@[::1]:repo.git")) {
+            val result = MergeCommand().test(listOf("--dry-run", url))
 
-            assertEquals(1, result.statusCode, result.output)
-            assertTrue(
-                result.output.contains("no git repository") || result.output.contains("is not a usable path"),
-                result.output,
-            )
-            assertTrue(result.output.contains(segment), result.output)
+            assertEquals(1, result.statusCode, "$url\n${result.output}")
+            assertTrue(result.output.contains("end the argument with '::'"), result.output)
         }
     }
 
     @Test
-    fun `a location that is not there names the suffix read off its end`() {
-        // Each suffix is read before a bare word, so a missing location written with one is
-        // reported cut short. Nothing is at either spelling, and the refusal says what was taken.
-        for ((suffix, read) in listOf("::libs" to "the name", "=libs" to "the subdirectory")) {
-            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/path$suffix"))
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the text after '::' cannot belong to the location",
+    )
+    fun `a location that is not there names the text the separator dropped`() {
+        // The part after `::` is a usable name, so nothing in the parse looks wrong. Nothing is at
+        // either spelling, and the refusal says what the `::` cut off, as it was written.
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/path::libs"))
 
-            assertEquals(1, result.statusCode, result.output)
-            assertTrue(result.output.contains("nothing at '/nonexistent/path'"), result.output)
-            assertTrue(result.output.contains("'$suffix' read off its end as $read"), result.output)
-        }
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("nothing at '/nonexistent/path'"), result.output)
+        assertTrue(result.output.contains("with '::libs' read off its end"), result.output)
+
+        // A name and a subdirectory are one suffix, quoted whole rather than taken for one part.
+        val both = MergeCommand().test(listOf("--dry-run", "/nonexistent/path::a=b"))
+        assertTrue(both.output.contains("with '::a=b' read off its end"), both.output)
+    }
+
+    @Test
+    fun `a missing location that ends in the bare separator is only a missing location`() {
+        // The bare `::` already says the location holds the separator, so there is nothing cut
+        // off to report and no remedy to offer: the refusal is the location's own.
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/path::"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no git repository at /nonexistent/path"), result.output)
+        assertTrue("end the argument with '::'" !in result.output, result.output)
+    }
+
+    @Test
+    fun `an empty name asks for the derived one`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::", path("webui.git") + "::=ui")
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> backend/"), result.output)
+        assertTrue(result.output.contains("webui -> ui/"), result.output)
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a subdirectory is a directory name, and a Windows one cannot hold a ':'",
+    )
+    fun `a colon in the subdirectory is written with a backslash`() {
+        // Not in the name: git refuses a ':' in a ref name, and the name becomes a tag prefix.
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::odd=odd\\:dir", path("webui.git"))
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("odd -> odd:dir/"), result.output)
+    }
+
+    @Test
+    fun `a bare colon in the suffix is refused rather than reread`() {
+        // What keeps the grammar provable: an encoded suffix holds no literal `::`, so the last one
+        // in the argument is always the separator.
+        val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::odd:name"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("has to be written"), result.output)
+    }
+
+    @Test
+    fun `an equals sign in a name or a subdirectory is escaped too`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::odd\\=name=libs/a\\=b", path("webui.git"))
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("odd=name -> libs/a=b/"), result.output)
+    }
+
+    @Test
+    fun `a name git would not accept in a ref is refused here`() {
+        // The name becomes part of a ref wherever one carries it (a tag, a shared branch, a
+        // --keep-remotes mirror), so this used to surface only at the write of the first such ref,
+        // once the braid was written, and an input no ref carried went through.
+        val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::odd~name"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot be a repository name"), result.output)
+        // The name came out of the suffix, so the remedy is the suffix's, not a name to give.
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+        assertTrue("give the input a name" !in result.output, result.output)
+    }
+
+    @Test
+    fun `an equals sign with nothing after it is refused`() {
+        val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::name="))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("names no subdirectory"), result.output)
+        // A refusal out of the suffix, so it says how to keep a '::' in the location.
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
+    fun `a nested subdirectory places an input below the output root`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run",
+                tmp.resolve("backend.git").toString() + "::=libs/backend",
+                tmp.resolve("webui.git").toString() + "::=apps/webui",
+            )
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> libs/backend/"), result.output)
+        assertTrue(result.output.contains("webui -> apps/webui/"), result.output)
+    }
+
+    @Test
+    fun `a subdirectory with an unusable segment is refused before anything is read`() {
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/backend.git::=libs//backend"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("not a usable subdirectory"), result.output)
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
     }
 
     @Test
@@ -582,21 +762,6 @@ class MergeCommandDryRunTest {
 
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("frontend -> ui/"), result.output)
-    }
-
-    @Test
-    fun `a name git would not accept in a ref is refused here`() {
-        // The name becomes part of a ref wherever one carries it (a tag, a shared branch, a
-        // --keep-remotes mirror), so this used to surface only at the write of the first such ref,
-        // once the braid was written, and an input no ref carried went through.
-        val result = MergeCommand().test(
-            listOf("--dry-run", tmp.resolve("backend.git").toString() + "::odd~name")
-        )
-
-        assertEquals(1, result.statusCode, result.output)
-        assertTrue(result.output.contains("cannot be a repository name"), result.output)
-        // The argument named the input already, so there is no name to tell it to give.
-        assertTrue("give the input a name" !in result.output, result.output)
     }
 
     @Test
