@@ -15,6 +15,13 @@ import org.junit.jupiter.api.assertThrows
  */
 class SubmoduleWiringTest {
 
+    /**
+     * The output names, which nothing but these assertions asks for: [SubmoduleWiring.merge] reports
+     * a collision by walking the sections itself, so the class carries no name set of its own.
+     */
+    private val RewiredGitmodules.names: Set<String>
+        get() = sections.mapTo(LinkedHashSet()) { it.name }
+
     private fun rewire(text: String, subdir: String?, repo: String = "A") =
         SubmoduleWiring.rewire(text, subdir, repo) { "$repo/abc123" }
 

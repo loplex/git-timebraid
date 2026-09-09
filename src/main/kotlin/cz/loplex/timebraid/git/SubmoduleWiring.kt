@@ -6,15 +6,24 @@ import org.eclipse.jgit.lib.Config
 /**
  * One input's `.gitmodules`, rewritten for the place that input's content takes in the output.
  *
- * [text] is config text holding nothing but `[submodule "…"]` sections, which is what lets the
- * output's file be built by concatenating these: a section is self-contained, so joining valid
- * config texts whose section names do not overlap yields valid config without a second parse.
+ * The sections are held apart rather than as one blob of text because a section is the unit this
+ * class works in: [SubmoduleWiring.rewire] prefixes a name and a path one section at a time, and
+ * [SubmoduleWiring.merge] joins them without a second parse, which is only valid because a
+ * `[submodule "…"]` section is self-contained.
  */
-class RewiredGitmodules(
-    val text: String,
-    /** Output names of those sections, kept so a collision between two inputs can be reported. */
-    val names: Set<String>,
-)
+class RewiredGitmodules(val sections: List<Section>) {
+
+    /** One `[submodule "…"]` section, already in the output's coordinates. */
+    class Section(
+        /** The section's subsection name, prefixed for the output. */
+        val name: String,
+        /** The section on its own, as config text. */
+        val text: String,
+    )
+
+    /** The sections as one config text. */
+    val text: String get() = sections.joinToString("") { it.text }
+}
 
 /**
  * Rebuilds the `.gitmodules` of the inputs into the one the output needs.
@@ -51,7 +60,7 @@ object SubmoduleWiring {
      * Having a value for that case rather than a `null` is what lets the writer cache the answer for
      * every tree it looks at, including the overwhelmingly common one where there is nothing to find.
      */
-    val NOTHING = RewiredGitmodules("", emptySet())
+    val NOTHING = RewiredGitmodules(emptyList())
 
     /**
      * [text] as it should appear in the output, given that the input's content lands in [subdir] —
@@ -71,11 +80,10 @@ object SubmoduleWiring {
             )
         }
 
-        val output = Config()
-        val names = LinkedHashSet<String>()
+        val sections = ArrayList<RewiredGitmodules.Section>()
         for (name in input.getSubsections(SUBMODULE)) {
             val outputName = prefixed(name, subdir)
-            names += outputName
+            val output = Config()
             for (key in input.getNames(SUBMODULE, name)) {
                 val values = input.getStringList(SUBMODULE, name, key).toList()
                 val rewritten =
@@ -83,8 +91,9 @@ object SubmoduleWiring {
                     else values
                 output.setStringList(SUBMODULE, outputName, key, rewritten)
             }
+            sections += RewiredGitmodules.Section(outputName, output.toText())
         }
-        return RewiredGitmodules(output.toText(), names)
+        return RewiredGitmodules(sections)
     }
 
     /**
@@ -93,17 +102,16 @@ object SubmoduleWiring {
      * would be a change to the tree for no reason.
      */
     fun merge(parts: List<RewiredGitmodules>, at: () -> String): String? {
-        val claimed = HashMap<String, Int>()
-        for ((index, part) in parts.withIndex()) {
-            for (name in part.names) {
-                val first = claimed.putIfAbsent(name, index)
-                require(first == null) {
+        val claimed = HashSet<String>()
+        for (part in parts) {
+            for (section in part.sections) {
+                require(claimed.add(section.name)) {
                     // A blank name takes no prefix, so no subdirectory moves one off another.
-                    if (name.isBlank()) {
+                    if (section.name.isBlank()) {
                         "two inputs both describe a submodule with a blank name at ${at()}; " +
                             "no subdirectory parts them, only renaming that section in one input"
                     } else {
-                        "two inputs both describe a submodule named '$name' at ${at()}; " +
+                        "two inputs both describe a submodule named '${section.name}' at ${at()}; " +
                             "give one of them another subdirectory with <repo>::=<subdir>"
                     }
                 }
