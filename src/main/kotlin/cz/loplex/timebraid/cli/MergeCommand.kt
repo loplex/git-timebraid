@@ -268,7 +268,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             merged.firstOrNull { it.subdir == null && it.name != root }?.let { base ->
                 throw UsageError(
                     "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
-                        "repository ('${base.name}') and lands at the output root — give that one " +
+                        "repository ('${base.name}') and lands at the output root -- give that one " +
                         "a subdirectory with <repo>::=<subdir> to move it off"
                 )
             }
@@ -300,9 +300,9 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     private fun duplicateNames(names: List<String>): UsageError {
         val repeated = names.groupingBy { it }.eachCount().filterValues { it > 1 }.keys.sorted()
         val remedy = if (scan == null) {
-            " — give one of them a name with <repo>::<name>"
+            " -- give one of them a name with <repo>::<name>"
         } else {
-            " — name a scanned repository by giving its directory as an argument, " +
+            " -- name a scanned repository by giving its directory as an argument, " +
                 "e.g. '<base>/libs/core::libs-core'"
         }
         return UsageError("two inputs resolve to the same repository name: $repeated$remedy")
@@ -335,7 +335,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         if (!whole.isDirectory() || location.exists()) return
         throw UsageError(
             "'$raw' is a directory, but its name holds a '::', so it was read as the location " +
-                "'${spec.location}' with the name '${spec.name}' — end the argument with '::' to " +
+                "'${spec.location}' with the name '${spec.name}' -- end the argument with '::' to " +
                 "mean the whole path"
         )
     }
@@ -512,7 +512,7 @@ private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageE
  * cause is the same and the way out is not obvious.
  */
 private const val REMEDY =
-    " — if that '::' belongs to the location, end the argument with '::' to say so"
+    " -- if that '::' belongs to the location, end the argument with '::' to say so"
 
 /**
  * [suffix] split at the first `=` that is not escaped: the name, and the subdirectory or `null`

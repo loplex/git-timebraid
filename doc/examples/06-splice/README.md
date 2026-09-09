@@ -25,7 +25,7 @@ $ mvn -q exec:java -Dexec.args="-o doc/examples/06-splice/output-no-splice --no-
     doc/examples/06-splice/input/platform::=libs \
     doc/examples/06-splice/input/backend::=libs/backend"
 
-'libs' and 'libs/backend' cannot both hold a repository — one contains the other, and content
+'libs' and 'libs/backend' cannot both hold a repository -- one contains the other, and content
 placed as a single tree object leaves no room beside it. Pass --splice to open the containing
 repository's tree and place the other inside it.
 ```

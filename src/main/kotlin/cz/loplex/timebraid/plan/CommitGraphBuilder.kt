@@ -69,7 +69,7 @@ internal class CommitGraphBuilder {
             val listed = missing.take(10).joinToString(", ")
             val more = if (missing.size > 10) ", ... (${missing.size} in total)" else ""
             "referenced as a parent but never added: $listed$more" +
-                " — the input history is incomplete (a shallow or partial clone?)"
+                " -- the input history is incomplete (a shallow or partial clone?)"
         }
 
         return CommitGraph(sources.keys.toList(), commits.toList())
