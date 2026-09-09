@@ -1,0 +1,14 @@
+repositories:
+  platform -> <root>
+  webui -> apps/webui/
+  backend -> libs/backend/
+  core -> libs/core/
+  tools-core -> tools/core/
+commits: 5 (braid: 5)
+parent counts: 0 -> 1, 1 -> 4
+
+000000 * platform/47f93d2759cac44b279ccfde668fbf9e983762ef @1700036000 parents=[] content=[platform=47f93d2759cac44b279ccfde668fbf9e983762ef]
+000001 * backend/54a23409f7f4912fcb6845ca3c48a2c1a5a406eb @1700072000 parents=[platform/47f93d2759cac44b279ccfde668fbf9e983762ef] content=[platform=47f93d2759cac44b279ccfde668fbf9e983762ef, backend=54a23409f7f4912fcb6845ca3c48a2c1a5a406eb]
+000002 * core/a2e404947e86357bbe92a3f8258aa144e2431af6 @1700090000 parents=[backend/54a23409f7f4912fcb6845ca3c48a2c1a5a406eb] content=[platform=47f93d2759cac44b279ccfde668fbf9e983762ef, backend=54a23409f7f4912fcb6845ca3c48a2c1a5a406eb, core=a2e404947e86357bbe92a3f8258aa144e2431af6]
+000003 * tools-core/6a9f024afe22326c5c9f77abbba9af4920cbca41 @1700108000 parents=[core/a2e404947e86357bbe92a3f8258aa144e2431af6] content=[platform=47f93d2759cac44b279ccfde668fbf9e983762ef, backend=54a23409f7f4912fcb6845ca3c48a2c1a5a406eb, core=a2e404947e86357bbe92a3f8258aa144e2431af6, tools-core=6a9f024afe22326c5c9f77abbba9af4920cbca41]
+000004 * webui/1049b79d2ed7f1ef287606e72ea50bff69910ad5 @1700126000 parents=[tools-core/6a9f024afe22326c5c9f77abbba9af4920cbca41] content=[platform=47f93d2759cac44b279ccfde668fbf9e983762ef, webui=1049b79d2ed7f1ef287606e72ea50bff69910ad5, backend=54a23409f7f4912fcb6845ca3c48a2c1a5a406eb, core=a2e404947e86357bbe92a3f8258aa144e2431af6, tools-core=6a9f024afe22326c5c9f77abbba9af4920cbca41]
