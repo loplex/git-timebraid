@@ -49,12 +49,15 @@ destination, a tag prefix and `--root-repo` are all written in terms of.
 
 ## How the `output` directories were generated
 
-The real CLI, e.g. for example 01:
+The real CLI, e.g. for example 01. `./git-timebraid` is the wrapper in the repo root: it runs
+`target/git-timebraid.jar`, so a line below can be copied and run from there once the jar is built.
+The `$ git -C output…` and `$ git -C input/…` lines in each example are written from the example's
+own directory instead, which is where those paths lead.
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
+./git-timebraid -o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
-    doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B"
+    doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B
 ```
 
 `--no-bare` so the output has a working tree, browsable directly; `--order-by committer` is already
@@ -66,9 +69,9 @@ Each example's own README gives its exact invocation.
 The same CLI, with every ref opted into the interleave:
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph \
-    --no-bare --order-by committer --interleave-ref * \
-    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
+./git-timebraid -o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
+    --order-by committer --interleave-ref '*' \
+    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
 ```
 
 `--interleave-ref` puts a matched ref's ancestry in scope, so a mainline merge that merges it in
@@ -79,6 +82,31 @@ merge of the mainline chains, which is the default.
 
 Neither output needs code of its own, and that is the same seam twice: the braid is a parameter, and
 the write order is derived from the braided graph rather than supplied alongside it.
+
+## What keeps these honest
+
+`.github/scripts/check-examples.py`, run by the `examples reproduce` job in CI: it clears the
+generated directories and the tracked `plan.txt` files, reruns `build-inputs.sh`, replays every
+invocation these READMEs document, and compares what came back against every `git` output they
+quote, plus `git diff --exit-code` over the plans, where one no invocation wrote again shows as
+deleted. It prints how many of each it checked; the numbers are not repeated here, where nothing
+would hold them to the run. Run it locally the same way, after a `mvn -DskipTests package`.
+
+**Which means the format below is load-bearing.** Editing an example means keeping to it:
+
+| In a fenced block     | What it means                                                                                                      |
+|-----------------------|--------------------------------------------------------------------------------------------------------------------|
+| `./git-timebraid …`   | an invocation that must succeed; its output is not compared                                                        |
+| `$ ./git-timebraid …` | an invocation whose output must contain the lines below it — its closing report, or the refusal being demonstrated |
+| `$ git …`             | run in the example's own directory; its output must match the lines below it exactly, with nothing on stderr       |
+
+Lines belong to the command above them and nowhere else, so a block with no command in it is never
+read as output — which is what leaves the `<name>@<n>` input notation and example 02's summary of
+the two orderings free to be what they are. Four liberties are taken when comparing: an object id
+written with a trailing `…` matches any id starting that way (written out in full, it has to match
+in full), runs of whitespace collapse, an inline `# …` annotation is stripped, and a line reading
+`(no output)` stands for no output at all — from a command that wrote nothing to stderr either,
+since a command that failed prints nothing on stdout.
 
 ## How the braid is built (examples 01–04)
 

@@ -50,11 +50,10 @@ exist for any of this to work.
 
 <!-- wide block: the refusal is quoted as the program prints it, flag and object id and all -->
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/07-dissolve-submodule/output-no-dissolve \
-    --no-bare \
+$ ./git-timebraid -o doc/examples/07-dissolve-submodule/output-no-dissolve --no-bare \
     --root-repo super \
     doc/examples/07-dissolve-submodule/input/super \
-    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib"
+    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib
 
 one repository cannot be placed inside another where it is:
   - 'vendor/lib' is a submodule of super, so --dissolve-submodules would replace it with that repository's own content at super/1b5780ff3cc5292ca34a492d0a96ad8349085b72
@@ -72,11 +71,11 @@ for a root repository asked for.
 ## Command
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/07-dissolve-submodule/output --no-bare \
+$ ./git-timebraid -o doc/examples/07-dissolve-submodule/output --no-bare \
     --root-repo super --dissolve-submodules \
     --plan-out doc/examples/07-dissolve-submodule/plan.txt \
     doc/examples/07-dissolve-submodule/input/super \
-    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib"
+    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib
 dissolved: the submodule at vendor/lib in super replaced by its own content at 3 commits
 repositories:
   super -> <root>

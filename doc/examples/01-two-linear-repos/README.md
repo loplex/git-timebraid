@@ -15,9 +15,9 @@ Built by `build-inputs.sh`; both repos have a single `main` branch.
 ## Command
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
+./git-timebraid -o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
-    doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B"
+    doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B
 ```
 
 Mainline branch auto-detected as `main` (present in both inputs).

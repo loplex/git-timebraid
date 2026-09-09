@@ -24,8 +24,8 @@ the scanned tree and takes no part in the run.
 
 <!-- wide block: the refusal is quoted as the program prints it, one line naming both locations -->
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/08-scan/output-unnamed --no-bare \
-    --scan doc/examples/08-scan/input/platform"
+$ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
+    --scan doc/examples/08-scan/input/platform
 
 Usage: git-timebraid [<options>] [<repo>]...
 
@@ -39,10 +39,10 @@ was not given, so it refuses and says how to give one.
 ## Command
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/08-scan/output --no-bare \
+$ ./git-timebraid -o doc/examples/08-scan/output --no-bare \
     --scan doc/examples/08-scan/input/platform \
     --plan-out doc/examples/08-scan/plan.txt \
-    doc/examples/08-scan/input/platform/tools/core::tools-core"
+    doc/examples/08-scan/input/platform/tools/core::tools-core
 repositories:
   platform -> <root>
   webui -> apps/webui/

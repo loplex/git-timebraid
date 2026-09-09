@@ -18,11 +18,11 @@ purpose — the trees are what this example is about.
 ## Command
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/05-nested-layout/output --no-bare \
+./git-timebraid -o doc/examples/05-nested-layout/output --no-bare \
     --plan-out doc/examples/05-nested-layout/plan.txt \
     doc/examples/05-nested-layout/input/backend::=libs/backend \
     doc/examples/05-nested-layout/input/codegen::=libs/codegen \
-    doc/examples/05-nested-layout/input/webui::=apps/webui"
+    doc/examples/05-nested-layout/input/webui::=apps/webui
 ```
 
 `::=` gives only the destination, so each name stays the one derived from the directory — `backend`,

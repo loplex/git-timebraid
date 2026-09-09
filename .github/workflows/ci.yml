@@ -84,6 +84,46 @@ jobs:
             target/failsafe-reports/
           if-no-files-found: ignore
 
+  # doc/examples is the one place the tool's output is quoted to a reader verbatim, as something
+  # they can reproduce. `mvn verify` proves the behaviour; it says nothing about whether the
+  # READMEs still describe that behaviour correctly, and those are different claims. This job
+  # rebuilds the fixtures, replays every invocation the READMEs document, and compares what came
+  # back against what they show.
+  #
+  # One platform and one JDK on purpose: the fixtures are built by a bash script and the outputs
+  # hold the same commits by design, so a second platform would re-check determinism the matrix
+  # above already covers, while adding a Windows bash dependency to the examples that they do not
+  # have.
+  examples:
+    name: examples reproduce
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Show git version
+        run: git --version
+
+      # One packaged jar rather than a Maven JVM per invocation: check-examples.py runs every
+      # documented `./git-timebraid` line as `java -jar target/git-timebraid.jar`, which is what
+      # the wrapper in the repo root does, and the READMEs are written in terms of that wrapper.
+      - name: Package
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Replay doc/examples
+        run: .github/scripts/check-examples.py
+
+      - name: Show what drifted
+        if: failure()
+        run: git diff -- doc/examples
+
   # Everything the jar says about its own contents, checked against the jar. Two failures live
   # here, and neither one shows up as a broken build on its own.
   #
@@ -136,8 +176,9 @@ jobs:
   # A renamed section leaves the links that pointed into it aimed at an anchor which no longer
   # exists, and the rendered page gives no sign of that -- the link just lands at the top of the
   # file. An overlong code block goes just as quietly, from the other side: GitHub scrolls a block
-  # rather than wrapping it, so the end of the line sits behind a scrollbar. `mvn verify` cannot
-  # see either one: it tests behaviour. This reads the documents themselves.
+  # rather than wrapping it, so the end of the line sits behind a scrollbar. Neither `mvn verify`
+  # nor the examples job can see either one: the first tests behaviour, the second compares quoted
+  # command output. This reads the documents themselves.
   #
   # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
   # job wants nothing but a checkout, and it finishes in under a second.

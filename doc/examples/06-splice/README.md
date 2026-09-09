@@ -22,9 +22,9 @@ platform-collide: p1@10 <- p3@50     notes.md, then backend/README.md
 
 <!-- wide block: the refusal is quoted as the program prints it, on one line -->
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/06-splice/output-no-splice --no-bare \
+$ ./git-timebraid -o doc/examples/06-splice/output-no-splice --no-bare \
     doc/examples/06-splice/input/platform::=libs \
-    doc/examples/06-splice/input/backend::=libs/backend"
+    doc/examples/06-splice/input/backend::=libs/backend
 
 'libs' and 'libs/backend' cannot both hold a repository -- one contains the other, and content placed as a single tree object leaves no room beside it. Pass --splice to open the containing repository's tree and place the other inside it.
 ```
@@ -37,10 +37,10 @@ which a typo and an intention look identical from.
 ## Command
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/06-splice/output --no-bare --splice \
+$ ./git-timebraid -o doc/examples/06-splice/output --no-bare --splice \
     --plan-out doc/examples/06-splice/plan.txt \
     doc/examples/06-splice/input/platform::=libs \
-    doc/examples/06-splice/input/backend::=libs/backend"
+    doc/examples/06-splice/input/backend::=libs/backend
 spliced: libs/backend inside libs at 3 commits, no collision
 repositories:
   platform -> libs/
@@ -78,10 +78,9 @@ on the paths, it is answered per commit:
 
 <!-- wide block: the collision is quoted as the program prints it, object id and all -->
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/06-splice/output-collision \
-    --no-bare --splice \
+$ ./git-timebraid -o doc/examples/06-splice/output-collision --no-bare --splice \
     'doc/examples/06-splice/input/platform-collide::platform=libs' \
-    doc/examples/06-splice/input/backend::=libs/backend"
+    doc/examples/06-splice/input/backend::=libs/backend
 
 one repository cannot be placed inside another where it is:
   - subdirectory 'libs/backend' collides with an entry of the same name in platform at platform/b2f08e9e981466ace65aa1feacc5b442f000c54c

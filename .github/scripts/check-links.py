@@ -4,7 +4,8 @@
 The docs link into each other: README.md, CHANGELOG.md and everything under doc/, the worked
 examples included. A section renamed in one of them leaves a link in another pointing at an anchor
 that no longer exists, and the rendered page gives no sign of it -- the link simply lands at the
-top of the file. `mvn verify` cannot see this: it tests the program, not its prose.
+top of the file. `mvn verify` cannot see this and neither can check-examples.py, which compares
+quoted command output rather than prose.
 
 Three things are checked:
 
@@ -73,7 +74,7 @@ def documents() -> list[pathlib.Path]:
     `git ls-files` and not a filesystem glob, because the worked examples generate Markdown under
     `doc/examples/*/input/` and `*/output/`. .gitignore covers those, a glob does not, and they are
     not documentation anyone here can hold to a rule. A CI runner never sees them: this runs in the
-    `docs` job, which builds no example.
+    `docs` job and check-examples.py writes them in `examples`, which is a checkout of its own.
     Whoever has run the examples locally does see them, and that is the case being guarded against.
 
     Everything tracked, rather than README.md plus CHANGELOG.md plus a doc/ glob: a hand-kept list

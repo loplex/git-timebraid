@@ -41,17 +41,17 @@ $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
 Production (the real CLI):
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output --no-bare \
+./git-timebraid -o doc/examples/02-merge-with-late-branch/output --no-bare \
     --order-by committer --plan-out doc/examples/02-merge-with-late-branch/plan.txt \
-    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
+    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
 ```
 
 The whole-graph contrast, from the same CLI with every ref opted in:
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph \
-    --no-bare --order-by committer --interleave-ref * \
-    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
+./git-timebraid -o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
+    --order-by committer --interleave-ref '*' \
+    doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
 ```
 
 ## Result

@@ -43,7 +43,7 @@ def documents() -> list[pathlib.Path]:
     `git ls-files` and not a filesystem glob, because the worked examples generate Markdown under
     `doc/examples/*/input/` and `*/output/`. .gitignore covers those, a glob does not, and they are
     not documentation anyone here can hold to a rule. A CI runner never sees them: this runs in the
-    `docs` job, which builds no example.
+    `docs` job and check-examples.py writes them in `examples`, which is a checkout of its own.
     Whoever has run the examples locally does see them, and that is the case being guarded against.
 
     Everything tracked, rather than README.md plus CHANGELOG.md plus a doc/ glob: a hand-kept list

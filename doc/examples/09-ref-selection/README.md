@@ -34,9 +34,9 @@ directory, so they can be compared side by side.
 ### Everything (the default)
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/09-ref-selection/output --no-bare \
+$ ./git-timebraid -o doc/examples/09-ref-selection/output --no-bare \
     --plan-out doc/examples/09-ref-selection/plan.txt \
-    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui"
+    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
 commits: 5 (braid: 4)
 refs: 2 branches, 3 tags, HEAD -> main
 ```
@@ -62,10 +62,9 @@ of the braid.
 ### Narrowed to one branch, and this is the one that bites
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/09-ref-selection/output-branch-only \
-    --no-bare \
+$ ./git-timebraid -o doc/examples/09-ref-selection/output-branch-only --no-bare \
     -b main \
-    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui"
+    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
 commits: 4 (braid: 4)
 refs: 1 branches, 0 tags, HEAD -> main
 ```
@@ -87,10 +86,9 @@ was read, so a run like this still pulled in whatever the tags could reach. See
 ### One branch, keeping the tags
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/09-ref-selection/output-branch-and-tags \
-    --no-bare \
+$ ./git-timebraid -o doc/examples/09-ref-selection/output-branch-and-tags --no-bare \
     -b main --ref 'refs/tags/*' \
-    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui"
+    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
 commits: 5 (braid: 4)
 refs: 1 branches, 3 tags, HEAD -> main
 ```
@@ -112,10 +110,9 @@ it.
 ### A glob over a nested branch name
 
 ```
-$ mvn -q compile exec:java -Dexec.args="-o doc/examples/09-ref-selection/output-release-glob \
-    --no-bare \
+$ ./git-timebraid -o doc/examples/09-ref-selection/output-release-glob --no-bare \
     --ref 'refs/heads/release/*' \
-    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui"
+    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
 commits: 5 (braid: 4)
 refs: 2 branches, 0 tags, HEAD -> main
 ```
