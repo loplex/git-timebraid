@@ -32,8 +32,9 @@ class RewiredGitmodules(
  *
  * A section's *name* is prefixed as well, not just its path. The name is what git uses to store a
  * populated submodule under `.git/modules/`, so two inputs whose submodules happen to share a name
- * would otherwise be handed the same directory. Subdirectory names are unique and contain no `/`,
- * which makes `<subdir>/<name>` unique by construction.
+ * would otherwise be handed the same directory. `<subdir>/<name>` is unique by construction because
+ * no destination contains another — the planner refuses that pair, which is also what keeps
+ * `libs/a` with a section `b/x` from colliding with `libs/a/b` and its section `x`.
  */
 object SubmoduleWiring {
 
@@ -49,8 +50,8 @@ object SubmoduleWiring {
     val NOTHING = RewiredGitmodules("", emptySet())
 
     /**
-     * [text] as it should appear in the output, given that the input's content lands in [subdir]
-     * (`null` for the `--root-repo`, whose paths are already the output's paths).
+     * [text] as it should appear in the output, given that the input's content lands in [subdir] —
+     * possibly a nested path (`null` for the `--root-repo`, whose paths are already the output's).
      *
      * [repo] and [at] only name the input and the commit in an error message.
      */
@@ -94,7 +95,7 @@ object SubmoduleWiring {
                 val first = claimed.putIfAbsent(name, index)
                 require(first == null) {
                     "two inputs both describe a submodule named '$name' at ${at()}; " +
-                        "give one of them another subdirectory with <repo>=<subdir>"
+                        "give one of them another subdirectory with <repo>::=<subdir>"
                 }
             }
         }

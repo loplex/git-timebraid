@@ -164,7 +164,7 @@ class BraidWriterTest {
         val written = read(out)
 
         SourceRepository.open(out).use { repo ->
-            fun entries(name: String) = repo.topLevelEntries(new(written, name).tree).associate {
+            fun entries(name: String) = repo.entriesOf(new(written, name).tree).associate {
                 it.name to it.id
             }
 
@@ -184,7 +184,7 @@ class BraidWriterTest {
             val b2Tree = source.readReachable(listOf(original.getValue("b2")))
                 .single { it.id == original.getValue("b2") }.tree
             SourceRepository.open(out).use { repo ->
-                val entry = repo.topLevelEntries(new(written, "a3").tree).single { it.name == "webui" }
+                val entry = repo.entriesOf(new(written, "a3").tree).single { it.name == "webui" }
                 assertEquals(b2Tree, entry.id)
             }
         }
@@ -272,7 +272,7 @@ class BraidWriterTest {
             // "f" is the file TestRepoBuilder puts in every commit; it lands at the root, next to webui/.
             assertEquals(
                 setOf("f", "webui"),
-                repo.topLevelEntries(new(written, "a3").tree).map { it.name }.toSet(),
+                repo.entriesOf(new(written, "a3").tree).map { it.name }.toSet(),
             )
         }
     }

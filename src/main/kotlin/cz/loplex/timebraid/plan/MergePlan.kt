@@ -222,16 +222,45 @@ class MergePlan private constructor(
             require(subdirs.values.count { it == null } <= 1) {
                 "at most one repository can be placed at the root"
             }
-            val seen = HashSet<String>()
+            val seen = LinkedHashSet<String>()
             for ((source, subdir) in subdirs) {
                 if (subdir == null) continue
-                require(subdir.isNotBlank() && !subdir.contains('/') && subdir != "." && subdir != "..") {
-                    "'$subdir' is not a usable subdirectory name for $source"
+                require(isUsableSubdir(subdir)) {
+                    "'$subdir' is not a usable subdirectory path for $source"
                 }
                 require(seen.add(subdir)) {
                     "two repositories would be placed in the same subdirectory '$subdir'"
                 }
             }
+            for (subdir in seen) {
+                var slash = subdir.indexOf('/')
+                while (slash >= 0) {
+                    val above = subdir.substring(0, slash)
+                    require(above !in seen) {
+                        "'$above' and '$subdir' cannot both hold a repository — one contains the " +
+                            "other, and content placed as a single tree object leaves no room " +
+                            "beside it"
+                    }
+                    slash = subdir.indexOf('/', slash + 1)
+                }
+            }
         }
+
+        /**
+         * Whether [subdir] is a path the output can hold: one or more `/`-separated segments, each
+         * of them a name git will both store and check out.
+         *
+         * `.git` is refused at every level, and not only as a matter of taste: a tree carrying an
+         * entry of that name is one git declines to check out and `git fsck` reports, so the entry
+         * would be written and then be unusable. The exotic spellings git also guards against —
+         * `.git.`, `git~1`, unicode look-alikes — are not covered here.
+         */
+        private fun isUsableSubdir(subdir: String): Boolean =
+            subdir.split('/').all { segment ->
+                segment.isNotBlank() &&
+                    segment != "." &&
+                    segment != ".." &&
+                    !segment.equals(".git", ignoreCase = true)
+            }
     }
 }

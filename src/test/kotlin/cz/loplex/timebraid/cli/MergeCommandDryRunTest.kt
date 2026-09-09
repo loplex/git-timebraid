@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 
 /** The CLI paths that stop short of writing: `--dry-run`, `--plan-out`, and the option checks. */
@@ -15,6 +16,8 @@ class MergeCommandDryRunTest {
 
     @TempDir
     lateinit var tmp: Path
+
+    private fun path(name: String) = tmp.resolve(name).toString()
 
     private fun corpus() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
@@ -96,13 +99,13 @@ class MergeCommandDryRunTest {
                 "--dry-run",
                 "--root-repo", "backend",
                 tmp.resolve("backend.git").toString(),
-                tmp.resolve("webui.git").toString() + "=ui",
+                tmp.resolve("webui.git").toString() + "::=ui",
             )
         )
 
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("backend -> <root>"), result.output)
-        // "=ui" places the content; the repository is still called webui.
+        // "::=ui" places the content; the repository is still called webui.
         assertTrue(result.output.contains("webui -> ui/"), result.output)
     }
 
@@ -128,17 +131,143 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `a separator that belongs to the location is left there`() {
-        // Both suffixes are recognised only before a bare word, so a path that happens to contain
-        // one is not split behind the user's back. The segment carrying it is what the report is
-        // read for: the rest of the location reaches the message as a path, and its separators are
-        // then the platform's rather than the ones written here.
-        for (segment in listOf("a=b", "a::b")) {
-            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/$segment/c"))
+    fun `an equals sign is part of the location unless a separator precedes it`() {
+        // `=<subdir>` lives inside the suffix, so a location holding a `=` needs no escaping and no
+        // guard: with no `::` in the argument, the whole of it is the location.
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/a=b/c"))
 
-            assertEquals(1, result.statusCode, result.output)
-            assertTrue(result.output.contains(segment), result.output)
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("/nonexistent/a=b/c"), result.output)
+    }
+
+    @Test
+    fun `a location holding the separator is ended by a bare one`() {
+        // The remedy the parser offers, and the only thing a user has to know: append `::`.
+        corpus()
+        val holding = tmp.resolve("odd::name")
+        tmp.resolve("backend.git").toFile().renameTo(holding.toFile())
+
+        val result = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
+
+        assertEquals(0, result.statusCode, result.output)
+        // The name is derived from the whole last segment, separator and all.
+        assertTrue(result.output.contains("odd::name -> odd::name/"), result.output)
+    }
+
+    @Test
+    fun `a location holding the separator without the remedy is refused, and the message says how`() {
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/a::b/c"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("is not a usable name"), result.output)
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
+    fun `a directory whose own name holds the separator is named in the refusal`() {
+        // The case the grammar cannot diagnose by itself: the part after `::` is a perfectly usable
+        // name, so nothing in the parse looks wrong and the run would fail naming only the location
+        // it was cut down to.
+        val holding = tmp.resolve("odd::name")
+        holding.createDirectories()
+
+        val result = MergeCommand().test(listOf("--dry-run", holding.toString()))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("its name holds a '::'"), result.output)
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
+    fun `an IPv6 URL is refused with the remedy rather than read as a name`() {
+        // Both spellings git accepts for a literal address carry a `::`, and no guard second-guesses
+        // it any more: the argument is read as written and the way out is stated.
+        for (url in listOf("https://[fe80::1]/repo.git", "git@[::1]:repo.git")) {
+            val result = MergeCommand().test(listOf("--dry-run", url))
+
+            assertEquals(1, result.statusCode, "$url\n${result.output}")
+            assertTrue(result.output.contains("end the argument with '::'"), result.output)
         }
+    }
+
+    @Test
+    fun `an empty name asks for the derived one`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::", path("webui.git") + "::=ui")
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> backend/"), result.output)
+        assertTrue(result.output.contains("webui -> ui/"), result.output)
+    }
+
+    @Test
+    fun `a colon in the name or the subdirectory is written with a backslash`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::odd\\:name", path("webui.git"))
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("odd:name -> odd:name/"), result.output)
+    }
+
+    @Test
+    fun `a bare colon in the suffix is refused rather than reread`() {
+        // What keeps the grammar provable: an encoded suffix holds no literal `::`, so the last one
+        // in the argument is always the separator.
+        val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::odd:name"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("has to be written"), result.output)
+    }
+
+    @Test
+    fun `an equals sign in a name or a subdirectory is escaped too`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::odd\\=name=libs/a\\=b", path("webui.git"))
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("odd=name -> libs/a=b/"), result.output)
+    }
+
+    @Test
+    fun `an equals sign with nothing after it is refused`() {
+        val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::name="))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("names no subdirectory"), result.output)
+    }
+
+    @Test
+    fun `a nested subdirectory places an input below the output root`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run",
+                tmp.resolve("backend.git").toString() + "::=libs/backend",
+                tmp.resolve("webui.git").toString() + "::=apps/webui",
+            )
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> libs/backend/"), result.output)
+        assertTrue(result.output.contains("webui -> apps/webui/"), result.output)
+    }
+
+    @Test
+    fun `a subdirectory with an unusable segment is refused before anything is read`() {
+        val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/backend.git::=libs//backend"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("not a usable subdirectory"), result.output)
     }
 
     @Test
