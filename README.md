@@ -171,11 +171,32 @@ the last segment of its path. Name and placement are set separately:
   an input's content is placed as its own tree object, and nothing fits beside a single object, so
   the containing repository's tree has to be opened up instead. What that never buys is a merge of
   two repositories' files: anything the containing repository already holds at the inner
-  destination is a collision, with or without the flag.
+  destination is a collision, with or without the flag — with one entry excepted, below.
 - One repository may be placed at the root instead, with `--root-repo <name>`. That is the same
   splice, and the one that needs no flag — every other destination is inside it, which is what the
   option asked for. Its own entries at a path and the inputs placed inside it end up in one
   directory.
+
+### Dissolving a submodule into its content
+
+Where an input lands on exactly the path the repository around it keeps a **gitlink**, that
+repository was already saying another repository belongs there — and the input is that repository,
+arriving with its history rather than as one pinned sha. `--dissolve-submodules` lets it take the
+gitlink's place instead of colliding with it, and drops the submodule's section from the output's
+`.gitmodules` so nothing is left claiming a path that now holds real content.
+
+```console
+$ git-timebraid -o out.git --root-repo super --dissolve-submodules \
+    super.git lib.git::=vendor/lib
+dissolved: the submodule at vendor/lib in super replaced by its own content at 214 commits
+```
+
+It is opt-in because the substitution is not a faithful expansion. A gitlink names one commit of the
+submodule; what lands in its place is whatever that input had reached at each point of the braid, so
+the output's `vendor/lib` moves with the braid rather than with the superproject's pin. Two things
+it deliberately does not do: a gitlink at a segment *above* a destination stays an error (nothing is
+placed at that path, so there is no content to put in the submodule's stead), and an ordinary file or
+directory in the way stays a collision.
 
 ### Taking the layout off a directory tree
 
@@ -408,6 +429,10 @@ git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
                                 spliced into one directory (default: the pair is refused);
                                 every splice is checked against every tree before anything
                                 is written, --dry-run included
+      --dissolve-submodules     where an input lands exactly on a gitlink of the repository
+                                around it, replace that submodule with the input's own
+                                content and drop its .gitmodules section (default: the
+                                gitlink is a collision like any other entry)
       --tag-prefix FMT          default "{repo}/"
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)
@@ -462,7 +487,8 @@ to check it runs, and uploads them with a `SHA256SUMS`.
 - **A destination must not collide** with what the repository around it already holds there — the
   `--root-repo`, or with `--splice` any input the destination lies inside. A destination reaching
   *through* an entry that is not a directory is refused for the same reason. Both depend on the
-  content of the commit, so both are reported against the commit they happen at.
+  content of the commit, so both are reported against the commit they happen at. The one entry that
+  need not collide is a gitlink at the destination itself, which `--dissolve-submodules` replaces.
 - **The whole commit graph is held in memory.** Hundreds of thousands of commits will want a larger
   heap. This is a batch tool run once per merge, not a daemon.
 - **The output holds the inputs' original commits unreferenced.** They arrive with everything else
@@ -474,7 +500,8 @@ to check it runs, and uploads them with a `SHA256SUMS`.
   `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
   What cannot be rewired is a **relative** url such as `../lib.git`: git resolves those against the
   superproject's own remote, and the output's remote is not the input's. Make them absolute in the
-  inputs before merging.
+  inputs before merging — or, when the submodule is itself one of the inputs, dissolve it with
+  `--dissolve-submodules` and there is no url left to resolve.
 - **Not transferred:** `refs/notes/*`, reflogs, and any repository-local configuration.
 
 ## License

@@ -52,6 +52,8 @@ class BraidWriter(
     private val options: WriteOptions = WriteOptions(),
     /** Whether to mirror the inputs under `refs/remotes/<repo>/<branch>` — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
+    /** Whether an input may land on a gitlink of the repository around it — see [TreeAssembler]. */
+    private val dissolveSubmodules: Boolean = false,
 ) {
 
     private val graph = inputs.graph
@@ -59,7 +61,7 @@ class BraidWriter(
     /** New identity of every original commit, filled in write order. */
     private val written = HashMap<Commit, ObjectId>(graph.size)
 
-    private val trees = target.treeAssembler()
+    private val trees = target.treeAssembler(dissolveSubmodules)
 
     /**
      * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
@@ -154,15 +156,26 @@ class BraidWriter(
         val content = plan.contentOf(commit)
         val placements = ArrayList<Placement>(content.size)
         val parts = ArrayList<RewiredGitmodules>(content.size)
+        // Where the inputs' own content sits at this commit, which is what a dissolve makes untrue
+        // of a `.gitmodules` section claiming the same path. Stays empty when nothing can dissolve.
+        val occupied = HashSet<String>()
         val at = { commit.toString() }
 
         for ((source, holder) in content) {
             val tree = originalOf(holder).tree
-            placements += Placement(plan.subdirOf(source), tree, entryReaders.getValue(source))
+            val subdir = plan.subdirOf(source)
+            placements += Placement(subdir, tree, entryReaders.getValue(source))
             parts += wiringOf(source, tree, at)
+            if (dissolveSubmodules && subdir != null) occupied += subdir
         }
 
-        return trees.assemble(placements, gitmodulesOf(parts, at), at)
+        // Whether the wiring lost a section to a dissolve, which the assembler needs to know for the
+        // case where it lost its last one: an absent `.gitmodules` then means the output has none on
+        // purpose, and the containing repository's own copy must not stand in for it.
+        val dissolved = parts.any { part ->
+            part.sections.any { it.path != null && it.path in occupied }
+        }
+        return trees.assemble(placements, gitmodulesOf(parts, occupied, at), dissolved, at)
     }
 
     /** What [source]'s `.gitmodules` at [tree] contributes, or [SubmoduleWiring.NOTHING]. */
@@ -177,9 +190,18 @@ class BraidWriter(
      * The root `.gitmodules` blob for one commit, or `null` when no input describes a submodule
      * there. Identical files are written once: the wiring only changes when an input adds, moves or
      * drops a submodule, so one blob typically serves a long stretch of the braid.
+     *
+     * [dissolved] is where the inputs' own content sits at this commit, so a section claiming one of
+     * those paths for a submodule can be dropped. It is empty unless the run asked to dissolve, and
+     * it is a question about *this* commit rather than about the run: an input that has no content
+     * yet occupies nothing, and the gitlink standing in for it is still the truth there.
      */
-    private fun gitmodulesOf(parts: List<RewiredGitmodules>, at: () -> String): ObjectId? {
-        val text = SubmoduleWiring.merge(parts, at) ?: return null
+    private fun gitmodulesOf(
+        parts: List<RewiredGitmodules>,
+        dissolved: Set<String>,
+        at: () -> String,
+    ): ObjectId? {
+        val text = SubmoduleWiring.merge(parts, dissolved, at) ?: return null
         return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text) }
     }
 

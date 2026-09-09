@@ -21,6 +21,9 @@ class SubmoduleWiringTest {
     private fun merge(vararg parts: RewiredGitmodules) =
         SubmoduleWiring.merge(parts.toList()) { "abc123" }
 
+    private fun merge(dissolved: Set<String>, vararg parts: RewiredGitmodules) =
+        SubmoduleWiring.merge(parts.toList(), dissolved) { "abc123" }
+
     @Test
     fun `an input in a subdirectory has both its path and its section name prefixed`() {
         val rewired = rewire(
@@ -120,6 +123,50 @@ class SubmoduleWiringTest {
 
         assertEquals(emptySet<String>(), rewired.names)
         assertNull(merge(rewired))
+    }
+
+    @Test
+    fun `a dissolved path loses its section, because the output has real content there`() {
+        val a = rewire(
+            "[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = a\n" +
+                "[submodule \"vendor/other\"]\n\tpath = vendor/other\n\turl = b\n",
+            subdir = null,
+        )
+
+        assertEquals(
+            "[submodule \"vendor/other\"]\n\tpath = vendor/other\n\turl = b\n",
+            merge(setOf("vendor/lib"), a),
+        )
+    }
+
+    @Test
+    fun `dissolving the only section leaves no file rather than an empty one`() {
+        val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = null)
+
+        assertNull(merge(setOf("lib"), a))
+    }
+
+    @Test
+    fun `a dissolved section frees its name, so no collision is reported for it`() {
+        // Both inputs describe a submodule the output would call 'lib', at different paths. Without
+        // the dissolve that is the name collision merge exists to report; with it, the section that
+        // would have claimed the name is not in the file at all, so there is nothing to collide.
+        val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = null)
+        val b = rewire("[submodule \"lib\"]\n\tpath = other\n\turl = b\n", subdir = null, repo = "B")
+
+        assertThrows<IllegalArgumentException> { merge(a, b) }
+        assertEquals(
+            "[submodule \"lib\"]\n\tpath = other\n\turl = b\n",
+            merge(setOf("lib"), a, b),
+        )
+    }
+
+    @Test
+    fun `a dissolved path is matched in output coordinates, not the input's own`() {
+        val a = rewire("[submodule \"vendor/lib\"]\n\tpath = vendor/lib\n\turl = a\n", subdir = "A")
+
+        assertEquals(a.text, merge(setOf("vendor/lib"), a), "the input's own path names nothing here")
+        assertNull(merge(setOf("A/vendor/lib"), a))
     }
 
     @Test
