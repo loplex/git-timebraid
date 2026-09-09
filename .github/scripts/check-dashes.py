@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Hold the punctuation dash to one spelling, where the spelling is a choice and not a constraint.
 
-Comments and prose reach no console, and the em dash is what they use, though the ASCII form is
-written in places too, which is how the two drift: a pair of dashes around an aside gets its
-opening half from one file's habit and its closing half from another's, and nothing notices.
+Everything the program prints is ASCII, because a Windows console encodes to a code page that has
+no em dash and substitutes a `?` for it. So a user-facing string writes ` -- `, and MessageCharsetTest
+holds it there by reading the compiled constant pool.
+
+Comments and prose reach no console, so that reason does not apply to them and the em dash is what
+they use. Both spellings then live in one tree for different reasons, which is how they drift: a
+pair of dashes around an aside gets its opening half from one file's habit and its closing half
+from another's, and nothing notices.
 
 **The unit is a comment, in whatever language the file is written in** -- not a file under src/main.
 That is what keeps `readlink -- "$path"` out of it: an end-of-options marker is code, and code is

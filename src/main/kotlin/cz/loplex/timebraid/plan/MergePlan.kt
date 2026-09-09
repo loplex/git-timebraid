@@ -204,7 +204,7 @@ class MergePlan private constructor(
                     val firstParent = parents[0]
                     val parentContent = content[firstParent.position]
                         ?: error(
-                            "commit $commit is written before its first parent $firstParent — " +
+                            "commit $commit is written before its first parent $firstParent -- " +
                                 "the write order is not topological"
                         )
                     parentContent.copyOf()
