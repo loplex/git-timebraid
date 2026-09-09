@@ -109,7 +109,8 @@ jobs:
         run: .github/scripts/check-blocks.py
 
       # One spelling of the punctuation dash, where the spelling is a choice: a comment reaches no
-      # console, so nothing forces the ASCII form there.
+      # console, so nothing forces the ASCII form there the way MessageCharsetTest forces it on the
+      # messages.
       - name: Check the punctuation dash is written one way
         run: .github/scripts/check-dashes.py
 

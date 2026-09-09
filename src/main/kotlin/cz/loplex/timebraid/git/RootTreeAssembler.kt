@@ -53,7 +53,7 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
             val clash = byName.put(entry.name, entry)
             require(clash == null) {
                 "subdirectory '${entry.name}' collides with an entry of the same name in the root " +
-                    "repository at ${at()} — give that repository another subdirectory with " +
+                    "repository at ${at()} -- give that repository another subdirectory with " +
                     "<repo>=<subdir>"
             }
         }
