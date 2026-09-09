@@ -70,7 +70,7 @@ jobs:
     name: changelog section
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the changelog has a dated section for this tag
         if: github.ref_type == 'tag'
@@ -88,9 +88,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: .github/scripts/smoke-distribution.sh target/git-timebraid-${{ steps.version.outputs.version }}.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: portable
           path: |
@@ -150,9 +150,9 @@ jobs:
           - { os: macos-latest,     label: macos-aarch64 }
           - { os: windows-latest,   label: windows-x64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -177,7 +177,7 @@ jobs:
       # the only thing this job has to contribute. Naming the platform rather than globbing for
       # it also checks the matrix against the pom: `if-no-files-found: error` fires if the six
       # os/arch profiles ever name a runner something other than what this matrix calls it.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundled-${{ matrix.label }}
           path: |
@@ -193,9 +193,13 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      # v8 stopped unzipping unconditionally: it reads the Content-Type and leaves a
+      # non-zipped download alone. The upload side archives by default, so everything the
+      # jobs above stored arrives zipped and is unpacked here as it always was -- what the
+      # step below globs for are the archives themselves, not a nest of zips.
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
