@@ -26,7 +26,7 @@ the scanned tree and takes no part in the run.
 $ mvn -q exec:java -Dexec.args="-o doc/examples/08-scan/output-unnamed --no-bare \
     --scan doc/examples/08-scan/input/platform"
 
-Error: two inputs resolve to the same repository name: [core] — name a scanned repository by giving
+Error: two inputs resolve to the same repository name: [core] -- name a scanned repository by giving
 its directory as an argument, e.g. '<base>/libs/core::libs-core'
 ```
 

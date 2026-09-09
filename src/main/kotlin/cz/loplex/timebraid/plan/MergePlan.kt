@@ -202,7 +202,7 @@ class MergePlan private constructor(
                     val firstParent = parents[0]
                     val parentContent = content[firstParent.position]
                         ?: error(
-                            "commit $commit is written before its first parent $firstParent — " +
+                            "commit $commit is written before its first parent $firstParent -- " +
                                 "the write order is not topological"
                         )
                     parentContent.copyOf()
@@ -256,7 +256,7 @@ class MergePlan private constructor(
                 while (slash >= 0) {
                     val above = subdir.substring(0, slash)
                     require(above !in seen) {
-                        "'$above' and '$subdir' cannot both hold a repository — one contains " +
+                        "'$above' and '$subdir' cannot both hold a repository -- one contains " +
                             "the other, and content placed as a single tree object leaves no room " +
                             "beside it. Pass --splice to open the containing repository's tree " +
                             "and place the other inside it."

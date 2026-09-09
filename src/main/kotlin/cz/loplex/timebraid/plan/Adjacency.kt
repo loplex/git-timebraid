@@ -40,7 +40,7 @@ internal class Adjacency<T : Any> private constructor(
             for (node in graph.nodes) {
                 val at = graph.indexOf(node)
                 require(at in 0 until space) { "$node is numbered $at, outside 0..${space - 1}" }
-                require(at > previous) { "$node is numbered $at after $previous — the nodes are out of index order" }
+                require(at > previous) { "$node is numbered $at after $previous -- the nodes are out of index order" }
                 previous = at
                 nodeAt[at] = node
 

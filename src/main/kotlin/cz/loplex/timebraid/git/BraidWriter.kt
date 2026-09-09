@@ -133,7 +133,7 @@ class BraidWriter(
             val parents = planned.parents.map { parent ->
                 written[parent]
                     ?: error(
-                        "$commit is written before its parent $parent — " +
+                        "$commit is written before its parent $parent -- " +
                             "the plan's order is not a write order"
                     )
             }
@@ -249,7 +249,7 @@ class BraidWriter(
         val refs = LinkedHashMap<String, ObjectId>()
 
         val braidTip = plan.braid.lastOrNull()
-            ?: error("the braid is empty — there is nothing to point a branch at")
+            ?: error("the braid is empty -- there is nothing to point a branch at")
         refs[Constants.R_HEADS + inputs.mainlineBranch] = idOf(braidTip)
         var branches = 1
 

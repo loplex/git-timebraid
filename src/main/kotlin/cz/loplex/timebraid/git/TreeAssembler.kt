@@ -169,7 +169,7 @@ class TreeAssembler(
                 val occupant = byName[name]
                 require(occupant == null || occupant.mode == FileMode.TREE) {
                     "'$here' is not a directory in the repository that holds it at ${at()}, so no " +
-                        "repository can be placed inside it — give that repository another " +
+                        "repository can be placed inside it -- give that repository another " +
                         "subdirectory with <repo>::=<subdir>"
                 }
                 inside = if (occupant == null) emptyList() else entriesOf(occupant.id)
@@ -230,7 +230,7 @@ class TreeAssembler(
 
         private fun collision(here: String, clash: TreeEntry?, at: () -> String): String =
             "subdirectory '$here' collides with an entry of the same name in the repository that " +
-                "holds it at ${at()} — " +
+                "holds it at ${at()} -- " +
                 if (clash?.mode == FileMode.GITLINK) {
                     "that entry is a submodule, so --dissolve-submodules would replace it with " +
                         "this repository's own content; otherwise give the repository another " +
