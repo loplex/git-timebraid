@@ -3,7 +3,6 @@ package cz.loplex.timebraid.cli
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.core.MissingArgument
 import com.github.ajalt.clikt.core.NoSuchOption
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.parameters.arguments.ArgumentTransformContext
@@ -25,6 +24,7 @@ import cz.loplex.timebraid.MergeRunner
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
+import cz.loplex.timebraid.git.RepositoryScan
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
@@ -111,6 +111,16 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "themselves decide where the strands interleave."
         )
 
+    private val scan by option("--scan").path()
+        .help(
+            "Take the layout from this directory instead of writing it out: every repository under " +
+                "it becomes an input, placed in the output where it sits on disk, and the " +
+                "directory itself lands at the output root when it is one. A repository is not " +
+                "descended into, and dot-names and symlinks are skipped. A <repo> argument naming " +
+                "a directory the scan found replaces that finding, which is how one of them is " +
+                "renamed or moved."
+        )
+
     private val splice by option("--splice").flag()
         .help(
             "Let one input's destination lie inside another's (::=libs and ::=libs/backend), " +
@@ -161,7 +171,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "subdirectory writes a ':' as '\\:', and a name can hold neither a ':' nor a " +
                 "'\\', which git refuses in a ref.",
         )
-        .transformAll(nvalues = -1, required = true) { tokens -> afterOptions(tokens) }
+        .transformAll(nvalues = -1, required = false) { tokens -> afterOptions(tokens) }
 
     override fun help(context: Context): String =
         "Merge several independent git repositories into one, braided together along the time axis."
@@ -182,40 +192,23 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             unwritable(file)?.let { throw UsageError("--plan-out '$file' cannot be written: $it") }
         }
 
+        if (scan == null && inputs.isEmpty()) {
+            throw UsageError("give at least one input repository, or --scan a directory of them")
+        }
+
         val specs = inputs.map(::parseRepoSpec)
-        val names = specs.map { it.name }
-        if (names.toSet().size != names.size) throw duplicateNames(specs)
-        rootRepo?.let { root ->
-            if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
-        }
-        // A local input that is the output would be read and written at once: fetched into itself,
-        // then given the braid on top of its own history.
-        output?.let { out ->
-            val outputPlaces = placesOf(out, withGitDir = !bare)
-            // A location this platform cannot spell as a path is no path the output could be.
-            fun pathOf(location: String) = try { Path.of(location) } catch (e: InvalidPathException) { null }
-            val input = specs.firstOrNull { spec ->
-                !spec.isRemote && pathOf(spec.location)?.let { meet(inputPlacesOf(it), outputPlaces) } == true
-            }
-            input?.let {
-                throw UsageError("'${it.location}' is the output (-o), which a run cannot braid into itself")
-            }
-            // Asked now rather than when the output is created, after every input is read and the
-            // braid planned: a dry run never reaches that, and would pass an -o the real run refuses.
-            // After the inputs, so that one of them being the output is said as that.
-            TargetRepository.refusal(out, force, bare)?.let { throw CliktError(it) }
-        }
         for ((spec, raw) in specs.zip(inputs)) checkSplit(spec, raw)
 
+        val merged = resolveInputs(specs)
+        // Asked now rather than when the output is created, after every input is read and the
+        // braid planned: a dry run never reaches that, and would pass an -o the real run refuses.
+        // After the inputs, so that one of them being the output is said as that.
+        output?.let { output ->
+            TargetRepository.refusal(output, force, bare)?.let { throw CliktError(it) }
+        }
+
         val request = MergeRequest(
-            inputs = specs.map { spec ->
-                MergeInput(
-                    location = spec.location,
-                    isRemote = spec.isRemote,
-                    name = spec.name,
-                    subdir = if (spec.name == rootRepo) null else spec.subdir ?: spec.name,
-                )
-            },
+            inputs = merged,
             output = output,
             force = force,
             bare = bare,
@@ -244,16 +237,152 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     /**
-     * Inputs sharing a name, naming every location that derived it.
+     * The inputs the run will use: what `--scan` found, what the `<repo>` arguments named, and
+     * `--root-repo` applied over both.
      *
-     * The name alone leaves the reader to work out which inputs derived it, and a name derived from
-     * the last segment of a location is one nobody typed. Naming an input is how the clash is
-     * settled, so the refusal says that as well.
+     * An argument whose location is a directory the scan already found is not a second input but a
+     * correction to that one. The name it gives wins, and the subdirectory too when it gives one,
+     * while an argument that gives none leaves the finding where the scan put it. That is what
+     * makes the two composable rather than merely both allowed: renaming is the answer two findings
+     * that derive the same name need, and there is no other way to reach one of them.
      */
-    private fun duplicateNames(specs: List<RepoSpec>): UsageError {
-        val clashes = specs.groupBy { it.name }.filterValues { it.size > 1 }.toSortedMap()
+    private fun resolveInputs(specs: List<RepoSpec>): List<MergeInput> {
+        val scanned = scan?.let { base ->
+            try {
+                RepositoryScan.scan(base, output)
+            } catch (e: IllegalArgumentException) {
+                throw UsageError(e.message ?: "--scan found nothing usable")
+            }
+        } ?: emptyList()
+
+        val byPath = scanned.associateBy { it.path }
+        val overrides = LinkedHashMap<Path, RepoSpec>()
+        val extras = ArrayList<RepoSpec>()
+        // The directories the output takes up, which an argument's or a finding's own may not meet.
+        val outputPlaces = output?.let { placesOf(it, withGitDir = !bare) }
+        // The scan leaves the output itself out, however it is spelled, but not a working tree whose
+        // git directory the output is: `-o tree/x/.git` beside a found `tree/x` is refused here.
+        scanned.firstOrNull { outputPlaces != null && meet(inputPlacesOf(it.path), outputPlaces) }?.let {
+            throw UsageError(
+                "'${shownPath(it.path.toString())}', which --scan found, is the output (-o), which a run " +
+                    "cannot braid into itself"
+            )
+        }
+        for (spec in specs) {
+            val path = localPathOf(spec)
+            if (path != null && outputPlaces != null && meet(inputPlacesOf(Path.of(spec.location)), outputPlaces)) {
+                throw UsageError(
+                    "'${spec.location}' is the output (-o), which a run cannot braid into itself"
+                )
+            }
+            if (path == null || path !in byPath) {
+                extras += spec
+            } else if (overrides.put(path, spec) != null) {
+                throw UsageError("two input arguments name '$path', which --scan already found")
+            }
+        }
+
+        val merged = ArrayList<MergeInput>(scanned.size + extras.size)
+        for (found in scanned) {
+            val spec = overrides[found.path]
+            merged += if (spec == null) {
+                refuseScannedName(found.name, found.path)
+                MergeInput(found.path.toString(), isRemote = false, name = found.name, subdir = found.subdir)
+            } else {
+                MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: found.subdir)
+            }
+        }
+        for (spec in extras) {
+            merged += MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name)
+        }
+
+        val names = merged.map { it.name }
+        if (names.toSet().size != names.size) throw duplicateNames(merged)
+        rootRepo?.let { root ->
+            if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
+            merged.firstOrNull { it.subdir == null && it.name != root }?.let { base ->
+                throw UsageError(
+                    "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
+                        "repository ('${base.name}') and lands at the output root -- give that one " +
+                        "a subdirectory with <repo>::=<subdir> to move it off"
+                )
+            }
+        }
+        return merged.map { input ->
+            if (input.name != rootRepo) input
+            else MergeInput(input.location, input.isRemote, input.name, subdir = null)
+        }
+    }
+
+    /**
+     * [spec]'s location as a directory this scan could have found, or `null` when it is not one:
+     * a remote, or a location this platform cannot spell as a path.
+     *
+     * A final `.git` segment is dropped, as [repositoryPlace] drops it: `core/.git` opens the
+     * repository the scan found at `core`, and naming it that way corrects that finding rather than
+     * adding the same repository a second time.
+     */
+    private fun localPathOf(spec: RepoSpec): Path? {
+        if (spec.isRemote) return null
+        return try {
+            repositoryPlace(Path.of(spec.location))
+        } catch (e: InvalidPathException) {
+            null
+        }
+    }
+
+    /**
+     * Refuses a name the scan derived that git would not accept inside a ref, as [parseRepoSpec]
+     * refuses one derived from an argument, naming the directory and the argument that renames it.
+     *
+     * Only a finding no argument renamed is asked: a renamed one carries the argument's own name,
+     * which the parser has checked already. Left to the run, the name would have failed at the
+     * write of the first ref carrying it, an input's tag under the default prefix, once the braid
+     * was written, or not at all where no ref carried it.
+     */
+    private fun refuseScannedName(name: String, path: Path) {
+        if (isRefComponent(name)) return
+        val dir = shownPath(path.toString())
+        throw UsageError(
+            "'$name' cannot be a repository name (found by --scan at $dir): it becomes a " +
+                "tag prefix, and git will not have it in a ref name -- give it a name with " +
+                "'$dir::<name>'"
+        )
+    }
+
+    /**
+     * A location as the user would recognise it: relative to where the command was run when it sits
+     * under it, and as the user wrote it otherwise. `--scan` resolves what it finds, so a scanned
+     * input carries an absolute path however short the argument was, and printing that back names
+     * the machine rather than the repository.
+     */
+    private fun shownPath(location: String): String {
+        val here = Path.of("").toAbsolutePath()
+        val path = runCatching { Path.of(location).toAbsolutePath().normalize() }.getOrNull()
+            ?: return location
+        // The working directory relativizes to the empty path, which would name nothing at all in a
+        // refusal whose whole point is to name both sides.
+        return if (path.startsWith(here)) here.relativize(path).toString().ifEmpty { "." } else location
+    }
+
+    /**
+     * Inputs sharing a name, with the remedy that applies, naming every location that derived it.
+     *
+     * Both sides named: under `--scan` the user wrote no argument at all, so the directories the
+     * scan found are the only thing there is to act on, and a name alone says nothing about which
+     * of them they were. Naming an input is how the clash is settled either way, and with a scan
+     * the form is spelled out rather than left to the reader of the `<repo>` grammar.
+     */
+    private fun duplicateNames(inputs: List<MergeInput>): UsageError {
+        val remedy = if (scan == null) {
+            " -- give one of them a name with <repo>::<name>"
+        } else {
+            " -- name a scanned repository by giving its directory as an argument, " +
+                "e.g. '<base>/libs/core::libs-core'"
+        }
+        val clashes = inputs.groupBy { it.name }.filterValues { it.size > 1 }.toSortedMap()
         val described = clashes.map { (name, sharing) ->
-            val where = sharing.map { it.location }
+            val where = sharing.map { shownPath(it.location) }
             val listed = where.dropLast(1).joinToString(", ") + " and " + where.last()
             // Spelled out as far as the refusals around it spell things out, and a digit past that.
             val count = when (sharing.size) {
@@ -263,9 +392,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
             "$count inputs resolve to the same repository name '$name': $listed"
         }
-        return UsageError(
-            described.joinToString("; ") + " -- give one of them a name with <repo>::<name>"
-        )
+        return UsageError(described.joinToString("; ") + remedy)
     }
 
     /**
@@ -405,7 +532,7 @@ private fun ArgumentTransformContext.afterOptions(tokens: List<String>): List<St
             .flatMap { it.names + it.secondaryNames }
         throw NoSuchOption(name, context.suggestTypoCorrection(name, known))
     }
-    return tokens.filter { it != END_OF_OPTIONS }.ifEmpty { throw MissingArgument(argument) }
+    return tokens.filter { it != END_OF_OPTIONS }
 }
 
 /**
@@ -610,6 +737,17 @@ private fun isOneSegment(name: String): Boolean {
         return false
     }
     return !path.isAbsolute && path.nameCount == 1
+}
+
+/**
+ * Where a repository named by [path] sits, for telling whether two paths name one: absolute,
+ * normalized, and without a final `.git` segment, so `x` and `x/.git`, a working tree and its own
+ * git directory, come out the same on either side. The `.git` ending a bare `x.git` is part of its
+ * name, and stays.
+ */
+private fun repositoryPlace(path: Path): Path {
+    val absolute = path.toAbsolutePath().normalize()
+    return if (absolute.fileName?.toString() == ".git") absolute.parent ?: absolute else absolute
 }
 
 /**

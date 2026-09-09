@@ -24,7 +24,10 @@ import kotlin.io.path.createDirectories
 
 /** One input to the merge, as the CLI layer parsed it. */
 class MergeInput(
-    /** A local filesystem path or a remote URL, exactly as the user wrote it. */
+    /**
+     * A local filesystem path or a remote URL as the user wrote it, or, for a repository `--scan`
+     * found, the absolute path it was found at.
+     */
     val location: String,
     val isRemote: Boolean,
     val name: String,

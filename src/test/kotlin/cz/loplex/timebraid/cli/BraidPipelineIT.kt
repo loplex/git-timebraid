@@ -819,6 +819,49 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `--scan braids a directory tree into the layout that tree already has`() {
+        // platform is the base and a repository, so it lands at the root; the two below it land
+        // where they sit. Nothing about the layout is written on the command line.
+        TestRepoBuilder.create(tmp.resolve("tree"), bare = false).use { r ->
+            r.branch("main", r.commit("p1", files = mapOf("README.md" to "p"), at = at("09:00")))
+        }
+        tmp.resolve("tree/libs").createDirectories()
+        TestRepoBuilder.create(tmp.resolve("tree/libs/backend.git")).use { r ->
+            r.branch("main", r.commit("a1", files = mapOf("src/Main.kt" to "a"), at = at("10:00")))
+        }
+        tmp.resolve("tree/apps").createDirectories()
+        TestRepoBuilder.create(tmp.resolve("tree/apps/webui.git")).use { r ->
+            r.branch("main", r.commit("b1", files = mapOf("index.html" to "b"), at = at("11:00")))
+        }
+
+        val out = tmp.resolve("scanned.git")
+        braid("-o", out.toString(), "--scan", path("tree"))
+
+        SourceRepository.open(out).use { repo ->
+            val main = repo.branches().single { it.name == "main" }.target
+            val tip = repo.readReachable(listOf(main)).single { it.id == main }
+            fun names(path: String): List<String> {
+                var tree = tip.tree
+                for (segment in path.split('/').filter { it.isNotEmpty() }) {
+                    tree = repo.entriesOf(tree).single { it.name == segment }.id
+                }
+                return repo.entriesOf(tree).map { it.name }
+            }
+
+            assertEquals(listOf("README.md", "apps", "libs"), names(""))
+            assertEquals(listOf("backend"), names("libs"))
+            assertEquals(listOf("webui"), names("apps"))
+            assertEquals(listOf("index.html"), names("apps/webui"))
+        }
+
+        if (GitCli.available) {
+            GitCli.fsck(out)
+            assertEquals("a", GitCli.run(out, "show", "main:libs/backend/src/Main.kt"))
+        }
+        OutputRepo.assertEveryOriginalEdgePreserved(out)
+    }
+
+    @Test
     fun `a-txt sorts before a-slash and CRLF content is left untouched`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             r.commitBytes(

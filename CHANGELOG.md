@@ -116,6 +116,12 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   Every splice is checked against every tree before any object is written into the output,
   `--dry-run` included.
 
+- **`--scan DIR`** — take the output layout from a directory tree.\
+  Every repository under `DIR` becomes an input, placed in the output where it sits on disk.\
+  `DIR` itself lands at the output root when it is a repository.\
+  A repository is not descended into, and the run's own output is left out.\
+  A `<repo>` argument naming one corrects that finding rather than adding a second input.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\
@@ -186,7 +192,9 @@ Nineteen changes alter what a command line written for 0.1.0 does:
   The run fails on the location either way, so the refusal says what it cut off.
 
 - **A repository name two inputs derive is refused naming every location that derives it.**\
-  The refusal listed every input's name, the repeated one among them, and located none of them.
+  The refusal listed every input's name, the repeated one among them, and located none of them.\
+  Under `--scan`, new in this release, that would have left nothing to act on at all, since the
+  directories were never typed.
 
 - **`--keep-remotes` mirrors each input's mainline whether `-b` took it or not.**\
   A run narrowed away from the mainline, `-b feature` for one, left its original commits in the

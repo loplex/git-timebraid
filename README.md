@@ -171,6 +171,38 @@ the last segment of its path. Name and placement are set separately:
   option asked for. Its own entries at a path and the inputs placed inside it end up in one
   directory.
 
+### Taking the layout off a directory tree
+
+`--scan <dir>` reads the layout instead of having it written out: every repository under `<dir>`
+becomes an input, placed in the output where it sits on disk. A repository at `<dir>/libs/backend`
+lands at `libs/backend`, a bare `<dir>/libs/backend.git` lands there too, and `<dir>` itself lands at
+the output root when it is a repository — which is `--root-repo` reached another way, not a second
+concept.
+
+Two rules decide what is looked at, and both keep the scan predictable rather than clever:
+
+- **A repository is not descended into.** What is nested inside one — a submodule, a vendored
+  checkout, a linked worktree — is its own business, and pulling those in is a decision rather than
+  a default. The base directory is the exception; a scan that stopped at it would find nothing else.
+- **Dot-names and symlinks are skipped**, so a `.cache` or a mirrored directory is never walked.
+
+The run's own `-o` is never a finding either, however it is spelled, so rerunning into a
+`merged.git` beside the inputs does not braid it into itself; an argument naming the output, or an
+`-o` naming the `.git` of a working tree the scan finds, is refused.
+
+A `<repo>` argument may be given alongside, and one whose location is a directory the scan found, or
+that directory's `.git`, is a **correction to that finding** rather than a second input: the name it
+gives wins, and the subdirectory too when it gives one, while an argument that gives none leaves the
+finding where the scan put it. That is what settles two findings that derive the same name —
+`libs/core` and `tools/core` — which is refused until one of them is named:
+
+```
+git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::tools-core
+```
+
+Anything the scan skipped, or a repository from outside the tree entirely, is added the same way:
+as an ordinary argument.
+
 ### How an input is written
 
 ```
@@ -357,14 +389,18 @@ git-timebraid \
 ### Options
 
 ```
-git-timebraid -o <dir> [OPTIONS] <repo>[::[<name>][=<subdir>]]...
+git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
 
   the location is everything before the last '::', verbatim
   <subdir> may be nested: <repo>::=libs/backend
+  at least one <repo>, or --scan, is required
 
   -o, --output DIR              output repository (must not exist, or must be an empty
                                 directory; --force also takes a non-empty one)
       --force                   write into a non-empty output directory, over whatever it holds
+      --scan DIR                take the layout from this directory: every repository under
+                                it becomes an input, placed where it sits on disk (a <repo>
+                                argument naming one of them corrects that finding)
       --root-repo REPO          repository whose content lands at the repository root
       --mainline-branch NAME    branch treated as the mainline in every input
                                 (default: first of main/master/develop present in all)
