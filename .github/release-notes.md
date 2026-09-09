@@ -19,4 +19,5 @@ sha256sum --check --ignore-missing SHA256SUMS
 ```
 
 See the [README](https://github.com/loplex/git-timebraid#readme) for what the tool does and how the
-braid is built.
+braid is built, and the [CHANGELOG](https://github.com/loplex/git-timebraid/blob/main/CHANGELOG.md)
+for what changed between releases — including anything a run that worked before will do differently.
