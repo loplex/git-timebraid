@@ -22,6 +22,7 @@ import cz.loplex.timebraid.MergeRunner
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
+import cz.loplex.timebraid.git.RepositoryScan
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.WriteOptions
 import java.nio.file.InvalidPathException
@@ -85,6 +86,16 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "themselves decide where the strands interleave."
         )
 
+    private val scan by option("--scan").path()
+        .help(
+            "Take the layout from this directory instead of writing it out: every repository under " +
+                "it becomes an input, placed in the output where it sits on disk, and the " +
+                "directory itself lands at the output root when it is one. A repository is not " +
+                "descended into, and dot-names and symlinks are skipped. A <repo> argument naming " +
+                "a directory the scan found replaces that finding, which is how one of them is " +
+                "renamed or moved."
+        )
+
     private val splice by option("--splice").flag()
         .help(
             "Let one input's destination lie inside another's (::=libs and ::=libs/backend), " +
@@ -133,7 +144,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "(::=libs/backend), and defaults to the name. In both, '\\' escapes and a ':' " +
                 "has to be written '\\:'.",
         )
-        .multiple(required = true)
+        .multiple()
 
     override fun help(context: Context): String =
         "Merge several independent git repositories into one, braided together along the time axis."
@@ -147,25 +158,17 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             throw UsageError("-o/--output is required unless --dry-run is given")
         }
 
+        if (scan == null && inputs.isEmpty()) {
+            throw UsageError("give at least one input repository, or --scan a directory of them")
+        }
+
         val specs = inputs.map(::parseRepoSpec)
-        val names = specs.map { it.name }
-        if (names.toSet().size != names.size) {
-            throw UsageError("two inputs resolve to the same repository name: ${names.sorted()}")
-        }
-        rootRepo?.let { root ->
-            if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
-        }
         for ((spec, raw) in specs.zip(inputs)) checkSplit(spec, raw)
 
+        val merged = resolveInputs(specs)
+
         val request = MergeRequest(
-            inputs = specs.map { spec ->
-                MergeInput(
-                    location = spec.location,
-                    isRemote = spec.isRemote,
-                    name = spec.name,
-                    subdir = if (spec.name == rootRepo) null else spec.subdir ?: spec.name,
-                )
-            },
+            inputs = merged,
             output = output,
             force = force,
             bare = bare,
@@ -191,6 +194,97 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
         report(result)
+    }
+
+    /**
+     * The inputs the run will use: what `--scan` found, what the `<repo>` arguments named, and
+     * `--root-repo` applied over both.
+     *
+     * An argument whose location is a directory the scan already found is not a second input but a
+     * correction to that one. The name it gives wins, and the subdirectory too when it gives one,
+     * while an argument that gives none leaves the finding where the scan put it. That is what
+     * makes the two composable rather than merely both allowed: renaming is the answer two findings
+     * that derive the same name need, and there is no other way to reach one of them.
+     */
+    private fun resolveInputs(specs: List<RepoSpec>): List<MergeInput> {
+        val scanned = scan?.let { base ->
+            try {
+                RepositoryScan.scan(base)
+            } catch (e: IllegalArgumentException) {
+                throw UsageError(e.message ?: "--scan found nothing usable")
+            }
+        } ?: emptyList()
+
+        val byPath = scanned.associateBy { it.path }
+        val overrides = LinkedHashMap<Path, RepoSpec>()
+        val extras = ArrayList<RepoSpec>()
+        for (spec in specs) {
+            val path = localPathOf(spec)
+            if (path == null || path !in byPath) {
+                extras += spec
+            } else if (overrides.put(path, spec) != null) {
+                throw UsageError("two input arguments name '$path', which --scan already found")
+            }
+        }
+
+        val merged = ArrayList<MergeInput>(scanned.size + extras.size)
+        for (found in scanned) {
+            val spec = overrides[found.path]
+            merged += if (spec == null) {
+                MergeInput(found.path.toString(), isRemote = false, name = found.name, subdir = found.subdir)
+            } else {
+                MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: found.subdir)
+            }
+        }
+        for (spec in extras) {
+            merged += MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name)
+        }
+
+        val names = merged.map { it.name }
+        if (names.toSet().size != names.size) throw duplicateNames(names)
+        rootRepo?.let { root ->
+            if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
+            merged.firstOrNull { it.subdir == null && it.name != root }?.let { base ->
+                throw UsageError(
+                    "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
+                        "repository ('${base.name}') and lands at the output root — give that one " +
+                        "a subdirectory with <repo>::=<subdir> to move it off"
+                )
+            }
+        }
+        return merged.map { input ->
+            if (input.name != rootRepo) input
+            else MergeInput(input.location, input.isRemote, input.name, subdir = null)
+        }
+    }
+
+    /**
+     * [spec]'s location as a directory this scan could have found, or `null` when it is not one:
+     * a remote, or a location this platform cannot spell as a path.
+     */
+    private fun localPathOf(spec: RepoSpec): Path? {
+        if (spec.isRemote) return null
+        return try {
+            Path.of(spec.location).toAbsolutePath().normalize()
+        } catch (e: InvalidPathException) {
+            null
+        }
+    }
+
+    /**
+     * Two inputs under one name, with the remedy that applies. Naming an input is how the clash is
+     * settled either way, but with a scan that is also the only way to reach a finding at all, so
+     * the form is spelled out rather than left to the reader of the `<repo>` grammar.
+     */
+    private fun duplicateNames(names: List<String>): UsageError {
+        val repeated = names.groupingBy { it }.eachCount().filterValues { it > 1 }.keys.sorted()
+        val remedy = if (scan == null) {
+            " — give one of them a name with <repo>::<name>"
+        } else {
+            " — name a scanned repository by giving its directory as an argument, " +
+                "e.g. '<base>/libs/core::libs-core'"
+        }
+        return UsageError("two inputs resolve to the same repository name: $repeated$remedy")
     }
 
     /**

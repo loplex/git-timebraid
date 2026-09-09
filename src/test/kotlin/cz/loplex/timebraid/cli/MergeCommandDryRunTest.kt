@@ -319,4 +319,103 @@ class MergeCommandDryRunTest {
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("frontend -> ui/"), result.output)
     }
+
+    /** A repository at [at] under the scan base, with one commit in it. */
+    private fun scanned(at: String, bare: Boolean = true) {
+        val dir = tmp.resolve("tree/$at")
+        dir.parent?.createDirectories()
+        TestRepoBuilder.create(dir, bare = bare).use { it.branch("main", it.commit("c1")) }
+    }
+
+    @Test
+    fun `--scan takes the layout off the directory tree`() {
+        scanned("libs/backend.git")
+        scanned("apps/webui.git")
+
+        val result = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("webui -> apps/webui/"), result.output)
+        assertTrue(result.output.contains("backend -> libs/backend/"), result.output)
+    }
+
+    @Test
+    fun `--scan puts a base directory that is itself a repository at the output root`() {
+        TestRepoBuilder.create(tmp.resolve("tree"), bare = false).use {
+            it.branch("main", it.commit("p1"))
+        }
+        scanned("libs/backend.git")
+
+        val result = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("tree -> <root>"), result.output)
+        assertTrue(result.output.contains("backend -> libs/backend/"), result.output)
+    }
+
+    @Test
+    fun `an argument naming a scanned directory renames that finding rather than adding one`() {
+        scanned("libs/core.git")
+        scanned("tools/core.git")
+
+        val collided = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+        assertEquals(1, collided.statusCode, collided.output)
+        assertTrue(collided.output.contains("same repository name"), collided.output)
+        assertTrue(collided.output.contains("giving its directory as an argument"), collided.output)
+
+        val named = MergeCommand().test(
+            listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core.git") + "::tools-core"),
+        )
+        assertEquals(0, named.statusCode, named.output)
+        // Renamed, but left where the scan put it: the argument gave no subdirectory of its own.
+        assertTrue(named.output.contains("tools-core -> tools/core/"), named.output)
+        assertTrue(named.output.contains("core -> libs/core/"), named.output)
+    }
+
+    @Test
+    fun `an argument for a directory the scan did not find is an input of its own`() {
+        scanned("libs/backend.git")
+        TestRepoBuilder.create(tmp.resolve("outside.git")).use { it.branch("main", it.commit("o1")) }
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", "--scan", path("tree"), path("outside.git")),
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> libs/backend/"), result.output)
+        assertTrue(result.output.contains("outside -> outside/"), result.output)
+    }
+
+    @Test
+    fun `--root-repo against a scanned base that already holds the root is refused, with the way out`() {
+        TestRepoBuilder.create(tmp.resolve("tree"), bare = false).use {
+            it.branch("main", it.commit("p1"))
+        }
+        scanned("libs/backend.git")
+
+        val clash = MergeCommand().test(
+            listOf("--dry-run", "--scan", path("tree"), "--root-repo", "backend"),
+        )
+        assertEquals(1, clash.statusCode, clash.output)
+        assertTrue(clash.output.contains("conflicts with --scan"), clash.output)
+
+        // The way out the message names: give the base repository a subdirectory of its own.
+        val moved = MergeCommand().test(
+            listOf(
+                "--dry-run", "--scan", path("tree"), "--root-repo", "backend",
+                path("tree") + "::=platform",
+            ),
+        )
+        assertEquals(0, moved.statusCode, moved.output)
+        assertTrue(moved.output.contains("tree -> platform/"), moved.output)
+        assertTrue(moved.output.contains("backend -> <root>"), moved.output)
+    }
+
+    @Test
+    fun `neither an input nor a scan is a usage error, not an empty merge`() {
+        val result = MergeCommand().test(listOf("--dry-run"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("--scan"), result.output)
+    }
 }
