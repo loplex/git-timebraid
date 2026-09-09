@@ -387,10 +387,9 @@ private fun inputPlacesOf(location: Path): Set<Path> {
 
 /**
  * The git directory an existing [location] is or holds, looked up as [SourceRepository.open] looks
- * an input up where no `GIT_DIR` is exported — the location itself when it is a repository, else
- * its `.git`, a directory or a file naming one elsewhere as a linked worktree's or a submodule's
- * does — or `null`. Nothing is guessed beside it, and the path is not normalized: a `..` past a
- * symlink is the filesystem's.
+ * an input up — the location itself when it is a repository, else its `.git`, a directory or a
+ * file naming one elsewhere as a linked worktree's or a submodule's does — or `null`. Nothing is
+ * guessed beside it, and the path is not normalized: a `..` past a symlink is the filesystem's.
  */
 private fun gitDirOf(location: Path): File? {
     val dir = location.toAbsolutePath().toFile()

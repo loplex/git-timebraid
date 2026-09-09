@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.eclipse.jgit.util.SystemReader
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
@@ -100,6 +102,72 @@ class SourceRepositoryTest {
         val refused = assertThrows<IllegalArgumentException> { SourceRepository.open(inside) }
 
         assertTrue(refused.message!!.contains("no git repository"), refused.message)
+    }
+
+    @Test
+    fun `a redirecting variable in the environment cannot stand in for an input`() {
+        val elsewhere = TestRepoBuilder.create(tmp.resolve("elsewhere.git"))
+        elsewhere.branch("main", elsewhere.commit("only commit"))
+        elsewhere.close()
+        val webui = TestRepoBuilder.create(tmp.resolve("webui.git"))
+        val b1 = webui.commit("b1")
+        webui.branch("main", b1)
+        webui.close()
+        val api = TestRepoBuilder.create(tmp.resolve("api"), bare = false)
+        val c1 = api.commit("c1")
+        api.branch("main", c1)
+        api.close()
+        val plain = tmp.resolve("plain").createDirectories()
+
+        withEnvironment(
+            "GIT_DIR" to tmp.resolve("elsewhere.git").toString(),
+            "GIT_OBJECT_DIRECTORY" to tmp.resolve("elsewhere.git/objects").toString(),
+        ) {
+            // The premise first: if JGit ever stops reading the environment through SystemReader,
+            // everything below would pass without testing anything at all.
+            assertEquals(
+                tmp.resolve("elsewhere.git").toFile(),
+                FileRepositoryBuilder().readEnvironment().gitDir,
+                "the environment override no longer reaches JGit, so this test proves nothing",
+            )
+
+            // GIT_DIR alone used to satisfy the builder, so a directory that is no repository
+            // opened as whatever the variable named — under the name of the path that was written.
+            val refused = assertThrows<IllegalArgumentException> { SourceRepository.open(plain) }
+            assertTrue(refused.message!!.contains("no git repository"), refused.message)
+
+            // And a bare input is read from its own objects. For an input that is itself a git
+            // directory, as this one is, setGitDir used to override GIT_DIR, but nothing overrode
+            // the object-directory variables, so they reached even such an input.
+            SourceRepository.open(tmp.resolve("webui.git")).use { repo ->
+                assertEquals(b1, repo.resolveBranch("main"))
+                assertEquals(listOf("b1"), repo.readReachable(listOf(b1)).map { it.message.trim() })
+            }
+
+            // An input named by its working tree most of all, the common case: GIT_DIR stood in for
+            // every location that was not itself a git directory, so this one read elsewhere's refs.
+            SourceRepository.open(tmp.resolve("api")).use { repo ->
+                assertEquals(c1, repo.resolveBranch("main"))
+            }
+        }
+    }
+
+    /**
+     * Runs [block] with [vars] added to the environment JGit reads, restoring the reader afterwards.
+     * A test JVM cannot alter its own environment, so the reader is swapped instead — which is the
+     * same thing from `readEnvironment()`'s point of view, and is asserted to be so above.
+     */
+    private fun <R> withEnvironment(vararg vars: Pair<String, String>, block: () -> R): R {
+        val previous = SystemReader.getInstance()
+        val overrides = vars.toMap()
+        SystemReader.setInstance(object : SystemReader.Delegate(previous) {
+            override fun getenv(variable: String): String? = overrides[variable] ?: super.getenv(variable)
+        })
+        return try {
+            block()
+        } finally {
+            SystemReader.setInstance(previous)
+        }
     }
 
     @Test

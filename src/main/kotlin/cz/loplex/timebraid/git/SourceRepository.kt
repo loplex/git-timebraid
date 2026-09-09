@@ -160,10 +160,25 @@ class SourceRepository private constructor(
          * Inputs are named one by one on the command line, so walking up the tree could only ever
          * substitute an enclosing repository for the one that was asked for — silently, and under
          * the name of the path that was written.
+         *
+         * The environment is not consulted, for the same reason and one more. `readEnvironment()`
+         * would let `GIT_DIR` stand in for every input that is not itself a git directory, a
+         * working tree as much as a path that is no repository at all, and for the latter the
+         * variable would satisfy the `require` below on its own: the input would open as whatever
+         * `GIT_DIR` named — the exact substitution the paragraph above refuses to make by walking
+         * up. `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` would
+         * reach a bare input too, since nothing here overrides them, and read its refs or its
+         * objects from another repository.
+         *
+         * The one more is that this program opens *several* repositories at once. A single
+         * process-wide variable naming one repository or one object store cannot be right for a set
+         * of inputs, however it is spelled — which is why the same variables are stripped from every
+         * git subprocess ([GitCommand.dropRedirectingVariables]) rather than being honoured
+         * anywhere.
          */
         fun open(location: Path, name: String = defaultName(location)): SourceRepository {
             val dir = location.toFile()
-            val builder = FileRepositoryBuilder().setMustExist(true).readEnvironment()
+            val builder = FileRepositoryBuilder().setMustExist(true)
             if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) {
                 builder.setGitDir(dir)
             } else if (File(dir, Constants.DOT_GIT).exists()) {
