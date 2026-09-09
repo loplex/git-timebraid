@@ -45,17 +45,17 @@ internal class KahnOrder<T : Any>(
 
         val ready = PriorityQueue(maxOf(1, size), readyFirst())
         for (node in graph.nodes) {
-            val at = graph.indexOf(node)
-            if (unemitted[at] == 0) ready.add(at)
+            if (unemitted[graph.indexOf(node)] == 0) ready.add(node)
         }
 
         val order = ArrayList<T>(size)
         while (ready.isNotEmpty()) {
-            val at = ready.poll()
-            order += nodeAt[at]!!
+            val node = ready.poll()
+            order += node
+            val at = graph.indexOf(node)
             for (edge in adjacency.childStarts[at] until adjacency.childStarts[at + 1]) {
                 val child = adjacency.childTargets[edge]
-                if (--unemitted[child] == 0) ready.add(child)
+                if (--unemitted[child] == 0) ready.add(nodeAt[child]!!)
             }
         }
 
@@ -70,8 +70,8 @@ internal class KahnOrder<T : Any>(
         return order
     }
 
-    private fun readyFirst(): Comparator<Int> = Comparator { a, b ->
-        val byPrecedence = precedence.compare(adjacency.nodeAt[a]!!, adjacency.nodeAt[b]!!)
-        if (byPrecedence != 0) byPrecedence else a.compareTo(b)
+    private fun readyFirst(): Comparator<T> = Comparator { a, b ->
+        val byPrecedence = precedence.compare(a, b)
+        if (byPrecedence != 0) byPrecedence else graph.indexOf(a).compareTo(graph.indexOf(b))
     }
 }

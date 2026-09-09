@@ -27,4 +27,4 @@ package cz.loplex.timebraid.plan
  * @throws CyclicGraphException if the graph is not a DAG.
  */
 internal fun topoOrder(graph: IndexedGraph<Commit>): List<Commit> =
-    KahnOrder(graph, compareBy(Commit::time)).order()
+    KahnOrder(graph, Commit.EARLIEST_FIRST).order()

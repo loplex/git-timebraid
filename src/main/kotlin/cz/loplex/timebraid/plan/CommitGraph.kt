@@ -78,6 +78,24 @@ class Commit internal constructor(
         error("$this was named as a parent but never added, so it has no data of its own")
 
     override fun toString(): String = "$source/$id"
+
+    companion object {
+
+        /**
+         * Earliest [time] first, which is what both walks of this package prefer among the commits
+         * that are ready at any moment.
+         *
+         * Written out rather than `compareBy(Commit::time)`: that takes its selector as
+         * `(T) -> Comparable<*>?`, so every comparison boxes both timestamps. A priority queue sifts
+         * on each insert and each poll, which makes it `O(n log n)` `java.lang.Long`s for a field
+         * the planner otherwise only ever reads as a primitive. Comparing the two `Long`s directly
+         * allocates nothing.
+         *
+         * Ties are the caller's to break — [KahnOrder] breaks them on the index a node carries,
+         * which is what makes an order a deterministic function of its input.
+         */
+        val EARLIEST_FIRST: Comparator<Commit> = Comparator { a, b -> a.time.compareTo(b.time) }
+    }
 }
 
 /**
