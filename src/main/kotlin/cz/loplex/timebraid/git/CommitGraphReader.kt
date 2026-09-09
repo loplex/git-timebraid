@@ -62,7 +62,7 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
  *
  * The model is deliberately global: load *every* commit of *every* strand at once — reachable from
- * the branches to be recreated and from all tags — and let the planner reparent only the braid.
+ * the refs to be recreated — and let the planner reparent only the braid.
  * Off-braid commits keep their original parents, so a branch that exists in one repository still
  * forks off the braid at the right moment with no special handling (see the README's Branches
  * section).
@@ -73,18 +73,35 @@ object CommitGraphReader {
     val MAINLINE_CANDIDATES = listOf("main", "master", "develop")
 
     /**
-     * @param branches short branch names to load (and later recreate); `null` loads them all. The
-     *   resolved mainline branch is always loaded even if it is not in this set — the braid needs it.
+     * The `refs` pattern that `-b/--branch` is shorthand for.
+     *
+     * A git branch name cannot contain a star, so the short form desugars into the general one
+     * exactly — there is no name for which the two select differently, and nothing to escape.
+     */
+    fun branchPattern(name: String): String = Constants.R_HEADS + name
+
+    /**
+     * @param refs glob patterns matched against full ref names — `refs/heads/main` for one branch,
+     *   `refs/tags/v1.*` for a release series, a star alone for every ref — selecting which of each
+     *   input's branches and tags are loaded and later recreated. Empty selects them all, which is
+     *   the default. Branches and tags are selected by one set of patterns rather than one set
+     *   each, so a run says what it wants to carry over once and gets exactly that: naming only
+     *   branches leaves the tags behind, which is the whole point of being able to narrow.
+     *
+     *   The resolved mainline is loaded whatever the patterns say, since the braid is built along
+     *   it, and the output's branch of that name is written from the braid's tip rather than from
+     *   this selection ([BraidWriter] does that unconditionally).
      * @param interleaveRefs glob patterns matched against full ref names — `refs/tags/v1.*` for a
      *   release series, a star alone for every ref — applied in every input repository. A matched
      *   ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that
-     *   trades away.
+     *   trades away. Matched against what [refs] selected, so widening the interleave cannot widen
+     *   what is loaded.
      */
     fun read(
         repositories: List<SourceRepository>,
         orderBy: OrderBy,
         mainlineBranch: String? = null,
-        branches: Set<String>? = null,
+        refs: List<String> = emptyList(),
         interleaveRefs: List<String> = emptyList(),
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
@@ -93,6 +110,7 @@ object CommitGraphReader {
         }
 
         val mainline = resolveMainline(repositories, mainlineBranch)
+        val selected = selection(refs)
         val builder = CommitGraphBuilder()
         val heads = ArrayList<Commit>(repositories.size)
         val original = HashMap<Commit, SourceCommit>()
@@ -104,8 +122,8 @@ object CommitGraphReader {
             val mainlineTip = repo.resolveBranch(mainline)
                 ?: error("repository '${repo.name}' has no branch '$mainline'")
 
-            val selectedBranches = repo.branches().filter { branches == null || it.name in branches }
-            val selectedTags = repo.tags()
+            val selectedBranches = repo.branches().filter { selected("${Constants.R_HEADS}${it.name}") }
+            val selectedTags = repo.tags().filter { selected("${Constants.R_TAGS}${it.name}") }
 
             // The refs the graph is read from, and the objects they point at. Both are needed and
             // they are not the same thing: the walk starts from objects, while the fetch that later
@@ -177,24 +195,41 @@ object CommitGraphReader {
      */
     private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
         if (patterns.isEmpty()) return emptyList()
-        val matchers = patterns.map { glob(it) }
+        val matches = globs(patterns)
         val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
             for (branch in input.branches) {
-                if (matchers.any { it.matches("${Constants.R_HEADS}${branch.name}") }) {
-                    tips += branch.commit
-                }
+                if (matches("${Constants.R_HEADS}${branch.name}")) tips += branch.commit
             }
             for (tag in input.tags) {
-                if (matchers.any { it.matches("${Constants.R_TAGS}${tag.name}") }) tips += tag.commit
+                if (matches("${Constants.R_TAGS}${tag.name}")) tips += tag.commit
             }
         }
         return tips.toList()
     }
 
-    /** A glob over ref names: `*` is the only metacharacter and it spans path separators. */
-    private fun glob(pattern: String): Regex =
-        Regex(pattern.split('*').joinToString(".*") { Regex.escape(it) })
+    /**
+     * Which refs a run carries over, as a predicate over full ref names.
+     *
+     * No pattern means every ref, so the two options that narrow a run are opt-in and a plain
+     * invocation still loads everything. This is the one place the empty case means *all* rather
+     * than *none*; the interleave reads its own empty list the other way, since a ref that delays a
+     * merge is the exception there rather than the rule.
+     */
+    private fun selection(patterns: List<String>): (String) -> Boolean {
+        if (patterns.isEmpty()) return { true }
+        return globs(patterns)
+    }
+
+    /**
+     * Matches a full ref name against any of [patterns], where `*` is the only metacharacter and it
+     * spans path separators — so a pattern ending in one covers a whole prefix however deeply
+     * nested, and a bare star is every ref.
+     */
+    private fun globs(patterns: List<String>): (String) -> Boolean {
+        val matchers = patterns.map { p -> Regex(p.split('*').joinToString(".*") { Regex.escape(it) }) }
+        return { name -> matchers.any { it.matches(name) } }
+    }
 
     private fun resolveMainline(repositories: List<SourceRepository>, requested: String?): String {
         if (requested != null) {
