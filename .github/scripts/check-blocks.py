@@ -34,6 +34,7 @@ INDENTED = re.compile(r"^ {4}")
 WIDE_OK = re.compile(r"^\s*<!--\s*wide block:\s*(\S.*?)\s*-->\s*$")
 
 # What a code block can show before it scrolls.
+# It is also the width check-help.py renders `--help` at, so the generated Options block passes without an exemption.
 WIDTH = 100
 
 
