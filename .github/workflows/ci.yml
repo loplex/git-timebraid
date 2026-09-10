@@ -71,3 +71,27 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
           if-no-files-found: ignore
+
+  # A renamed section leaves the links that pointed into it aimed at an anchor which no longer
+  # exists, and the rendered page gives no sign of that -- the link just lands at the top of the
+  # file. An overlong code block goes just as quietly, from the other side: GitHub scrolls a block
+  # rather than wrapping it, so the end of the line sits behind a scrollbar. `mvn verify` cannot
+  # see either one: it tests behaviour. This reads the documents themselves.
+  #
+  # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
+  # job wants nothing but a checkout, and it finishes in under a second.
+  docs:
+    name: doc links resolve, blocks fit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check every relative link and anchor resolves
+        run: .github/scripts/check-links.py
+
+      # Width is its own script and its own step, because it is its own rule: a link that goes
+      # nowhere and a block too wide to read fail for unrelated reasons, and a step covering both
+      # says neither when it goes red.
+      - name: Check every code block fits the width it is shown at
+        run: .github/scripts/check-blocks.py

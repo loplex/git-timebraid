@@ -218,8 +218,8 @@ jobs:
       # so they can be read and edited without picking them out of a YAML string.
       # The body is the static install text plus the changelog's own section for this tag, so the
       # entry is written once and read where it is asked for. Relative links in it are rewritten
-      # against the tag by the script: they have to be relative in the repository, and absolute on
-      # a page that is not inside the tree.
+      # against the tag by the script: they have to be relative in the repository, where
+      # check-links.py resolves them, and absolute on a page that is not inside the tree.
       - name: Create the draft release
         shell: bash
         env:

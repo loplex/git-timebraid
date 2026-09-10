@@ -180,7 +180,7 @@ Two things limit how literally "the state of the world at this moment" can be re
 - `--order-by committer` is usually the better choice for "what did the system look like" questions,
   `--order-by author` for "what was being written".
 
-### A merge can carry — and pass on — a repository's future
+### A merge can carry a repository's future, and pass it on
 
 This one is sharper:
 

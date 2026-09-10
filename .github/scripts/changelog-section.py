@@ -22,8 +22,8 @@ Three things are refused rather than guessed at, because each would ship silentl
     otherwise render as the brackets themselves.
 
 Relative links are rewritten against the tag. A link in CHANGELOG.md has to be relative, since that
-is what resolves in the repository; a link in a release body has to be absolute, since that page is
-not inside the tree. Pinning at the tag rather than at a branch also
+is what resolves in the repository and what check-links.py verifies; a link in a release body has to
+be absolute, since that page is not inside the tree. Pinning at the tag rather than at a branch also
 means the target says what it said on the day, which is the same reason the entry is lifted at all.
 
 Usage:
