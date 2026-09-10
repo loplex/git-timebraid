@@ -11,8 +11,7 @@ Real, inspectable git repositories, in two families that answer two different qu
   which refs come with it. Their graphs are deliberately dull; the trees and the refs are the
   variable.
 
-They split the way the top-level [README](../../README.md) does, and for the same reason: the two
-are independent. Nothing in 05–09 changes the order, and nothing in 01–04 changes the trees.
+The two are independent: nothing in 05–09 changes the order, and nothing in 01–04 changes the trees.
 
 **Only the recipe is tracked**: this README, `build-inputs.sh`, each example's README and its
 `plan.txt`. The `input/` and `output…/` directories are generated — they are git-ignored, absent
@@ -53,6 +52,10 @@ The real CLI, e.g. for example 01. `./git-timebraid` is the wrapper in the repo 
 `target/git-timebraid.jar`, so a line below can be copied and run from there once the jar is built.
 The `$ git -C output…` and `$ git -C input/…` lines in each example are written from the example's
 own directory instead, which is where those paths lead.
+
+An unpacked release archive carries these documents and `build-inputs.sh` but no clone: run the
+invocations from the archive's root instead, with `bin/git-timebraid`, or `git-timebraid` on
+`PATH`, in place of `./git-timebraid`.
 
 ```
 ./git-timebraid -o doc/examples/01-two-linear-repos/output --no-bare \
