@@ -280,6 +280,17 @@ class SubmoduleWiringTest {
     }
 
     @Test
+    fun `a refusal tells how to move either input, as the caller spells it`() {
+        val a = rewire("[submodule \"x\"]\n\tpath = x\n", subdir = "libs/a")
+        val b = rewire("[submodule \"a/x\"]\n\tpath = a/x\n", subdir = "libs", repo = "B")
+
+        val error = assertThrows<IllegalArgumentException> {
+            SubmoduleWiring.merge(listOf(a, b), relocation = { "MOVE '$it'" }) { "abc123" }
+        }
+        assertTrue(error.message!!.endsWith("MOVE 'libs/a', or MOVE 'libs'"), error.message)
+    }
+
+    @Test
     fun `a gitmodules that is not git config is an error naming the input and the commit`() {
         val error = assertThrows<IllegalArgumentException> {
             rewire("[submodule \"lib\"\n\tpath = lib\n", subdir = "A")

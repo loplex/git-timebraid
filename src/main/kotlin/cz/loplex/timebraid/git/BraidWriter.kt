@@ -9,8 +9,14 @@ import org.eclipse.jgit.lib.ObjectId
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
 class WriteOptions(
-    /** Prepended to every commit subject. `{repo}` and `{subdir}` are substituted. */
-    val subjectPrefix: String = "{subdir}: ",
+    /**
+     * Prepended to every commit subject. `{repo}` and `{subdir}` are substituted.
+     *
+     * The default is the name and not the destination because a destination can be nested
+     * arbitrarily deep and the subject line carries it on every commit, while a name is one segment
+     * and is what identifies an input everywhere else.
+     */
+    val subjectPrefix: String = "{repo}: ",
     /** Prepended to every tag name. `{repo}` is substituted. */
     val tagPrefix: String = "{repo}/",
     /** Whether to record the original identity of each commit in a trailer. */
@@ -54,6 +60,8 @@ class BraidWriter(
     private val mirrorRemotes: Boolean = false,
     /** Whether an input may land on a gitlink of the repository around it — see [TreeAssembler]. */
     private val dissolveSubmodules: Boolean = false,
+    /** How a refusal tells the user to give an input another subdirectory. */
+    private val relocation: Relocation = Relocation.UNSPELLED,
 ) {
 
     private val graph = inputs.graph
@@ -61,7 +69,7 @@ class BraidWriter(
     /** New identity of every original commit, filled in write order. */
     private val written = HashMap<Commit, ObjectId>(graph.size)
 
-    private val trees = target.treeAssembler(dissolveSubmodules)
+    private val trees = target.treeAssembler(dissolveSubmodules, relocation)
 
     /**
      * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
@@ -201,7 +209,7 @@ class BraidWriter(
         occupied: Set<String>,
         at: () -> String,
     ): ObjectId? {
-        val text = SubmoduleWiring.merge(parts, occupied, at) ?: return null
+        val text = SubmoduleWiring.merge(parts, occupied, relocation, at) ?: return null
         return gitmodulesBlobs.getOrPut(text) { target.writeBlob(text) }
     }
 

@@ -12,7 +12,11 @@ import org.eclipse.jgit.lib.Config
  * `[submodule "…"]` section is self-contained. Holding them apart is also what lets
  * [SubmoduleWiring.merge] leave one out — see the dissolve there.
  */
-class RewiredGitmodules(val sections: List<Section>) {
+class RewiredGitmodules(
+    val sections: List<Section>,
+    /** Where the input these sections came from lands, or `null` for the repository at the root. */
+    val destination: String? = null,
+) {
 
     /** One `[submodule "…"]` section, already in the output's coordinates. */
     class Section(
@@ -97,7 +101,7 @@ object SubmoduleWiring {
             }
             sections += RewiredGitmodules.Section(outputName, path, output.toText())
         }
-        return RewiredGitmodules(sections)
+        return RewiredGitmodules(sections, subdir)
     }
 
     /**
@@ -116,26 +120,30 @@ object SubmoduleWiring {
     fun merge(
         parts: List<RewiredGitmodules>,
         occupied: Set<String> = emptySet(),
+        relocation: Relocation = Relocation.UNSPELLED,
         at: () -> String,
     ): String? {
         val kept = parts.map { part ->
             part.sections.filter { it.path == null || it.path !in occupied }
         }
 
-        val claimed = HashSet<String>()
-        for (sections in kept) {
+        // Each name with the destination of the input that described it first.
+        val claimed = HashMap<String, String?>()
+        for ((part, sections) in parts.zip(kept)) {
             for (section in sections) {
-                require(claimed.add(section.name)) {
+                require(section.name !in claimed) {
                     // A blank name takes no prefix, so no subdirectory moves one off another.
                     if (section.name.isBlank()) {
                         "two inputs both describe a submodule with a blank name at ${at()}; " +
                             "no subdirectory parts them, only renaming that section in one input"
                     } else {
+                        // The repository at the root is not moved by a subdirectory, so it is offered none.
                         "two inputs both describe a submodule named '${section.name}' at ${at()}; " +
-                            "give one of them another subdirectory with =<subdir> at the end of its " +
-                            "::<name> suffix (::=<subdir> where it has none)"
+                            listOfNotNull(claimed.getValue(section.name), part.destination)
+                                .joinToString(", or ") { relocation.remedy(it) }
                     }
                 }
+                claimed[section.name] = part.destination
             }
         }
 

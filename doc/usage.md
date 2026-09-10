@@ -3,15 +3,15 @@
 *What to type, and what the output holds when the run finishes.*
 
 - [Examples](#examples) — whole invocations, before any of the rules behind them.
-- [Writing an input](#writing-an-input) — the `<repo>` argument, and what
-  needs escaping in it.
+- [Writing an input](#writing-an-input) — the `<repo>` argument, and the two
+  characters its suffix may not hold.
 - [Naming and placement](#naming-and-placement) — what an input is called, and where its content
   lands.
 - [Taking the layout off a directory tree](#taking-the-layout-off-a-directory-tree) — `--scan`.
 - [Dissolving a submodule into its content](#dissolving-a-submodule-into-its-content) —
   `--dissolve-submodules`.
-- [What ends up in the output](#what-ends-up-in-the-output) — branches, tags, which refs are carried
-  over, the inputs' own commits, the provenance trailer.
+- [What ends up in the output](#what-ends-up-in-the-output) — what the output repository holds when
+  the run finishes: its refs, its commits, and the messages on them.
 - [The plan](#the-plan) — what `--plan-out` writes.
 - [Options](#options) — every option, as `--help` prints them.
 
@@ -39,9 +39,9 @@ Group the inputs under a layout of your own, two of them sharing `libs/`:
 
 ```bash
 git-timebraid -o /tmp/merged \
-    ~/repos/backend.git::=libs/backend \
-    ~/repos/codegen.git::=libs/codegen \
-    ~/repos/webui.git::=apps/webui
+    ~/repos/backend.git::libs/backend \
+    ~/repos/codegen.git::libs/codegen \
+    ~/repos/webui.git::apps/webui
 ```
 
 Put the backend at the repository root and place `webui` in `ui/`, keeping its own name (so its
@@ -50,7 +50,7 @@ tags stay `webui/v1.2`):
 ```bash
 git-timebraid -o /tmp/merged \
     --root-repo backend --mainline-branch main \
-    ~/repos/backend.git ~/repos/webui.git::=ui ~/repos/codegen.git
+    ~/repos/backend.git ~/repos/webui.git::ui=webui ~/repos/codegen.git
 ```
 
 Carry over two branches and the tags of one release series, and inspect the plan without writing
@@ -73,35 +73,44 @@ and shows what each output ends up holding, down to the commit that only a tag r
 ## Writing an input
 
 ```
-<path-or-url>[::[<name>][=<subdir>]]
+<path-or-url>[::[<subdir>][=<name>]]
 ```
 
-Everything before the **last `::`** is the location, taken verbatim; everything after it is the name
-and the subdirectory. That is the whole rule — nothing is guessed, and an argument that cannot be
-read this way is refused rather than quietly reread.
+Everything before the **last `::`** is the location, taken verbatim; everything after it is the
+subdirectory and the name. That is the whole rule — nothing is guessed, and an argument that cannot
+be read this way is refused rather than quietly reread.
 
-Two things follow, and between them they cover every location there is:
+The subdirectory comes first because placing an input is what most arguments do, and the name
+follows from it: `::apps/webui` both places the input and calls it `webui`. The `=` is there for
+when the two have to differ.
 
-- **The location needs no escaping**, `=` and `::` included. `~/repos/a=b` is simply a path. When
-  the location itself holds a `::`, end the argument with a bare `::` to say where it stops:
-  `~/repos/odd::name::` is that whole path with no name given, which asks for the derived one. That
-  settles the location, not the name: a name derived from a last segment git would not take in a
-  ref is refused, so the working spelling here is `~/repos/odd::name::oddname`. The bare `::` is
-  also what an IPv6 URL needs —
-  `https://[fe80::1]/repo.git::` — and what every refusal that comes out of a suffix suggests.
-- **In the name and the subdirectory**, `\` escapes: `\=`, `\\` and `\:` in the subdirectory, and
-  `\=` alone in a name, which cannot hold a `\` or a `:` (git refuses both in a ref). A bare `:` is
-  refused in either, which is what guarantees that an encoded suffix can never contain a `::` of its
-  own — so the last `::` in the argument is always the separator.
+Three rules follow — two about the location, one about what comes after:
+
+- **The location is never escaped**, `=` and `::` included: `~/repos/a=b` is simply a path, and a
+  `\` in it is just a backslash.
+- **A location that holds a `::` of its own** ends with a bare `::`, which says where it stops:
+  `~/repos/odd::name::` is that whole path with nothing said after it. That settles the location,
+  not the name: a name derived from a last segment git would not take in a ref is refused, so the
+  working spelling here is `~/repos/odd::name::=oddname`. An IPv6 URL needs the bare `::` and
+  nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal name. Every
+  refusal that comes out of a suffix suggests the `::`.
+- **A subdirectory or a name written after the `::` holds no `:` and no `=`.** Neither is escaped;
+  both are refused. That is what guarantees a suffix can never hold a `::` of its own, so the last
+  `::` in the argument is always the separator. A name derived from the location may hold a `=`,
+  which git takes in a ref.
 
 ```bash
-~/repos/webui.git                     # name and subdirectory both 'webui'
-~/repos/webui.git::frontend           # name 'frontend', subdirectory 'frontend'
-~/repos/webui.git::=apps/webui        # derived name 'webui', subdirectory 'apps/webui'
-~/repos/webui.git::ui=apps/webui      # name 'ui', subdirectory 'apps/webui'
+~/repos/webui.git                     # subdirectory and name both 'webui'
+~/repos/webui.git::apps/webui         # subdirectory 'apps/webui', name 'webui'
+~/repos/webui.git::frontend           # subdirectory and name both 'frontend'
+~/repos/webui.git::apps/webui=ui      # subdirectory 'apps/webui', name 'ui'
+~/repos/webui.git::=ui                # name 'ui', and with no subdirectory that is where it lands
 ~/repos/a=b/c                         # a location holding a '='
-~/repos/odd::name::oddname            # a location holding a '::', named
+~/repos/odd::name::=oddname           # a location holding a '::', so the name is given
 ```
+
+Refusing the colon rather than escaping it costs nothing, because a `:` is illegal in a git ref name
+and the name becomes a tag prefix. A name that needed one could never have been used.
 
 A **remote input**, one whose location is a URL (`file://` included) or git's scp-like
 `user@host:path`, is cloned before anything is read: into `.timebraid-clones/<name>.git`, in the
@@ -110,27 +119,29 @@ directory refreshes that clone rather than downloading it again. A clone that an
 that name is refused, naming both. A `--dry-run` without `-o` clones into a temporary directory
 instead, and removes it when the run ends.
 
-A name is held to what git takes as one segment of a ref name: no `/`, no `:`, no space. That is
-not a gap: the name becomes a directory name for the clone of a remote input and a segment of a tag
-name, so one segment is what it means.
+Beyond the `:` and the `=` it may not be written with, a name cannot hold a `/`, nor anything else
+git refuses in a ref name.
+The `/` is no gap: the name is a directory name for the clone of a remote input and a segment of a
+tag name, so one segment is what it means.
 
 ## Naming and placement
 
 Each input lands at its own **destination** in the output. By default that is a top-level directory
 named after the input, and the input's name defaults to the last segment of its path.
 
-Name and placement are set separately.
+Placement and naming travel together, and can be separated.
 
-**`repo.git::name` is the repository's identity.** It is the tag prefix, the provenance label, what
-`--root-repo` matches, and what has to be unique — it is how two inputs whose directories happen to
-share a name are told apart.
+**`repo.git::subdir` says where the content lands**, and names the input after it.
 
-**`repo.git::=subdir` says where the content lands**, and under the default `--subject-prefix` it
-also heads the subject of each commit from that repository.
-
-- It may be a nested path (`repo.git::=libs/backend`), and inputs sharing a prefix share the
-  directory for it — so `backend.git::=libs/backend webui.git::=apps/webui` gives the output a
-  `libs/` and an `apps/`.
+- It may be a nested path (`repo.git::libs/backend`), and inputs sharing a prefix share the
+  directory for it — so `backend.git::libs/backend webui.git::apps/webui` gives the output a
+  `libs/` and an `apps/`. Both are named after the last segment.
+- The name is the input's identity: the tag prefix, the provenance label, the commit subject prefix,
+  what `--root-repo` matches, and what has to be unique — it is how two inputs whose directories
+  happen to share a name are told apart.
+- **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
+  placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
+  what the second one is mostly for: the scan already decided where it goes.
 - Two inputs may not contain each other — `libs` and `libs/backend` — unless **`--splice`** says so.
 - `--splice` never buys a merge of two repositories' files: anything the containing repository
   already holds at the inner destination is a collision, with or without the flag. The one entry
@@ -177,7 +188,7 @@ that directory's `.git`, is a **correction to that finding** rather than a secon
   which is refused until one of them is named:
 
 ```
-git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::tools-core
+git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::=tools-core
 ```
 
 Anything the scan skipped, or a repository from outside the tree entirely, is added the same way:
@@ -199,7 +210,7 @@ holds real content.
 
 ```bash
 git-timebraid -o out.git --root-repo super --dissolve-submodules \
-    super.git lib.git::=vendor/lib
+    super.git lib.git::vendor/lib
 ```
 
 The run names the submodule that gave way, and at how many commits of the output its content stood
@@ -284,6 +295,18 @@ They are in the output too, with their own shas intact, next to the rewritten on
   arrives: a commit only an unselected ref could reach is not merely unreferenced in the output,
   its objects are not there.
 
+### Commit subjects
+
+**Every one carries the repository's name**, so `fix the date picker` from `webui` reads
+`webui: fix the date picker`.
+
+The prefix is `--subject-prefix`, substituting `{repo}` and `{subdir}` — the name and the
+destination. The default is `{repo}: ` and not `{subdir}: ` deliberately: a name is one segment,
+while a destination can be arbitrarily deep. An input placed at the root has no destination, and
+`{subdir}` gives its name there too.
+[Example 05](examples/05-nested-layout/README.md) places `backend` at `libs/backend`, and its
+subjects still read `backend: `.
+
 ### The provenance trailer
 
 On every commit message, unless `--no-provenance` turns it off:
@@ -343,7 +366,7 @@ Usage: git-timebraid [<options>] [<repo>]...
 
   Merge several independent git repositories into one, braided together along the time axis.
 
-  Each <repo> is written <path-or-url>[::[<name>][=<subdir>]].
+  Each <repo> is written <path-or-url>[::[<subdir>][=<name>]].
 
 Where the result is written:
   -o, --output=<path>  Output repository.
@@ -393,7 +416,7 @@ What the output repository holds:
                                   Default: "{repo}/"
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
-                                  Default: "{subdir}: "
+                                  Default: "{repo}: "
   --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
                                   Default: on.
 
@@ -408,16 +431,17 @@ Options:
   -h, --help  Show this message and exit
 
 Arguments:
-  <repo>  Everything before the last '::' is the location, taken verbatim.
-          Append a bare '::' when the location itself holds one.
+  <repo>  Everything before the last '::' is the location, used verbatim -- never escaped.
+          Append a bare '::' when the location itself holds one, and '=<name>' too when its last
+          segment cannot be a ref name.
+
+          <subdir> is where its content lands, and may be nested (::libs/backend).
+          Defaults to <name>.
 
           <name> is the repository's identity: the tag prefix, the provenance label, and what
           --root-repo matches.
-          Defaults to the last segment of the location.
-
-          <subdir> is where its content lands.
-          May be nested (::=libs/backend).
-          Defaults to <name>.
+          Defaults to the last segment of <subdir>, or of the location.
+          Neither may be written with a ':' or a '='.
 
 More on each option, and what the output holds:
 https://github.com/loplex/git-timebraid/blob/main/doc/usage.md

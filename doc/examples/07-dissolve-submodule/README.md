@@ -53,11 +53,11 @@ exist for any of this to work.
 $ ./git-timebraid -o doc/examples/07-dissolve-submodule/output-no-dissolve --no-bare \
     --root-repo super \
     doc/examples/07-dissolve-submodule/input/super \
-    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib
+    doc/examples/07-dissolve-submodule/input/lib::vendor/lib
 
 one repository cannot be placed inside another where it is:
   - 'vendor/lib' is a submodule of super, so --dissolve-submodules would replace it with that repository's own content at super/1b5780ff3cc5292ca34a492d0a96ad8349085b72
-  give each repository placed there another subdirectory with =<subdir> at the end of its ::<name> suffix (::=<subdir> where it has none)
+  give the repository at 'vendor/lib' another subdirectory, as 'doc/examples/07-dissolve-submodule/input/lib::<subdir>'
 ```
 
 A gitlink at the destination is a collision like any other by default. The tool cannot tell from the
@@ -75,7 +75,7 @@ $ ./git-timebraid -o doc/examples/07-dissolve-submodule/output --no-bare \
     --root-repo super --dissolve-submodules \
     --plan-out doc/examples/07-dissolve-submodule/plan.txt \
     doc/examples/07-dissolve-submodule/input/super \
-    doc/examples/07-dissolve-submodule/input/lib::=vendor/lib
+    doc/examples/07-dissolve-submodule/input/lib::vendor/lib
 dissolved: the submodule at vendor/lib in super replaced by its own content at 3 commits
 repositories:
   super -> <root>
@@ -86,10 +86,10 @@ repositories:
 
 ```
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
-a24f306 2023-11-16 19:13:20 +0000 vendor/lib: l2
-2e83979 2023-11-16 09:13:20 +0000 super: s3
-78f0ee6 2023-11-15 18:13:20 +0000 super: s2
-19403f0 2023-11-15 13:13:20 +0000 vendor/lib: l1
+3e2c690 2023-11-16 19:13:20 +0000 lib: l2
+6f4bb86 2023-11-16 09:13:20 +0000 super: s3
+6021a7a 2023-11-15 18:13:20 +0000 super: s2
+a505a1b 2023-11-15 13:13:20 +0000 lib: l1
 10fee29 2023-11-15 08:13:20 +0000 super: s1
 
 $ git -C output ls-tree -r HEAD

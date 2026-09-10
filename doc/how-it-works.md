@@ -117,15 +117,15 @@ that makes a braided commit cost exactly one small tree — its own root.
 
 ### Nested destinations
 
-A destination may be a path rather than a single name (`repo.git::=libs/backend`). An entry name cannot
-hold a `/`, so the segments above the last one are trees the braid builds itself, and inputs sharing
-a prefix share the tree for it:
+A destination may be a path rather than a single name (`repo.git::libs/backend`). An entry name
+cannot hold a `/`, so the segments above the last one are trees the braid builds itself, and inputs
+sharing a prefix share the tree for it:
 
-| Input                        | Lands at        | Prefix trees the braid builds |
-|------------------------------|-----------------|-------------------------------|
-| `webui.git::=apps/webui`     | `apps/webui/`   | `apps/`                       |
-| `backend.git::=libs/backend` | `libs/backend/` | `libs/`                       |
-| `codegen.git::=libs/codegen` | `libs/codegen/` | `libs/`                       |
+| Input                       | Lands at        | Prefix trees the braid builds |
+|-----------------------------|-----------------|-------------------------------|
+| `webui.git::apps/webui`     | `apps/webui/`   | `apps/`                       |
+| `backend.git::libs/backend` | `libs/backend/` | `libs/`                       |
+| `codegen.git::libs/codegen` | `libs/codegen/` | `libs/`                       |
 
 `libs/` is one tree holding both entries, not one per input.
 

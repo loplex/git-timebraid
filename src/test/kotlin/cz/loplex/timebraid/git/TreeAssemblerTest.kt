@@ -286,6 +286,32 @@ class TreeAssemblerTest {
     }
 
     @Test
+    fun `a refusal tells how to move the input, as the caller spells it`() {
+        val spelled = TreeAssembler(inserter, relocation = { "MOVE '$it'" })
+        val landing = assertThrows<IllegalArgumentException> {
+            spelled.assemble(
+                listOf(
+                    root(TreeEntry("webui", FileMode.REGULAR_FILE, blob("a script"))),
+                    placement("webui", emptyTree()),
+                ),
+                at = { "backend/abc123" },
+            )
+        }
+        assertTrue(landing.message!!.endsWith("-- MOVE 'webui'"), landing.message)
+        // Where the way is blocked above it, the input it is blocked for is the one named.
+        val below = assertThrows<IllegalArgumentException> {
+            spelled.assemble(
+                listOf(
+                    root(TreeEntry("libs", FileMode.REGULAR_FILE, blob("a stray file"))),
+                    placement("libs/webui", emptyTree()),
+                ),
+                at = { "webui/abc123" },
+            )
+        }
+        assertTrue(below.message!!.endsWith("-- MOVE 'libs/webui'"), below.message)
+    }
+
+    @Test
     fun `a nested destination reaching into a file of the root repository is a named error`() {
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(

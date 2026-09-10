@@ -18,13 +18,18 @@ a commit that adds an entry of its own at `backend/`.
 platform-collide: p1@10 <- p3@50     notes.md, then backend/README.md
 ```
 
+Every run below writes `::libs=platform`. Without `=platform` the input would be named `libs`,
+after its subdirectory, and the collision in the last section would read `in libs at libs/…`; with
+it, all three runs name the repository `platform`, the collision run too, although its directory is
+`platform-collide`.
+
 ## Refused by default
 
 <!-- wide block: the refusal is quoted as the program prints it, on one line -->
 ```
 $ ./git-timebraid -o doc/examples/06-splice/output-no-splice --no-bare \
-    doc/examples/06-splice/input/platform::=libs \
-    doc/examples/06-splice/input/backend::=libs/backend
+    doc/examples/06-splice/input/platform::libs=platform \
+    doc/examples/06-splice/input/backend::libs/backend
 
 'libs' and 'libs/backend' cannot both hold a repository -- one contains the other, and content placed as a single tree object leaves no room beside it. Pass --splice to open the containing repository's tree and place the other inside it.
 ```
@@ -39,8 +44,8 @@ which a typo and an intention look identical from.
 ```
 $ ./git-timebraid -o doc/examples/06-splice/output --no-bare --splice \
     --plan-out doc/examples/06-splice/plan.txt \
-    doc/examples/06-splice/input/platform::=libs \
-    doc/examples/06-splice/input/backend::=libs/backend
+    doc/examples/06-splice/input/platform::libs=platform \
+    doc/examples/06-splice/input/backend::libs/backend
 spliced: libs/backend inside libs at 3 commits, no collision
 repositories:
   platform -> libs/
@@ -51,10 +56,10 @@ repositories:
 
 ```
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
-52732ce 2023-11-16 14:13:20 +0000 libs: p2
-561d9da 2023-11-16 04:13:20 +0000 libs/backend: a2
-4e349af 2023-11-15 18:13:20 +0000 libs/backend: a1
-1c52e1b 2023-11-15 08:13:20 +0000 libs: p1
+cb9a83e 2023-11-16 14:13:20 +0000 platform: p2
+fbfa842 2023-11-16 04:13:20 +0000 backend: a2
+857a0f0 2023-11-15 18:13:20 +0000 backend: a1
+d94a1dc 2023-11-15 08:13:20 +0000 platform: p1
 
 $ git -C output ls-tree HEAD:libs
 040000 tree 8f7fed5afd3e2c1d5678e2877c333d548cd75399	backend
@@ -79,12 +84,12 @@ on the paths, it is answered per commit:
 <!-- wide block: the collision is quoted as the program prints it, object id and all -->
 ```
 $ ./git-timebraid -o doc/examples/06-splice/output-collision --no-bare --splice \
-    'doc/examples/06-splice/input/platform-collide::platform=libs' \
-    doc/examples/06-splice/input/backend::=libs/backend
+    'doc/examples/06-splice/input/platform-collide::libs=platform' \
+    doc/examples/06-splice/input/backend::libs/backend
 
 one repository cannot be placed inside another where it is:
   - subdirectory 'libs/backend' collides with an entry of the same name in platform at platform/b2f08e9e981466ace65aa1feacc5b442f000c54c
-  give each repository placed there another subdirectory with =<subdir> at the end of its ::<name> suffix (::=<subdir> where it has none)
+  give the repository at 'libs/backend' another subdirectory, as 'doc/examples/06-splice/input/backend::<subdir>'
 ```
 
 Two things to read off that message:
@@ -96,10 +101,6 @@ Two things to read off that message:
   of the write pass — one that examines each containing repository's tree once per *distinct* tree
   rather than once per commit — so a run that would break halfway leaves no half-written output.
   `--dry-run` reports the same thing.
-
-The `::platform=libs` spelling is what keeps the two runs comparable: it gives the input the name
-`platform` rather than the `platform-collide` its directory would derive, so the error message reads
-the way it would for the real repository.
 
 Try it yourself: `git -C doc/examples/06-splice/output log --stat --first-parent` from the repo
 root.

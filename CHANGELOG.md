@@ -13,9 +13,16 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty changes alter what a command line written for 0.1.0 does:
+Twenty-two changes alter what a command line written for 0.1.0 does:
 
-- `repo=subdir` is now `repo::=subdir`.
+- `repo=subdir` is now `repo::subdir=<name>`.\
+  Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
+  it, as does every other ref name built from its name.\
+  Written with `=<name>`, those stay, and its commit subjects take the name, as the bullet on them
+  below says.
+
+- `repo::name=subdir` now reads as `repo::subdir=name`.\
+  **It does not fail:** an argument giving both still parses, and places the input somewhere else.
 
 - A location holding a `::` of its own, an IPv6 URL for one, now ends with a bare `::`:
   `https://[fe80::1]/repo.git::`.
@@ -24,7 +31,7 @@ Twenty changes alter what a command line written for 0.1.0 does:
   `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
   A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.
 
-- `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::=.git` now, is refused.\
+- `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::.git=<name>` now, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
 
 - A shallow or a partial clone is refused as an input, on a dry run too.\
@@ -80,6 +87,8 @@ Twenty changes alter what a command line written for 0.1.0 does:
   0.1.0 wrote input backend's `x` over the braid's branch, so the output's mainline could point at
   that `x` rather than at the braid; leave that branch out with `-b`.
 
+- Commit subjects are prefixed with the input's name, not its destination.
+
 - `--interleave-ref` brings the whole ancestry of what it names into scope.\
   A ref sitting on a mainline is no longer a no-op, and one off the mainlines reaches past the first
   mainline commit it meets; either can move the braid.
@@ -99,15 +108,27 @@ Twenty changes alter what a command line written for 0.1.0 does:
 
 ### Changed
 
-- **`<path-or-url>=<subdir>` is now `<path-or-url>::=<subdir>`.**\
+- **`<path-or-url>=<subdir>` is now `<path-or-url>::<subdir>`.**\
   Everything before the last `::` is the location, verbatim.\
-  Everything after it is `[<name>][=<subdir>]`.\
+  Everything after it is `[<subdir>][=<name>]`.\
   A location holding a `::` of its own ends with a bare one.\
   An IPv6 URL therefore needs one: `https://[fe80::1]/repo.git::`, `git@[::1]:repo.git::`.
 
-- **A `\` escapes `=`, `:` and itself in the suffix.**\
-  A bare `:` is refused there rather than passed through.\
-  That is what makes the last `::` the separator: a colon is written `\:`, so no suffix holds one.
+- **The suffix gives the destination, and the name follows it.**\
+  It used to be the other way round.\
+  `::libs/core` places an input and calls it `core`.\
+  `::libs/core=legacy` sets the two apart.
+
+- **Neither the destination nor the name may be written with a `:` or a `=`.**\
+  Both are refused rather than escaped.\
+  For the name the `:` costs nothing: git refuses one in a ref name, and the name becomes a tag
+  prefix.\
+  The `=` is what separates the subdirectory from the name, so it is refused in both although git
+  accepts one in a ref; a name derived from the location keeps a `=` its last segment holds.
+
+- **`--subject-prefix` defaults to `{repo}: `, not `{subdir}: `.**\
+  A destination can be nested arbitrarily deep.\
+  The name is one segment, and is what identifies an input everywhere else.
 
 - **`-b`/`--branch` no longer carries the tags.**\
   It narrowed the branches but not the tags, which were all read.\
@@ -123,7 +144,7 @@ Twenty changes alter what a command line written for 0.1.0 does:
 ### Added
 
 - **A destination may be a nested path.**\
-  `git-timebraid -o out backend::=libs/backend webui::=apps/webui`\
+  `git-timebraid -o out backend::libs/backend webui::apps/webui`\
   Inputs sharing a prefix share the tree for it.
 
 - **`--ref PATTERN`** — carry over only the refs matching this glob (repeatable).\

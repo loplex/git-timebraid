@@ -138,8 +138,8 @@ class SpliceAgreementIT {
         "--splice",
         "--root-repo", "platform",
         dir.resolve("platform.git").toString(),
-        dir.resolve("libs.git").toString() + "::=libs",
-        dir.resolve("backend.git").toString() + "::=libs/backend",
+        dir.resolve("libs.git").toString() + "::libs",
+        dir.resolve("backend.git").toString() + "::libs/backend",
     )
 
     /**
@@ -182,8 +182,8 @@ class SpliceAgreementIT {
                 "--dissolve-submodules".takeIf { dissolve },
                 "--root-repo", "platform",
                 dir.resolve("platform.git").toString(),
-                dir.resolve("libs.git").toString() + "::=libs",
-                dir.resolve("backend.git").toString() + "::=libs/backend",
+                dir.resolve("libs.git").toString() + "::libs",
+                dir.resolve("backend.git").toString() + "::libs/backend",
             )
             val dry = MergeCommand().test(listOf("--dry-run") + inputs)
             val out = dir.resolve("out.git")

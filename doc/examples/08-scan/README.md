@@ -29,7 +29,7 @@ $ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
 
 Usage: git-timebraid [<options>] [<repo>]...
 
-Error: two inputs resolve to the same repository name 'core': doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- name a scanned repository by giving its directory as an argument, e.g. '<base>/libs/core::libs-core'
+Error: two inputs resolve to the same repository name 'core': doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- name a scanned repository by giving its directory as an argument, e.g. '<base>/libs/core::=libs-core'
 ```
 
 `libs/core` and `tools/core` derive the same name, and a name has to be unique — it is the tag
@@ -42,7 +42,7 @@ was not given, so it refuses and says how to give one.
 $ ./git-timebraid -o doc/examples/08-scan/output --no-bare \
     --scan doc/examples/08-scan/input/platform \
     --plan-out doc/examples/08-scan/plan.txt \
-    doc/examples/08-scan/input/platform/tools/core::tools-core
+    doc/examples/08-scan/input/platform/tools/core::=tools-core
 repositories:
   platform -> <root>
   webui -> apps/webui/
@@ -59,10 +59,10 @@ needed here.
 
 ```
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
-05da709 2023-11-16 09:13:20 +0000 apps/webui: b1
-00e6cca 2023-11-16 04:13:20 +0000 tools/core: t1
-0954aa8 2023-11-15 23:13:20 +0000 libs/core: c1
-9e0c748 2023-11-15 18:13:20 +0000 libs/backend: a1
+7fc1594 2023-11-16 09:13:20 +0000 webui: b1
+ef5bc09 2023-11-16 04:13:20 +0000 tools-core: t1
+25e9367 2023-11-15 23:13:20 +0000 core: c1
+1abcf59 2023-11-15 18:13:20 +0000 backend: a1
 5fd1221 2023-11-15 08:13:20 +0000 platform: p1
 
 $ git -C output ls-tree -r --name-only HEAD
@@ -80,12 +80,12 @@ Everything landed where it sits on disk, and four separate rules can be read str
   without `--splice`, which is why the four destinations inside it are not a collision.
 - **The bare repository lost its `.git`**: `apps/webui.git` on disk, `apps/webui` in the output. A
   bare repository is found the same way any other is.
-- **The renamed repository did not move.** `tools-core` is its name — the argument said so — but its
-  destination is still `tools/core`, where the scan put it. An argument that gives no destination
-  leaves the finding's alone.
+- **The renamed repository did not move.** `tools-core` is its name — `::=tools-core` gives a name
+  and nothing else — but its destination is still `tools/core`, where the scan put it. An argument
+  that gives no destination leaves the finding's alone.
 - **`tools/core` and `libs/core` are two ordinary destinations**, and the commit subjects come from
-  those (`--subject-prefix` defaults to `{subdir}: `), which is why they read alike even though the
-  names now differ.
+  the names rather than from those (`--subject-prefix` defaults to `{repo}: `), which is why the two
+  read `tools-core: ` and `core: ` rather than alike.
 
 ### What the walk left out
 

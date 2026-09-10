@@ -86,6 +86,8 @@ class SpliceCheck(
     private val repoOf: Map<Source, SourceRepository>,
     /** Whether an input may land on a gitlink instead of colliding with it — see [TreeAssembler]. */
     private val dissolveSubmodules: Boolean = false,
+    /** How a refusal tells the user to give an input another subdirectory. */
+    private val relocation: Relocation = Relocation.UNSPELLED,
 ) {
 
     /**
@@ -130,10 +132,10 @@ class SpliceCheck(
 
         val found = collisions.filterNotNull()
         require(found.isEmpty()) {
+            val placed = splices.indices.filter { collisions[it] != null }.map { splices[it].innerSubdir }.distinct()
             "one repository cannot be placed inside another where it is:\n" +
                 found.joinToString("\n") { "  - $it" } +
-                "\n  give each repository placed there another subdirectory with =<subdir> at the end " +
-                "of its ::<name> suffix (::=<subdir> where it has none)"
+                placed.joinToString("") { "\n  " + relocation.remedy(it) }
         }
         return chains.flatMap { chain ->
             chain.filterIndexed { depth, i -> depth == 0 || commits[i] > 0 }

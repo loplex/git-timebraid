@@ -20,25 +20,27 @@ purpose — the trees are what this example is about.
 ```
 ./git-timebraid -o doc/examples/05-nested-layout/output --no-bare \
     --plan-out doc/examples/05-nested-layout/plan.txt \
-    doc/examples/05-nested-layout/input/backend::=libs/backend \
-    doc/examples/05-nested-layout/input/codegen::=libs/codegen \
-    doc/examples/05-nested-layout/input/webui::=apps/webui
+    doc/examples/05-nested-layout/input/backend::libs/backend \
+    doc/examples/05-nested-layout/input/codegen::libs/codegen \
+    doc/examples/05-nested-layout/input/webui::apps/webui
 ```
 
-`::=` gives only the destination, so each name stays the one derived from the directory — `backend`,
-`codegen`, `webui`. That is what the commit subjects below distinguish the repositories by, and it is
-deliberately *not* the destination: `--subject-prefix` defaults to `{subdir}: `, which is why they
-read `libs/backend: ` and not `backend: `.
+The suffix gives the destination, and each name follows its last segment — `backend`, `codegen`,
+`webui`. Here that is also what the directories were called, so nothing was renamed by placing them.
+
+That name is what the commit subjects below distinguish the repositories by, and it is deliberately
+*not* the destination: `--subject-prefix` defaults to `{repo}: `, which is why they read `backend: `
+and not `libs/backend: `. A destination can be arbitrarily deep; a name is one segment.
 
 ## Result
 
 ```
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
-cf6b66a 2023-11-16 14:13:20 +0000 apps/webui: b2
-887f81f 2023-11-16 04:13:20 +0000 libs/backend: a2
-6e67ac1 2023-11-15 23:13:20 +0000 apps/webui: b1
-eec3bbb 2023-11-15 18:13:20 +0000 libs/codegen: c1
-06b847f 2023-11-15 08:13:20 +0000 libs/backend: a1
+cb225d5 2023-11-16 14:13:20 +0000 webui: b2
+e31b059 2023-11-16 04:13:20 +0000 backend: a2
+13bccc6 2023-11-15 23:13:20 +0000 webui: b1
+b9dc21a 2023-11-15 18:13:20 +0000 codegen: c1
+7dda512 2023-11-15 08:13:20 +0000 backend: a1
 
 $ git -C output ls-tree -r --name-only HEAD
 apps/webui/index.html

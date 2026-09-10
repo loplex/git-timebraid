@@ -53,7 +53,7 @@ REF_DEFINITION = re.compile(r"^ {0,3}\[[^\[\]]+\]:\s*(\S+)", re.M)
 # A link whose text holds a bracket, which LINK's own character class cannot span.
 NESTED_LINK = re.compile(r"\[[^\]]*\[[^\]]*\][^\]]*\]\([^)\s]+\)")
 # A backticked span is a quoted token, not prose: a grammar can be written
-# `<repo>[::[<name>][=<subdir>]]`, which is the shape of a reference-style link and is not one.
+# `<repo>[::[<subdir>][=<name>]]`, which is the shape of a reference-style link and is not one.
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)*\1")
 # A document named in a comment, with an anchor when it names a section. Written from the
 # repository root, which is how the comments here already write it. Any path ending .md, rather
