@@ -84,11 +84,12 @@ jobs:
             target/failsafe-reports/
           if-no-files-found: ignore
 
-  # doc/examples is the one place the tool's output is quoted to a reader verbatim, as something
-  # they can reproduce. `mvn verify` proves the behaviour; it says nothing about whether the
-  # READMEs still describe that behaviour correctly, and those are different claims. This job
-  # rebuilds the fixtures, replays every invocation the READMEs document, and compares what came
-  # back against what they show.
+  # Two places quote the tool's own output to a reader as something they can reproduce: the worked
+  # examples, and the option list in doc/usage.md. `mvn verify` proves the behaviour; it says
+  # nothing about whether the documents still describe that behaviour correctly, and those are
+  # different claims. This job rebuilds the fixtures, replays every invocation the READMEs
+  # document, compares what came back against what they show, and checks the option list against
+  # what `--help` actually prints.
   #
   # One platform and one JDK on purpose: the fixtures are built by a bash script and the outputs
   # hold the same commits by design, so a second platform would re-check determinism the matrix
@@ -119,6 +120,12 @@ jobs:
 
       - name: Replay doc/examples
         run: .github/scripts/check-examples.py
+
+      # The block under `## Options` is generated, not written: `check-help.py --write` puts it
+      # there. Without the flag the script only compares, so an option added, renamed or reworded
+      # without regenerating fails here rather than leaving the list stale for a reader.
+      - name: Check doc/usage.md quotes the real --help
+        run: .github/scripts/check-help.py
 
       - name: Show what drifted
         if: failure()

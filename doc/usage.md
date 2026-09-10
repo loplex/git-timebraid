@@ -322,7 +322,9 @@ The file is deterministic, so two runs that should plan the same thing can be di
 
 ## Options
 
-This block is `git-timebraid --help` as the program prints it, copied out of a run of the built jar.
+This block is `git-timebraid --help` as the program prints it, generated from the built jar by
+`.github/scripts/check-help.py --write` rather than written out here, and CI fails when it falls
+behind the tool.
 
 It is rendered at 100 columns, the width this page is written to. What you see is laid out to your
 own terminal instead, and `COLUMNS` overrides that.
@@ -335,6 +337,7 @@ is to an option, what it *means* is a section above it on this page, or is in
 `--order-by`, and for `--interleave-ref` the
 [guarantee it gives up](how-it-works.md#trading-the-guarantee-away-on-purpose).
 
+<!-- BEGIN --help -->
 ```
 Usage: git-timebraid [<options>] [<repo>]...
 
@@ -419,3 +422,4 @@ Arguments:
 More on each option, and what the output holds:
 https://github.com/loplex/git-timebraid/blob/main/doc/usage.md
 ```
+<!-- END --help -->
