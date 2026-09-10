@@ -28,6 +28,7 @@ import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.FS
@@ -385,7 +386,22 @@ private fun parseRepoSpec(raw: String): RepoSpec {
     // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
     // of descending into it, so such a name is refused before anything is written anywhere.
     if (!isOneSegment(derived)) throw UsageError("'$derived' is not a usable name (in '$raw')")
+    if (!isRefComponent(derived)) throw unusableRefName(derived, raw, fromSuffix = name != null)
     return RepoSpec(location, remote, derived, subdir)
+}
+
+/**
+ * A name git would not accept inside a ref.
+ *
+ * Said here rather than left to the write, which is where it used to surface: the first ref
+ * carrying the name, an input's tag under the default prefix, was refused once the braid was
+ * written, and an input no such ref carried went through.
+ */
+private fun unusableRefName(name: String, raw: String, fromSuffix: Boolean): UsageError {
+    val said = "'$name' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
+        "git will not have it in a ref name"
+    // One derived from the location is the one case where giving a name is the way out.
+    return UsageError(if (fromSuffix) said else "$said -- give the input a name with <repo>::<name>")
 }
 
 /**
@@ -419,6 +435,17 @@ private fun isOneSegment(name: String): Boolean {
     }
     return !path.isAbsolute && path.nameCount == 1
 }
+
+/**
+ * Whether [name] can stand as one component of a ref name.
+ *
+ * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), the qualifier on a branch two inputs
+ * share, and the namespace under `refs/remotes/` that `--keep-remotes` writes. A spelling git will
+ * not accept in a ref is therefore not a quirk of taste but an argument that cannot be carried out.
+ * Asked of [TargetRepository.isRefName], the rule every ref the output is given is held to.
+ */
+private fun isRefComponent(name: String): Boolean =
+    TargetRepository.isRefName(Constants.R_TAGS + name + "/x")
 
 /** [raw] split at the last [marker] that is followed by a bare word, or the whole of it and `null`. */
 private fun splitSuffix(raw: String, marker: String): Pair<String, String?> {
