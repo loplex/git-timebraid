@@ -507,8 +507,8 @@ class BraidPipelineIT {
             "-o", out.toString(),
             "--root-repo", "platform",
             path("platform.git"),
-            path("backend.git") + "::=libs/backend",
-            path("webui.git") + "::=apps/frontend/webui",
+            path("backend.git") + "::libs/backend",
+            path("webui.git") + "::apps/frontend/webui",
         )
 
         SourceRepository.open(out).use { repo ->
@@ -549,7 +549,7 @@ class BraidPipelineIT {
                 "-o", path("out.git"),
                 "--root-repo", "platform",
                 path("platform.git"),
-                path("webui.git") + "::=libs/webui",
+                path("webui.git") + "::libs/webui",
             ),
         )
 
@@ -570,8 +570,8 @@ class BraidPipelineIT {
         val result = MergeCommand().test(
             listOf(
                 "-o", path("out.git"),
-                path("platform.git") + "::=libs",
-                path("backend.git") + "::=libs/backend",
+                path("platform.git") + "::libs",
+                path("backend.git") + "::libs/backend",
             ),
         )
 
@@ -603,8 +603,8 @@ class BraidPipelineIT {
         val result = braid(
             "-o", out.toString(),
             "--splice",
-            path("platform.git") + "::=libs",
-            path("backend.git") + "::=libs/backend",
+            path("platform.git") + "::libs",
+            path("backend.git") + "::libs/backend",
         )
 
         // The run says which splice it made and that it checked out clean,
@@ -652,8 +652,8 @@ class BraidPipelineIT {
         }
         val inputs = listOf(
             "--splice",
-            path("platform.git") + "::=libs",
-            path("backend.git") + "::=libs/backend",
+            path("platform.git") + "::libs",
+            path("backend.git") + "::libs/backend",
         )
 
         val dry = MergeCommand().test(listOf("--dry-run") + inputs)
@@ -691,8 +691,8 @@ class BraidPipelineIT {
             "--splice",
             "--root-repo", "platform",
             path("platform.git"),
-            path("libs.git") + "::=libs",
-            path("backend.git") + "::=libs/backend",
+            path("libs.git") + "::libs",
+            path("backend.git") + "::libs/backend",
         )
 
         SourceRepository.open(out).use { repo ->
@@ -726,8 +726,8 @@ class BraidPipelineIT {
                 "--splice",
                 "--root-repo", "platform",
                 path("platform.git"),
-                path("libs-collide.git") + "::=libs",
-                path("backend.git") + "::=libs/backend",
+                path("libs-collide.git") + "::libs=libs-collide",
+                path("backend.git") + "::libs/backend",
             )
         )
         assertEquals(1, dry.statusCode, dry.output)
@@ -760,8 +760,8 @@ class BraidPipelineIT {
             "--splice",
             "--root-repo", "platform",
             path("platform.git"),
-            path("libs.git") + "::=libs",
-            path("backend.git") + "::=libs/backend",
+            path("libs.git") + "::libs",
+            path("backend.git") + "::libs/backend",
         )
 
         val dry = MergeCommand().test(listOf("--dry-run") + inputs)
@@ -788,12 +788,12 @@ class BraidPipelineIT {
         }
 
         val dry = MergeCommand().test(
-            listOf("--dry-run", "--splice", path("platform.git") + "::=libs", path("backend.git") + "::=libs/backend")
+            listOf("--dry-run", "--splice", path("platform.git") + "::libs", path("backend.git") + "::libs/backend")
         )
 
         assertEquals(1, dry.statusCode, dry.output)
         assertEquals(1, Regex("collides").findAll(dry.output).count(), dry.output)
-        assertTrue(dry.output.contains("in platform at backend/${a1.name}"), dry.output)
+        assertTrue(dry.output.contains("in libs at backend/${a1.name}"), dry.output)
     }
 
     @Test
@@ -814,7 +814,7 @@ class BraidPipelineIT {
         }
         fun report(libs: String) = braid(
             "--dry-run", "--verbose", "--splice", "--root-repo", "platform",
-            path("platform.git"), path("$libs.git") + "::=libs", path("backend.git") + "::=libs/backend",
+            path("platform.git"), path("$libs.git") + "::libs", path("backend.git") + "::libs/backend",
         ).output
 
         val late = report("libs-late")
@@ -928,7 +928,7 @@ class BraidPipelineIT {
                 "-o", path("out.git"),
                 "--root-repo", "backend",
                 path("backend.git"),
-                path("lib.git") + "::=vendor/lib",
+                path("lib.git") + "::vendor/lib",
             ),
         )
 
@@ -951,7 +951,7 @@ class BraidPipelineIT {
             "--root-repo", "backend",
             "--dissolve-submodules",
             path("backend.git"),
-            path("lib.git") + "::=vendor/lib",
+            path("lib.git") + "::vendor/lib",
         )
 
         // A dissolve changes what the output holds at that path, so the run says where it happened.
@@ -982,7 +982,7 @@ class BraidPipelineIT {
             assertEquals("", GitCli.run(out, "submodule", "status"))
             // The library's own history is in the output under its own commits, not as one sha.
             assertTrue(
-                GitCli.run(out, "log", "--format=%s", "main").contains("vendor/lib: b1"),
+                GitCli.run(out, "log", "--format=%s", "main").contains("lib: b1"),
                 "the submodule's commits should be part of the braid",
             )
         }

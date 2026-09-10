@@ -6,6 +6,7 @@ import cz.loplex.timebraid.git.BraidWriter
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommand
 import cz.loplex.timebraid.git.OrderBy
+import cz.loplex.timebraid.git.Relocation
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.SpliceCheck
 import cz.loplex.timebraid.git.SpliceReport
@@ -156,7 +157,7 @@ class MergeRunner(
             // Before anything is written into the output, and on a dry run too —
             // a splice that collides does so at one commit of the braid rather than at all of them,
             // so a dry run that skipped this would report a plan it cannot carry out.
-            val splices = SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules).check()
+            val splices = SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
             for (splice in splices) {
                 val dissolved =
                     if (splice.dissolved == 0) ""
@@ -185,8 +186,8 @@ class MergeRunner(
                 require(url == input.remote) {
                     "the output already has a remote '${input.name}' at '$url', and --keep-remotes would " +
                         "record input '${input.name}' there as '${input.remote}' -- remove that remote from " +
-                        "the output, or give the input another name, with ::<name> after its location and " +
-                        "before any =<subdir>"
+                        "the output, or give the input another name, with =<name> at the end of its " +
+                        "::<subdir> suffix (::=<name> where it has none)"
                 }
             }
             if (request.dryRun || output == null) {
@@ -203,6 +204,17 @@ class MergeRunner(
         } finally {
             sources.forEach { it.close() }
         }
+    }
+
+    /**
+     * The remedy a refusal about where an input lands offers, for the input at a destination:
+     * its location with another subdirectory, the argument that moves it.\
+     * A repository `--scan` found is moved the same way, by naming its directory, which corrects the finding.
+     */
+    private val relocation = Relocation { destination ->
+        request.inputs.firstOrNull { it.subdir == destination }
+            ?.let { "give the repository at '$destination' another subdirectory, as '${it.location}::<subdir>'" }
+            ?: Relocation.UNSPELLED.remedy(destination)
     }
 
     /**
@@ -235,6 +247,7 @@ class MergeRunner(
                 options = request.writeOptions,
                 mirrorRemotes = request.keepRemotes,
                 dissolveSubmodules = request.dissolveSubmodules,
+                relocation = relocation,
             ).write()
 
             target.dropFetchRefs()
@@ -330,7 +343,8 @@ class MergeRunner(
         }
         require(origin == input.location) {
             "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
-                "the input another name, with ::<name> after its location and before any =<subdir>"
+                "the input another name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
+                "where it has none)"
         }
     }
 
