@@ -568,4 +568,49 @@ class MergeCommandDryRunTest {
         assertEquals(0, result.statusCode, result.output)
         assertTrue(result.output.contains("frontend -> ui/"), result.output)
     }
+
+    @Test
+    fun `a name git would not accept in a ref is refused here`() {
+        // The name becomes part of a ref wherever one carries it (a tag, a shared branch, a
+        // --keep-remotes mirror), so this used to surface only at the write of the first such ref,
+        // once the braid was written, and an input no ref carried went through.
+        val result = MergeCommand().test(
+            listOf("--dry-run", tmp.resolve("backend.git").toString() + "::odd~name")
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot be a repository name"), result.output)
+        // The argument named the input already, so there is no name to tell it to give.
+        assertTrue("give the input a name" !in result.output, result.output)
+    }
+
+    @Test
+    fun `a name ending in dot lock is refused by git's rule, which JGit's own check lets by`() {
+        val result = MergeCommand().test(
+            listOf("--dry-run", tmp.resolve("backend.git").toString() + "::odd.lock")
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'odd.lock' cannot be a repository name"), result.output)
+    }
+
+    @Test
+    fun `a name derived from a location git would not take in a ref is refused, and naming it works`() {
+        corpus()
+        val spaced = tmp.resolve("my repo")
+        tmp.resolve("backend.git").toFile().renameTo(spaced.toFile())
+        val webui = tmp.resolve("webui.git").toString()
+
+        // Refused while the arguments are read, before an output exists: it used to fail only at
+        // the write of a ref carrying the name, a tag's, with the braid already written.
+        val derived = MergeCommand().test(listOf("--dry-run", spaced.toString(), webui))
+        val printed = derived.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, derived.statusCode, derived.output)
+        assertTrue(printed.contains("'my repo' cannot be a repository name"), derived.output)
+        assertTrue(printed.contains("give the input a name with <repo>::<name>"), derived.output)
+
+        val named = MergeCommand().test(listOf("--dry-run", "$spaced::myrepo", webui))
+        assertEquals(0, named.statusCode, named.output)
+        assertTrue(named.output.contains("myrepo -> myrepo/"), named.output)
+    }
 }

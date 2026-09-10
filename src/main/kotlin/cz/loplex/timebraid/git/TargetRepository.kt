@@ -184,7 +184,7 @@ class TargetRepository private constructor(
 
     /** Points [refName] (a full name such as `refs/heads/main`) at [target]. */
     fun point(refName: String, target: ObjectId) {
-        require(Repository.isValidRefName(refName)) { "'$refName' is not a valid ref name" }
+        require(isRefName(refName)) { "'$refName' is not a valid ref name" }
         val update = repository.updateRef(refName).apply {
             // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) — same asymmetry as
             // above: assigning through the property does not compile.
@@ -199,7 +199,7 @@ class TargetRepository private constructor(
     /** Points `HEAD` at `refs/heads/[branch]`, whether or not that branch exists yet. */
     fun setHead(branch: String) {
         val target = Constants.R_HEADS + branch
-        require(Repository.isValidRefName(target)) { "'$branch' is not a valid branch name" }
+        require(isRefName(target)) { "'$branch' is not a valid branch name" }
         val result = repository.updateRef(Constants.HEAD, true).link(target)
         check(result in ACCEPTED) { "could not point HEAD at $target in $location: $result" }
     }
@@ -224,6 +224,22 @@ class TargetRepository private constructor(
         /** Where the input's [ref] (a full name) lands while the fetch is running. */
         private fun fetchedName(repo: String, ref: String): String =
             FETCH_NAMESPACE + repo + "/" + ref.removePrefix(Constants.R_REFS)
+
+        /**
+         * Whether git accepts [refName] as the full name of a ref, and this platform can hold it.
+         *
+         * JGit's [Repository.isValidRefName] applies git's rules but one: it refuses `.lock` only at
+         * the end of the whole name, where git refuses it at the end of every component
+         * (git-check-ref-format(1)). A ref JGit writes past that is one git does not see:
+         * `git tag` lists no `refs/tags/a.lock/v1`, and `git check-ref-format` rejects the name.
+         *
+         * It adds the platform's own rules, since a loose ref is a file: on Windows a component
+         * other than the last ending in `.`, one named like a device with or without an extension
+         * (`con`, `aux.x`, `com1`), or one holding a `"`, `<`, `>` or `|` is refused, though git's
+         * own rules take it.
+         */
+        fun isRefName(refName: String): Boolean =
+            Repository.isValidRefName(refName) && refName.split('/').none { it.endsWith(".lock") }
 
         private val ACCEPTED = setOf(
             RefUpdate.Result.NEW,
