@@ -179,7 +179,8 @@ class TreeAssembler(
                 require(occupant == null || occupant.mode == FileMode.TREE) {
                     "'$here' is not a directory in the repository that holds it at ${at()}, so no " +
                         "repository can be placed inside it -- give that repository another " +
-                        "subdirectory with <repo>::=<subdir>"
+                        "subdirectory with =<subdir> at the end of its ::<name> suffix " +
+                        "(::=<subdir> where it has none)"
                 }
                 inside = if (occupant == null) emptyList() else entriesOf(occupant.id)
                 deeper = entriesOf
@@ -243,9 +244,11 @@ class TreeAssembler(
                 if (clash?.mode == FileMode.GITLINK) {
                     "that entry is a submodule, so --dissolve-submodules would replace it with " +
                         "this repository's own content; otherwise give the repository another " +
-                        "subdirectory with <repo>::=<subdir>"
+                        "subdirectory with =<subdir> at the end of its ::<name> suffix " +
+                        "(::=<subdir> where it has none)"
                 } else {
-                    "give that repository another subdirectory with <repo>::=<subdir>"
+                    "give that repository another subdirectory with =<subdir> at the end of its " +
+                        "::<name> suffix (::=<subdir> where it has none)"
                 }
 
         /**

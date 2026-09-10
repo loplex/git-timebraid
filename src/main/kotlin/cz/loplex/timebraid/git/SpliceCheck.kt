@@ -132,7 +132,8 @@ class SpliceCheck(
         require(found.isEmpty()) {
             "one repository cannot be placed inside another where it is:\n" +
                 found.joinToString("\n") { "  - $it" } +
-                "\n  give each repository placed there another subdirectory with <repo>::=<subdir>"
+                "\n  give each repository placed there another subdirectory with =<subdir> at the end " +
+                "of its ::<name> suffix (::=<subdir> where it has none)"
         }
         return chains.flatMap { chain ->
             chain.filterIndexed { depth, i -> depth == 0 || commits[i] > 0 }

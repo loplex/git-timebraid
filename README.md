@@ -444,50 +444,88 @@ repositories and shows what each output ends up holding, down to the commit that
 ### Options
 
 ```
-git-timebraid -o <dir> [OPTIONS] [<repo>[::[<name>][=<subdir>]]...]
+Usage: git-timebraid [<options>] [<repo>]...
 
-  the location is everything before the last '::', verbatim
-  <subdir> may be nested: <repo>::=libs/backend
-  at least one <repo>, or --scan, is required
+  Merge several independent git repositories into one, braided together along the time axis.
 
-  -o, --output DIR              output repository (must not exist, or must be an empty
-                                directory; --force also takes a non-empty one)
-      --force                   write into a non-empty output directory, over whatever it holds
-      --scan DIR                take the layout from this directory: every repository under
-                                it becomes an input, placed where it sits on disk (a <repo>
-                                argument naming one of them corrects that finding)
-      --root-repo REPO          repository whose content lands at the repository root
-      --mainline-branch NAME    branch treated as the mainline in every input
-                                (default: first of main/master/develop present in all)
-      --order-by author|committer
-                                timestamp used to interleave the strands
-                                (default: committer)
-  -b, --branch NAME             carry over only these branches, by short name (repeatable);
-                                shorthand for --ref refs/heads/<name>
-      --ref PATTERN             carry over only the refs matching this pattern, over branches
-                                and tags alike (repeatable; glob over full ref names; default:
-                                every branch and every tag; the mainline is always kept)
-      --interleave-ref PATTERN  let this ref's commits delay a mainline merge that merges
-                                them in (repeatable; glob over full ref names; default: none)
-      --splice                  let one input's destination lie inside another's, the two
-                                spliced into one directory (default: the pair is refused);
-                                every splice is checked against every tree before the output
-                                is written, --dry-run included
-      --dissolve-submodules     where an input lands exactly on a gitlink of the repository
-                                around it, replace that submodule with the input's own
-                                content and drop its .gitmodules section (default: the
-                                gitlink is a collision like any other entry)
-      --tag-prefix FMT          default "{repo}/"
-      --subject-prefix FMT      default "{subdir}: "
-      --[no-]provenance         provenance trailer (default: on)
-      --bare / --no-bare        default: bare
-      --keep-remotes            add inputs as remotes, their branches and (under tags/) their
-                                tags at their original commits under refs/remotes/<name>/*,
-                                each mainline among the branches whether the selection took
-                                it or not
-      --dry-run                 compute and summarize the plan, write no output
-      --plan-out FILE           dump the deterministic plan as text
-  -q, --quiet / -v, --verbose
+  Each <repo> is written <path-or-url>[::[<name>][=<subdir>]].
+
+Where the result is written:
+  -o, --output=<path>  Output repository.
+                       Must not exist, or must be an empty directory; --force also takes a non-empty
+                       one.
+  --force              Write into a non-empty output directory instead of refusing it.
+                       Whatever it already holds may be written over.
+
+Finding the inputs, and placing their content:
+  --scan=<path>          Take the layout from this directory.
+                         Every repository under it becomes an input, placed in the output where it
+                         sits on disk.
+  --root-repo=<text>     Name of the repository whose content lands at the output root.
+  --splice               Allow one input's subdirectory to lie inside another's, splicing the two
+                         into one directory.
+                         Without it, such a pair is refused.
+  --dissolve-submodules  Where an input lands exactly on a gitlink, replace that submodule with the
+                         input's own content.
+                         Its .gitmodules section is dropped with it.
+
+Which history is read, and how it interleaves:
+  --mainline-branch=<text>       Branch treated as the mainline in every input.
+                                 Default: the first of main/master/develop present in all.
+  --order-by=(author|committer)  Timestamp used to interleave the strands.
+                                 Default: committer.
+  -b, --branch=<text>            Carry over only these branches, by short name (repeatable).
+                                 Shorthand for --ref refs/heads/<name>, so naming one leaves out
+                                 every ref not named, tags included.
+  --ref=<text>                   Carry over only the refs matching this glob, branches and tags
+                                 alike (repeatable).
+                                 Patterns are matched against full ref names.
+                                 Default: every ref.
+  --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
+                                 (repeatable).
+                                 Default: none.
+
+What the output repository holds:
+  --bare / --no-bare              Write a bare output repository.
+                                  --no-bare checks out a working tree instead.
+                                  Default: bare.
+  --keep-remotes                  Add each input as a remote.
+                                  Every ref it carried over lands under refs/remotes/<name>/*, at
+                                  the original commits, and so does each input's mainline whether
+                                  the selection took it or not.
+  --tag-prefix=<text>             Prefix prepended to every recreated tag.
+                                  {repo} is substituted.
+                                  Default: "{repo}/"
+  --subject-prefix=<text>         Prefix prepended to every commit subject.
+                                  {repo} and {subdir} are substituted.
+                                  Default: "{subdir}: "
+  --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
+                                  Default: on.
+
+Inspecting a run:
+  --dry-run          Compute and summarize the plan, write no output.
+  --plan-out=<path>  Dump the deterministic plan as text to this file.
+  -q, --quiet        Say nothing but the closing report and any error.
+  -v, --verbose      Print each git command the tool shells out to, as it runs.
+
+Options:
+  --version   Show the version and exit
+  -h, --help  Show this message and exit
+
+Arguments:
+  <repo>  Everything before the last '::' is the location, taken verbatim.
+          Append a bare '::' when the location itself holds one.
+
+          <name> is the repository's identity: the tag prefix, the provenance label, and what
+          --root-repo matches.
+          Defaults to the last segment of the location.
+
+          <subdir> is where its content lands.
+          May be nested (::=libs/backend).
+          Defaults to <name>.
+
+More on each option, and what the output holds:
+https://github.com/loplex/git-timebraid/blob/main/doc/usage.md
 ```
 
 ---

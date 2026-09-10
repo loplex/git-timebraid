@@ -132,7 +132,8 @@ object SubmoduleWiring {
                             "no subdirectory parts them, only renaming that section in one input"
                     } else {
                         "two inputs both describe a submodule named '${section.name}' at ${at()}; " +
-                            "give one of them another subdirectory with <repo>::=<subdir>"
+                            "give one of them another subdirectory with =<subdir> at the end of its " +
+                            "::<name> suffix (::=<subdir> where it has none)"
                     }
                 }
             }
