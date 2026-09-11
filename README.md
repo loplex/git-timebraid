@@ -357,7 +357,8 @@ archive with a `jlink` runtime for machines without a JVM (see Install).
 
 Releases are cut by tagging: CI builds the portable archive, the jar, and one archive per platform
 (Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with each one
-to check it runs, and uploads them with a `SHA256SUMS`.
+to check it runs, and uploads them with a `SHA256SUMS`. What changed between releases is in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Limitations
 

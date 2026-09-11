@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    What both distribution archives carry regardless of whether a JVM is bundled: the two launchers
-    and the files that have to travel with the program for legal reasons.
+    What both distribution archives carry regardless of whether a JVM is bundled: the two launchers,
+    the files that have to travel with the program for legal reasons, and CHANGELOG.md, which
+    README.md links to.
 
     Kept apart from the descriptors that include it so the portable and the platform-specific archive
     cannot drift into laying these out differently — the launcher's mode in particular, which is what
@@ -35,6 +36,7 @@
             <outputDirectory>/</outputDirectory>
             <includes>
                 <include>README.md</include>
+                <include>CHANGELOG.md</include>
                 <include>LICENSE</include>
                 <include>NOTICE</include>
             </includes>

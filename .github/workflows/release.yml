@@ -12,8 +12,13 @@ name: Release
 #
 # To cut a release, with the pom on 1.2.3-SNAPSHOT:
 #
-#     git tag -a v1.2.3 -m 'git-timebraid 1.2.3'
-#     git push origin v1.2.3
+# 1. In CHANGELOG.md, head the `[Unreleased]` entry `## [1.2.3] - <today's date>` and open an empty
+#    `## [Unreleased]` above it; at the foot, point `[Unreleased]:` at `compare/v1.2.3...HEAD` and
+#    add a `[1.2.3]:` link to the tag's release, as `[0.1.0]:` has. Commit that on the branch.
+# 2. Tag that commit and push the tag:
+#
+#        git tag -a v1.2.3 -m 'git-timebraid 1.2.3'
+#        git push origin v1.2.3
 #
 # Afterwards, open the next version on the branch: set the pom to 1.3.0-SNAPSHOT and commit, or the
 # tag after this one has nothing to agree with.
@@ -52,8 +57,31 @@ env:
   RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
 
 jobs:
+  # A job of its own, which both archive jobs wait for, because the three ways this can be wrong --
+  # no changelog section for the tag (the entry still headed `[Unreleased]`, say), a heading not
+  # yet dated, or no link for it at the foot of the file -- are each a hand's omission on the
+  # branch, and finding them after every leg has packaged its archive costs the whole run. A
+  # manual run has no tag and so nothing to look up; it is the tag that has to carry an entry. The
+  # job runs either way and only the step is skipped, since a job that is skipped takes every job
+  # needing it down with it.
+  changelog:
+    name: changelog section
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the changelog has a dated section for this tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        # The same base the release step rewrites relative links against: without one, the script
+        # refuses a section that holds such a link, which the release itself would publish.
+        env:
+          BLOB: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}
+        run: .github/scripts/changelog-section.py "$RELEASE_TAG" "$BLOB" > /dev/null
+
   portable:
     name: portable archive
+    needs: changelog
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -96,6 +124,7 @@ jobs:
 
   bundled:
     name: ${{ matrix.label }} archive
+    needs: changelog
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -181,16 +210,24 @@ jobs:
       # `gh` is preinstalled on the runners, so the upload needs no third-party action -- one less
       # thing holding a token. The notes are a file in the repository rather than a heredoc here,
       # so they can be read and edited without picking them out of a YAML string.
+      # The body is the static install text plus the changelog's own section for this tag, so the
+      # entry is written once and read where it is asked for. Relative links in it are rewritten
+      # against the tag by the script: they have to be relative in the repository, and absolute on
+      # a page that is not inside the tree.
       - name: Create the draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.portable.outputs.version }}
+          BLOB: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}
         run: |
           set -euo pipefail
+          body=$(mktemp)
+          cat .github/release-notes.md > "$body"
+          printf '\n' >> "$body"
+          .github/scripts/changelog-section.py "$GITHUB_REF_NAME" "$BLOB" >> "$body"
           gh release create "$GITHUB_REF_NAME" \
               --draft \
               --title "git-timebraid $VERSION" \
-              --generate-notes \
-              --notes "$(cat .github/release-notes.md)" \
+              --notes-file "$body" \
               artifacts/*
