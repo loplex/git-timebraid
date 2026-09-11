@@ -57,7 +57,7 @@ $ ./git-timebraid -o doc/examples/07-dissolve-submodule/output-no-dissolve --no-
 
 one repository cannot be placed inside another where it is:
   - 'vendor/lib' is a submodule of super, so --dissolve-submodules would replace it with that repository's own content at super/1b5780ff3cc5292ca34a492d0a96ad8349085b72
-  give each repository placed there another subdirectory with <repo>::=<subdir>
+  give each repository placed there another subdirectory with =<subdir> at the end of its ::<name> suffix (::=<subdir> where it has none)
 ```
 
 A gitlink at the destination is a collision like any other by default. The tool cannot tell from the

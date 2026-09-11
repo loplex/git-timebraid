@@ -4,11 +4,15 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.NoSuchOption
+import com.github.ajalt.clikt.core.context
+import com.github.ajalt.clikt.core.terminal
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.parameters.arguments.ArgumentTransformContext
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.help
 import com.github.ajalt.clikt.parameters.arguments.transformAll
+import com.github.ajalt.clikt.parameters.groups.OptionGroup
+import com.github.ajalt.clikt.parameters.groups.provideDelegate
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
@@ -17,6 +21,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
+import com.github.ajalt.mordant.terminal.Terminal
 import cz.loplex.timebraid.MergeInput
 import cz.loplex.timebraid.MergeRequest
 import cz.loplex.timebraid.MergeResult
@@ -41,6 +46,168 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
+
+/**
+ * A hard line break inside a single help paragraph.
+ *
+ * Clikt hands a help string to mordant as plain text: a lone `\n` collapses into a space, and
+ * U+0085 (NEL) breaks a line without also opening a paragraph (U+2028 does too, and nothing here
+ * uses it). It is what puts an option's default on a line of its own, where the whole column can
+ * be skimmed for defaults, at no cost in blank lines. Mordant replaces it with a newline, so the
+ * character reaches no console — which is why `MessageCharsetTest` exempts this one and nothing
+ * else.
+ */
+private const val BR = "\u0085"
+
+/*
+ * The groups below exist for `--help`, which clikt renders one section per group. Twenty options in
+ * one flat list make the required ones look like the rare ones; grouped, a reader meets them in the
+ * order the decisions arise. Nothing about parsing changes: a grouped option is spelled and given
+ * exactly as it was.
+ *
+ * Each help string carries one information per line, with `BR` between them, because the
+ * formatter reflows anything else into a block a reader has to read rather than scan — a single
+ * newline is dropped, and a `-` list renders its bullets without indenting what follows them. What
+ * an option does, and separately what happens when it is not given, are two such informations, so
+ * every default sits on its own line and the whole column can be skimmed for them.
+ *
+ * What an option *means*, and what it costs, stays in `doc/usage.md`, which the epilog points at. A
+ * help entry that grows past a few lines is almost always a copy of that page, and the copy is the
+ * one that goes stale.
+ */
+
+private class OutputRepoOptions : OptionGroup(
+    name = "Where the result is written",
+) {
+    val output by option("-o", "--output").path()
+        .help(
+            "Output repository." + BR +
+                "Must not exist, or must be an empty directory; --force also takes a non-empty one."
+        )
+
+    val force by option("--force").flag()
+        .help(
+            "Write into a non-empty output directory instead of refusing it." + BR +
+                "Whatever it already holds may be written over."
+        )
+}
+
+private class PlacementOptions : OptionGroup(
+    name = "Finding the inputs, and placing their content",
+) {
+    val scan by option("--scan").path()
+        .help(
+            "Take the layout from this directory." + BR +
+                "Every repository under it becomes an input, placed in the output where it sits " +
+                "on disk."
+        )
+
+    val rootRepo by option("--root-repo")
+        .help("Name of the repository whose content lands at the output root.")
+
+    val splice by option("--splice").flag()
+        .help(
+            "Allow one input's subdirectory to lie inside another's, splicing the two into one " +
+                "directory." + BR + "Without it, such a pair is refused."
+        )
+
+    val dissolveSubmodules by option("--dissolve-submodules").flag()
+        .help(
+            "Where an input lands exactly on a gitlink, replace that submodule with the " +
+                "input's own content." + BR + "Its .gitmodules section is dropped with it."
+        )
+}
+
+private class HistoryOptions : OptionGroup(
+    name = "Which history is read, and how it interleaves",
+) {
+    val mainlineBranch by option("--mainline-branch")
+        .help(
+            "Branch treated as the mainline in every input." + BR +
+                "Default: the first of " +
+                "${CommitGraphReader.MAINLINE_CANDIDATES.joinToString("/")} present in all."
+        )
+
+    val orderBy by option("--order-by")
+        .choice("author" to OrderBy.AUTHOR, "committer" to OrderBy.COMMITTER)
+        .default(OrderBy.COMMITTER)
+        .help("Timestamp used to interleave the strands." + BR + "Default: committer.")
+
+    val branches by option("-b", "--branch").multiple()
+        .help(
+            "Carry over only these branches, by short name (repeatable)." + BR +
+                "Shorthand for --ref refs/heads/<name>, so naming one leaves out every ref not " +
+                "named, tags included."
+        )
+
+    val refs by option("--ref").multiple()
+        .help(
+            "Carry over only the refs matching this glob, branches and tags alike " +
+                "(repeatable)." + BR +
+                "Patterns are matched against full ref names." + BR +
+                "Default: every ref."
+        )
+
+    val interleaveRefs by option("--interleave-ref").multiple()
+        .help(
+            "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
+                BR + "Default: none."
+        )
+}
+
+private class OutputContentOptions : OptionGroup(
+    name = "What the output repository holds",
+) {
+    val bare by option("--bare").flag("--no-bare", default = true)
+        .help(
+            "Write a bare output repository." + BR +
+                "--no-bare checks out a working tree instead." + BR +
+                "Default: bare."
+        )
+
+    val keepRemotes by option("--keep-remotes").flag()
+        .help(
+            "Add each input as a remote." + BR +
+                "Every ref it carried over lands under refs/remotes/<name>/*, at the original " +
+                    "commits, and so does each input's mainline whether the selection took it or " +
+                    "not."
+        )
+
+    val tagPrefix by option("--tag-prefix").default("{repo}/")
+        .help(
+            "Prefix prepended to every recreated tag." + BR +
+                "{repo} is substituted." + BR +
+                "Default: \"{repo}/\""
+        )
+
+    val subjectPrefix by option("--subject-prefix").default("{subdir}: ")
+        .help(
+            "Prefix prepended to every commit subject." + BR +
+                "{repo} and {subdir} are substituted." + BR +
+                "Default: \"{subdir}: \""
+        )
+
+    val provenance by option("--provenance").flag("--no-provenance", default = true)
+        .help(
+            "Record each commit's original sha and parents in a trailer." + BR + "Default: on."
+        )
+}
+
+private class ReportingOptions : OptionGroup(
+    name = "Inspecting a run",
+) {
+    val dryRun by option("--dry-run").flag()
+        .help("Compute and summarize the plan, write no output.")
+
+    val planOut by option("--plan-out").path()
+        .help("Dump the deterministic plan as text to this file.")
+
+    val quiet by option("-q", "--quiet").flag()
+        .help("Say nothing but the closing report and any error.")
+
+    val verbose by option("-v", "--verbose").flag()
+        .help("Print each git command the tool shells out to, as it runs.")
+}
 
 /**
  * Entry point of the `git-timebraid` CLI: parse and validate the options, hand a [MergeRequest] to
@@ -69,150 +236,64 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     init {
         versionOption(version()) { "git-timebraid version $it" }
+
+        // The help formatter lays out to the terminal's width, which mordant asks the OS for when
+        // the output is a console and otherwise settles at 79 — what a redirect, a pipe into a
+        // pager, or a CI log gets. COLUMNS is the usual way to say otherwise, and honouring it is
+        // also what lets doc/usage.md quote the option list at the width the rest of that page is
+        // written to, rather than at the narrow fallback.
+        System.getenv("COLUMNS")?.toIntOrNull()?.let { columns ->
+            context { terminal = Terminal(width = columns.coerceAtLeast(40)) }
+        }
     }
 
-    private val output by option("-o", "--output").path()
-        .help(
-            "Output repository (must not exist, or must be an empty directory; --force also takes a " +
-                "non-empty one).",
-        )
-
-    private val force by option("--force").flag()
-        .help(
-            "Write into a non-empty output directory instead of refusing it, over whatever it already " +
-                "holds.",
-        )
-
-    private val rootRepo by option("--root-repo")
-        .help(
-            "Repository whose content lands at the output root instead of in a subdirectory, by " +
-                "name (see <repo>::<name>).",
-        )
-
-    private val mainlineBranch by option("--mainline-branch")
-        .help(
-            "Branch treated as the mainline in every input " +
-                "(default: first of ${CommitGraphReader.MAINLINE_CANDIDATES.joinToString("/")} present in all)."
-        )
-
-    private val orderBy by option("--order-by")
-        .choice("author" to OrderBy.AUTHOR, "committer" to OrderBy.COMMITTER)
-        .default(OrderBy.COMMITTER)
-        .help("Timestamp used to interleave the strands.")
-
-    private val branches by option("-b", "--branch").multiple()
-        .help(
-            "Carry over only these branches, by short name (repeatable). Shorthand for " +
-                "--ref refs/heads/<name>, and so subject to the same rule: naming any ref at all " +
-                "leaves out every ref not named, tags included."
-        )
-
-    private val refs by option("--ref").multiple()
-        .help(
-            "Carry over only the refs matching this pattern, over branches and tags alike " +
-                "(repeatable; glob over full ref names, e.g. refs/tags/v1.*; '*' is everything). " +
-                "Default: every branch and every tag. The mainline is always carried over."
-        )
-
-    private val interleaveRefs by option("--interleave-ref").multiple()
-        .help(
-            "Let this ref's commits delay a mainline merge that merges them in, so the merge lands " +
-                "by their time rather than by its own (repeatable; glob over full ref names, e.g. " +
-                "refs/heads/release/*; '*' opts in every ref). Off by default: only the mainlines " +
-                "themselves decide where the strands interleave."
-        )
-
-    private val scan by option("--scan").path()
-        .help(
-            "Take the layout from this directory instead of writing it out: every repository under " +
-                "it becomes an input, placed in the output where it sits on disk, and the " +
-                "directory itself lands at the output root when it is one. A repository is not " +
-                "descended into, and dot-names and symlinks are skipped. A <repo> argument naming " +
-                "a directory the scan found replaces that finding, which is how one of them is " +
-                "renamed or moved."
-        )
-
-    private val splice by option("--splice").flag()
-        .help(
-            "Let one input's destination lie inside another's (::=libs and ::=libs/backend), " +
-                "splicing the two into one directory instead of refusing the pair. The containing " +
-                "repository's own content stays where it is; anything it already holds at the " +
-                "inner destination is still a collision."
-        )
-
-    private val dissolveSubmodules by option("--dissolve-submodules").flag()
-        .help(
-            "Where an input lands exactly on a gitlink of the repository around it, replace that " +
-                "submodule with the input's own content instead of refusing the pair, and drop " +
-                "its section from the output's .gitmodules. The gitlink names one commit of the " +
-                "submodule; what takes its place is whatever that input had reached at each point " +
-                "of the braid, so the two are not the same history."
-        )
-
-    private val tagPrefix by option("--tag-prefix").default("{repo}/")
-        .help("Prefix prepended to every recreated tag; {repo} is substituted.")
-
-    private val subjectPrefix by option("--subject-prefix").default("{subdir}: ")
-        .help("Prefix prepended to every commit subject; {repo} and {subdir} are substituted.")
-
-    private val provenance by option("--provenance").flag("--no-provenance", default = true)
-        .help("Record each commit's original sha and parents in a trailer (default: on).")
-
-    private val bare by option("--bare").flag("--no-bare", default = true)
-        .help("Write a bare output repository (--no-bare checks out a working tree).")
-
-    private val keepRemotes by option("--keep-remotes").flag()
-        .help(
-            "Add each input as a remote of the output, its branches under refs/remotes/<name>/* " +
-                "and its tags under refs/remotes/<name>/tags/*, pointing at the original commits, its " +
-                "mainline among the branches whether the selection took it or not."
-        )
-
-    private val dryRun by option("--dry-run").flag()
-        .help("Compute and summarize the plan, write no output.")
-
-    private val planOut by option("--plan-out").path()
-        .help("Dump the deterministic plan as text to this file.")
-
-    private val quiet by option("-q", "--quiet").flag()
-        .help("Say nothing but the closing report and any error.")
-
-    private val verbose by option("-v", "--verbose").flag()
-        .help("Print each git command the tool shells out to, as it runs.")
+    private val outputRepo by OutputRepoOptions()
+    private val placement by PlacementOptions()
+    private val history by HistoryOptions()
+    private val outputContent by OutputContentOptions()
+    private val reporting by ReportingOptions()
 
     private val inputs by argument("repo")
         .help(
-            "Input repository: <path-or-url>[::[<name>][=<subdir>]]. Everything before the last " +
-                "'::' is the location, verbatim; append a bare '::' when the location itself " +
-                "holds one. The name is the repository's identity (tag prefix, provenance, " +
-                "--root-repo) and defaults to the last segment of the location, which an empty " +
-                "name asks for. The subdirectory is where the content lands, may be nested " +
-                "(::=libs/backend), and defaults to the name. In both, '\\' escapes; the " +
-                "subdirectory writes a ':' as '\\:', and a name can hold neither a ':' nor a " +
-                "'\\', which git refuses in a ref.",
+            "Everything before the last '::' is the location, taken verbatim." + BR +
+                "Append a bare '::' when the location itself holds one.\n\n" +
+                "<name> is the repository's identity: the tag prefix, the provenance label, and " +
+                "what --root-repo matches." + BR +
+                "Defaults to the last segment of the location.\n\n" +
+                "<subdir> is where its content lands." + BR +
+                "May be nested (::=libs/backend)." + BR +
+                "Defaults to <name>.",
         )
         .transformAll(nvalues = -1, required = false) { tokens -> afterOptions(tokens) }
 
     override fun help(context: Context): String =
-        "Merge several independent git repositories into one, braided together along the time axis."
+        "Merge several independent git repositories into one, braided together along the time " +
+            "axis.\n\n" +
+            "Each <repo> is written <path-or-url>[::[<name>][=<subdir>]]."
+
+    override fun helpEpilog(context: Context): String =
+        "More on each option, and what the output holds: " +
+            "https://github.com/loplex/git-timebraid/blob/main/doc/usage.md"
 
     override fun run() {
-        if (quiet && verbose) throw UsageError("--quiet and --verbose cannot be combined")
-        if (output == null && !dryRun) {
+        if (reporting.quiet && reporting.verbose) {
+            throw UsageError("--quiet and --verbose cannot be combined")
+        }
+        if (outputRepo.output == null && !reporting.dryRun) {
             throw UsageError("-o/--output is required unless --dry-run is given")
         }
         // An empty path is the working directory to `Path` and nothing at all to `File`, so the
         // checks below would pass it and the creation fail on it, once every input was read.
-        if (output?.toString()?.isEmpty() == true) {
+        if (outputRepo.output?.toString()?.isEmpty() == true) {
             throw UsageError("-o/--output names no directory; give the path the output is written to")
         }
         // Asked now rather than left to the write: the plan is written after the output, and a path
         // that cannot take it would fail a run whose braid is already in place.
-        planOut?.let { file ->
+        reporting.planOut?.let { file ->
             unwritable(file)?.let { throw UsageError("--plan-out '$file' cannot be written: $it") }
         }
 
-        if (scan == null && inputs.isEmpty()) {
+        if (placement.scan == null && inputs.isEmpty()) {
             throw UsageError("give at least one input repository, or --scan a directory of them")
         }
 
@@ -223,26 +304,32 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         // Asked now rather than when the output is created, after every input is read and the
         // braid planned: a dry run never reaches that, and would pass an -o the real run refuses.
         // After the inputs, so that one of them being the output is said as that.
-        output?.let { output ->
-            TargetRepository.refusal(output, force, bare)?.let { throw CliktError(it) }
+        outputRepo.output?.let { output ->
+            TargetRepository.refusal(output, outputRepo.force, outputContent.bare)?.let { throw CliktError(it) }
         }
 
         val request = MergeRequest(
             inputs = merged,
-            output = output,
-            force = force,
-            bare = bare,
-            keepRemotes = keepRemotes,
-            orderBy = orderBy,
-            mainlineBranch = mainlineBranch,
-            refs = branches.map(CommitGraphReader::branchPattern) + refs,
-            interleaveRefs = interleaveRefs,
-            splice = splice,
-            dissolveSubmodules = dissolveSubmodules,
-            writeOptions = WriteOptions(subjectPrefix, tagPrefix, provenance),
-            dryRun = dryRun,
+            output = outputRepo.output,
+            force = outputRepo.force,
+            bare = outputContent.bare,
+            keepRemotes = outputContent.keepRemotes,
+            orderBy = history.orderBy,
+            mainlineBranch = history.mainlineBranch,
+            refs = history.branches.map(CommitGraphReader::branchPattern) + history.refs,
+            interleaveRefs = history.interleaveRefs,
+            splice = placement.splice,
+            dissolveSubmodules = placement.dissolveSubmodules,
+            writeOptions = WriteOptions(
+                outputContent.subjectPrefix,
+                outputContent.tagPrefix,
+                outputContent.provenance,
+            ),
+            dryRun = reporting.dryRun,
         )
-        val progress = Progress(Progress.level(quiet, verbose)) { echo(it, err = true) }
+        val progress = Progress(Progress.level(reporting.quiet, reporting.verbose)) {
+            echo(it, err = true)
+        }
 
         val result = try {
             MergeRunner(request, progress).run()
@@ -268,9 +355,9 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * that derive the same name need, and there is no other way to reach one of them.
      */
     private fun resolveInputs(specs: List<RepoSpec>): List<MergeInput> {
-        val scanned = scan?.let { base ->
+        val scanned = placement.scan?.let { base ->
             try {
-                RepositoryScan.scan(base, output)
+                RepositoryScan.scan(base, outputRepo.output)
             } catch (e: IllegalArgumentException) {
                 throw UsageError(e.message ?: "--scan found nothing usable")
             }
@@ -280,7 +367,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val overrides = LinkedHashMap<Path, RepoSpec>()
         val extras = ArrayList<RepoSpec>()
         // The directories the output takes up, which an argument's or a finding's own may not meet.
-        val outputPlaces = output?.let { placesOf(it, withGitDir = !bare) }
+        val outputPlaces = outputRepo.output?.let { placesOf(it, withGitDir = !outputContent.bare) }
         // The scan leaves the output itself out, however it is spelled, but not a working tree whose
         // git directory the output is: `-o tree/x/.git` beside a found `tree/x` is refused here.
         scanned.firstOrNull { outputPlaces != null && meet(inputPlacesOf(it.path), outputPlaces) }?.let {
@@ -319,18 +406,19 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         val names = merged.map { it.name }
         if (names.toSet().size != names.size) throw duplicateNames(merged)
-        rootRepo?.let { root ->
+        placement.rootRepo?.let { root ->
             if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
             merged.firstOrNull { it.subdir == null && it.name != root }?.let { base ->
                 throw UsageError(
                     "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
                         "repository ('${base.name}') and lands at the output root -- give that one " +
-                        "a subdirectory with <repo>::=<subdir> to move it off"
+                        "a subdirectory with =<subdir> at the end of its ::<name> suffix " +
+                        "(::=<subdir> where it has none) to move it off"
                 )
             }
         }
         return merged.map { input ->
-            if (input.name != rootRepo) input
+            if (input.name != placement.rootRepo) input
             else MergeInput(input.location, input.isRemote, input.name, subdir = null)
         }
     }
@@ -395,8 +483,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * the form is spelled out rather than left to the reader of the `<repo>` grammar.
      */
     private fun duplicateNames(inputs: List<MergeInput>): UsageError {
-        val remedy = if (scan == null) {
-            " -- give one of them a name with <repo>::<name>"
+        val remedy = if (placement.scan == null) {
+            " -- give one of them a name, with ::<name> after its location and before any =<subdir>"
         } else {
             " -- name a scanned repository by giving its directory as an argument, " +
                 "e.g. '<base>/libs/core::libs-core'"
@@ -493,7 +581,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
         echo(result.plan.summary())
 
-        planOut?.let { file ->
+        reporting.planOut?.let { file ->
             try {
                 file.toAbsolutePath().parent?.createDirectories()
                 file.writeText(result.plan.render())
@@ -505,7 +593,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         result.fetch?.let { fetch ->
             echo(
-                "fetched ${fetch.refs} refs from ${fetch.repositories} repositories into $output",
+                "fetched ${fetch.refs} refs from ${fetch.repositories} repositories into ${outputRepo.output}",
                 err = true,
             )
         }
@@ -671,7 +759,8 @@ private fun unusableRefName(name: String, raw: String, fromSuffix: Boolean): Usa
     // A name the suffix gave is refused like the suffix's other parts; one derived from the
     // location is the one case where giving a name is the way out.
     return UsageError(
-        if (fromSuffix) said + REMEDY else "$said -- give the input a name with <repo>::<name>"
+        if (fromSuffix) said + REMEDY
+        else "$said -- give the input a name, with ::<name> after its location and before any =<subdir>"
     )
 }
 

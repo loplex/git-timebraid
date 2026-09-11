@@ -84,7 +84,7 @@ $ ./git-timebraid -o doc/examples/06-splice/output-collision --no-bare --splice 
 
 one repository cannot be placed inside another where it is:
   - subdirectory 'libs/backend' collides with an entry of the same name in platform at platform/b2f08e9e981466ace65aa1feacc5b442f000c54c
-  give each repository placed there another subdirectory with <repo>::=<subdir>
+  give each repository placed there another subdirectory with =<subdir> at the end of its ::<name> suffix (::=<subdir> where it has none)
 ```
 
 Two things to read off that message:

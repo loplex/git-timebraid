@@ -27,6 +27,13 @@ import kotlin.io.path.name
  * a string, though: it compiles to a number, which nothing in a class file tells apart from any
  * other, so a `'─'` handed to `padEnd` or `repeat` goes unseen here, as does a character made at
  * run time.
+ *
+ * One character is exempt, and only because it is never printed. Clikt's help formatter hands a
+ * help string to mordant as plain text, collapsing a lone `\n` into a space, and takes U+0085 (NEL)
+ * as a hard line break — `Text.wrap` breaks on it and emits a newline in its place, so the
+ * character itself reaches no encoder and no console. It is how a help entry puts its default on a
+ * line of its own without spending a blank one. Anything else outside ASCII is still reported,
+ * including a NEL's neighbour U+2028, which mordant also breaks on but which nothing here needs.
  */
 class MessageCharsetTest {
 
@@ -41,7 +48,8 @@ class MessageCharsetTest {
             for (file in tree.filter { it.extension == "class" }) {
                 scanned++
                 for (text in stringConstants(Files.readAllBytes(file))) {
-                    val outside = text.filter { it.code > 127 }.toSortedSet()
+                    val outside = text.filter { it.code > 127 && it != HELP_LINE_BREAK }
+                        .toSortedSet()
                     if (outside.isNotEmpty()) {
                         offenders += "${file.name}: $outside in \"${text.take(60)}\""
                     }
@@ -119,3 +127,6 @@ class MessageCharsetTest {
 
     private fun ByteBuffer.skip(bytes: Int) = position(position() + bytes)
 }
+
+/** The hard line break a help string uses here, exempt for the reason the class KDoc gives. */
+private const val HELP_LINE_BREAK = '\u0085'

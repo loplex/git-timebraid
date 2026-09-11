@@ -515,7 +515,7 @@ class MergeCommandDryRunTest {
         val derived = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(derived.output.contains("cannot be a repository name"), derived.output)
-        assertTrue(derived.output.contains("give the input a name with <repo>::<name>"), derived.output)
+        assertTrue(derived.output.contains("give the input a name, with ::<name> after its location"), derived.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "$holding::oddname", path("webui.git"))
@@ -968,7 +968,7 @@ class MergeCommandDryRunTest {
         val printed = derived.output.replace(Regex("\\s+"), " ")
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(printed.contains("'my repo' cannot be a repository name"), derived.output)
-        assertTrue(printed.contains("give the input a name with <repo>::<name>"), derived.output)
+        assertTrue(printed.contains("give the input a name, with ::<name> after its location"), derived.output)
 
         val named = MergeCommand().test(listOf("--dry-run", "$spaced::myrepo", webui))
         assertEquals(0, named.statusCode, named.output)

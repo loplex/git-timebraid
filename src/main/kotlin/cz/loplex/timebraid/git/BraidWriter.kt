@@ -208,10 +208,11 @@ class BraidWriter(
     /**
      * The subject prefix, the original message, and the provenance trailer.
      *
-     * The trailer is what makes the README's promise checkable instead of merely claimed: it records
-     * the original sha and the original parent shas, so a script can walk the output and verify that
-     * every edge of every input still exists. Trailing newlines are normalised so the trailer always
-     * ends up as its own paragraph, which is where git's trailer parsing expects it.
+     * The trailer is what makes the promise that every original edge survives checkable instead of
+     * merely claimed: it records the original sha and the original parent shas, so a script can
+     * walk the output and verify that every edge of every input still exists. Trailing newlines are
+     * normalised so the trailer always ends up as its own paragraph, which is where git's trailer
+     * parsing expects it.
      */
     private fun messageOf(planned: PlannedCommit, original: SourceCommit): String {
         val repo = planned.commit.source.name

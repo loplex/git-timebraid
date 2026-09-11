@@ -33,7 +33,8 @@ INDENTED = re.compile(r"^ {4}")
 # The marker that lets one block stay wide, and the reason it gives, which is not optional.
 WIDE_OK = re.compile(r"^\s*<!--\s*wide block:\s*(\S.*?)\s*-->\s*$")
 
-# What a code block can show before it scrolls.
+# What a code block can show before it scrolls. It is the width doc/usage.md is written to and the
+# one check-help.py renders `--help` at, so the generated Options block passes without an exemption.
 WIDTH = 100
 
 
