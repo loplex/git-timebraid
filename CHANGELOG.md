@@ -94,7 +94,7 @@ Twenty-one changes alter what a command line written for 0.1.0 does:
 
 ### Changed
 
-- **`<repo>=<subdir>` is now `<repo>::=<subdir>`.**\
+- **`<path-or-url>=<subdir>` is now `<path-or-url>::=<subdir>`.**\
   Everything before the last `::` is the location, verbatim.\
   Everything after it is `[<name>][=<subdir>]`.\
   A location holding a `::` of its own ends with a bare one.\
@@ -109,6 +109,11 @@ Twenty-one changes alter what a command line written for 0.1.0 does:
   A run asking for one branch still pulled in whatever the tags could reach.\
   It is now shorthand for `--ref refs/heads/<name>`, and naming any ref leaves out the rest.\
   The old behaviour is one pattern away: `--ref refs/heads/main --ref 'refs/tags/*'`.
+
+- **`--help` groups its options by the decision they belong to, one line per default.**\
+  0.1.0 listed every option in one ungrouped run.\
+  What an option *means* is left to `doc/usage.md`, which the epilog points at;
+  an entry says enough to recognise a flag and gives its default.
 
 - **The archives carry each dependency as its own jar in `lib/`,
   beside `git-timebraid.jar`, and a release no longer offers the jar on its own.**\

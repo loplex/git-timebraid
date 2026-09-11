@@ -7,8 +7,10 @@ The resulting first-parent chain is called **the braid**.
 
 This document is the specification of that construction:
 which parents each commit ends up with, which tree, what happens to branches,
-and where the "state of the world at that moment" guarantee stops holding.\
-For what the tool is for and how to run it, see the [README](../README.md).
+and where the "state of the world at that moment" guarantee stops holding.
+
+- What the tool is for, and why the braid is shaped this way: the [README](../README.md).
+- What to type, and what the output holds: [usage.md](usage.md).
 
 Vocabulary used throughout:
 
@@ -339,7 +341,8 @@ precisely when every commit's timestamp is consistent with all of its parents', 
 
 ### Trading the guarantee away on purpose
 
-That guarantee is the default's, and `--interleave-ref` is how you give it up deliberately:
+Every braid edge running back to a commit no younger than the one it leaves is the default's guarantee,
+and `--interleave-ref` is how you give it up deliberately:
 
 - Name a ref and its commits may delay a mainline merge that merges them in.
 - The merge then lands by *their* time rather than by its own —
