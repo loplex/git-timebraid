@@ -6,7 +6,7 @@
             bin/git-timebraid        launcher, resolves lib/ relative to itself
             bin/git-timebraid.bat
             lib/git-timebraid.jar    the shaded jar
-            README.md LICENSE NOTICE
+            README.md CHANGELOG.md LICENSE NOTICE
 
     Only the jar is repackaged here; the assembly plugin never merges class paths (that is shade's
     job, see pom.xml), so its habit of overwriting same-named resources cannot bite.
