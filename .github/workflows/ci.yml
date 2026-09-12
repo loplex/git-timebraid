@@ -84,6 +84,55 @@ jobs:
             target/failsafe-reports/
           if-no-files-found: ignore
 
+  # Everything the jar says about its own contents, checked against the jar. Two failures live
+  # here, and neither one shows up as a broken build on its own.
+  #
+  # The first is a resource two dependencies both define. shade reports one as a warning, lets the
+  # dependency order decide which copy survives, and carries on; the losing copy is simply absent
+  # from the jar. Every such clash the build has today is settled deliberately in pom.xml, each
+  # with its reason. A new dependency can introduce another at any time, and the plugin offers no
+  # way to fail on one, so the gate is its own output.
+  #
+  # The second needs no clash at all: a dependency that stops shipping the license text NOTICE
+  # points a reader at empties that path silently, and the file that documents where to look is
+  # then wrong with nothing to say so.
+  #
+  # One platform and one JDK: the jar is the same everywhere, so what it contains does not vary
+  # with either.
+  packaging:
+    name: shaded jar carries what it claims
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # `shell: bash` for the pipe: a `run:` without it is `bash -e {0}`, where the status of a
+      # pipeline is the status of its last stage -- `tee` -- so a failed build would be read as a
+      # pass. The explicit shell is `bash -eo pipefail`, which reads the build's own status.
+      - name: Package
+        shell: bash
+        run: mvn -B -ntp -DskipTests package | tee "$RUNNER_TEMP/build.log"
+
+      # Matching on the plugin's wording would break the day it is reworded, and break by passing.
+      # The section is taken whole instead, and any warning in it fails: shade has nothing to warn
+      # about here that is not worth a look.
+      - name: Check shade settled every overlapping resource
+        run: |
+          if sed -n '/--- shade:/,/^\[INFO\] --- /p' "$RUNNER_TEMP/build.log" | grep '^\[WARNING\]'; then
+            echo "maven-shade-plugin warned while merging; settle it in pom.xml <filters>" >&2
+            exit 1
+          fi
+
+      - name: Check the jar carries the license texts NOTICE names
+        run: .github/scripts/check-notice.py
+
   # A renamed section leaves the links that pointed into it aimed at an anchor which no longer
   # exists, and the rendered page gives no sign of that -- the link just lands at the top of the
   # file. An overlong code block goes just as quietly, from the other side: GitHub scrolls a block

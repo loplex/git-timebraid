@@ -261,6 +261,16 @@
                                         <!-- Module descriptors of the parts, meaningless once merged. -->
                                         <exclude>module-info.class</exclude>
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <!--
+                                            The manifests of the parts, excluded to keep them out of
+                                            shade's overlap report: every jar has one, so all of them
+                                            are reported as defining the same resource, on every
+                                            build. The merged manifest is unaffected. The
+                                            ManifestResourceTransformer below is lifted out of the
+                                            transformer chain and run in a pass of its own, which
+                                            reads the parts directly and never consults these filters.
+                                        -->
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
                                     </excludes>
                                 </filter>
                                 <!--
@@ -277,6 +287,10 @@
                                     META-INF/git-timebraid/LICENSE, this program being under the same
                                     license; the two copies differ only in one URL, written with https
                                     in commons-codec's. slf4j-simple's is byte-for-byte slf4j-api's.
+
+                                    check-notice.py holds the result to what NOTICE claims, so an
+                                    upgrade that stops shipping the surviving file fails the build
+                                    rather than quietly emptying the path a reader is sent to.
                                 -->
                                 <filter>
                                     <artifact>commons-codec:commons-codec</artifact>
