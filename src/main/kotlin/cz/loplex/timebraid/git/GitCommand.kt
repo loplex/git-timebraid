@@ -1,8 +1,12 @@
 package cz.loplex.timebraid.git
 
+import java.io.IOException
 import java.nio.file.Path
 
-/** Thrown when a `git` subprocess exits non-zero; carries the tail of its output. */
+/**
+ * Thrown when a `git` subprocess exits non-zero, carrying the tail of its output, or cannot be
+ * started at all.
+ */
 class GitCommandException(message: String) : RuntimeException(message)
 
 /**
@@ -18,7 +22,9 @@ class GitCommandException(message: String) : RuntimeException(message)
  * Inheriting that environment is the point, so it is passed through almost whole — see
  * [dropRedirectingVariables] for the one class of variable that is not.
  *
- * @param log receives the command line and every line it prints — wired to `--verbose`.
+ * @param log receives the command line and every line it prints — wired to `--verbose`. The line is
+ *   rendered to be run: a command with a working directory is written with the `-C` that would take
+ *   it there, so it says which repository it acted on rather than leaving that to the reader.
  */
 class GitCommand(private val log: (String) -> Unit = {}) {
 
@@ -56,12 +62,29 @@ class GitCommand(private val log: (String) -> Unit = {}) {
 
     private fun exec(cwd: Path?, vararg args: String) {
         val command = listOf("git", *args)
-        log(command.joinToString(" "))
+        // The process takes its working directory from the builder below; a line that only quotes
+        // the arguments leaves that out, and says `git fetch --prune origin` without naming the
+        // repository it fetched into. So the rendering puts it back as the `-C` the command would
+        // need to run anywhere else, which is what a failure has to name to be worth reading.
+        val shown =
+            if (cwd == null) command.joinToString(" ")
+            else (listOf("git", "-C", cwd.toString()) + args).joinToString(" ")
+        log(shown)
         val builder = ProcessBuilder(command)
             .apply { cwd?.let { directory(it.toFile()) } }
             .redirectErrorStream(true)
         dropRedirectingVariables(builder.environment())
-        val process = builder.start()
+        val process = try {
+            builder.start()
+        } catch (e: IOException) {
+            // No git on PATH is the likely cause, and not the only one: a working directory that is
+            // not there fails start() the same way, so the message asks rather than says, and the
+            // JVM's own reason follows it. MergeCommand reports this exception as a message; the
+            // IOException itself would reach the user as a stack trace.
+            throw GitCommandException(
+                "`$shown` could not be started -- is git on PATH? (${e.message})"
+            )
+        }
         val output = process.inputStream.bufferedReader().useLines { lines ->
             lines.onEach(log).toList()
         }
@@ -69,7 +92,7 @@ class GitCommand(private val log: (String) -> Unit = {}) {
         if (code != 0) {
             throw GitCommandException(
                 buildString {
-                    append('`').append(command.joinToString(" ")).append("` failed (exit ").append(code).append(')')
+                    append('`').append(shown).append("` failed (exit ").append(code).append(')')
                     output.takeLast(10).forEach { append('\n').append(it) }
                 }
             )

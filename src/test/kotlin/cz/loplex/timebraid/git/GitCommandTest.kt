@@ -108,4 +108,35 @@ class GitCommandTest {
         assertTrue(lines.first().contains("clone --mirror"), failure.message)
         assertTrue(lines.drop(1).any { it.isNotBlank() }, failure.message)
     }
+
+    @Test
+    fun `a command run in a repository is logged, and fails, with the -C that names it`() {
+        GitCli.requireGit()
+        val repo = tmp.resolve("repo.git")
+        TestRepoBuilder.create(repo).use { it.branch("main", it.commit("first")) }
+        val logged = mutableListOf<String>()
+
+        // A bare repository has no working tree to check out into, so git exits non-zero.
+        val failure = assertThrows<GitCommandException> {
+            GitCommand { logged += it }.checkout(repo, "main")
+        }
+
+        // What follows `checkout` is the command's own business; what is held here is the -C.
+        assertTrue(logged.first().startsWith("git -C $repo checkout "), logged.toString())
+        assertTrue(failure.message!!.startsWith("`git -C $repo checkout "), failure.message)
+        assertTrue(failure.message!!.contains("` failed (exit "), failure.message)
+    }
+
+    @Test
+    fun `a git that cannot be started throws the same exception, naming the command`() {
+        // start() fails alike for a missing git and for a missing working directory, and only the
+        // second can be arranged from inside a test: the JVM looks git up on its own PATH.
+        val missing = tmp.resolve("does-not-exist")
+        val failure = assertThrows<GitCommandException> { git.checkout(missing, "main") }
+        assertTrue(failure.message!!.startsWith("`git -C $missing checkout "), failure.message)
+        assertTrue(
+            failure.message!!.contains("` could not be started -- is git on PATH? ("),
+            failure.message,
+        )
+    }
 }

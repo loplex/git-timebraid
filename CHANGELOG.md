@@ -62,6 +62,10 @@ Five changes alter what a command line written for 0.1.0 does:
   An input is now refused when it is opened, before the output is created, and the refusal says how
   to complete it.
 
+- **A git that cannot be started is reported as a message.**\
+  `--no-bare`, `--keep-remotes` and a remote input run git as a subprocess, and with none on `PATH`
+  the run ended in a Java stack trace.
+
 - **An `-o` that cannot be created, and a `--plan-out` that cannot be written, are reported as
   messages.**\
   In 0.1.0 either ended in a Java stack trace, the second only once the output was written, so a
@@ -91,6 +95,11 @@ Five changes alter what a command line written for 0.1.0 does:
   `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare
   input as well: nothing overrode them, so they read its refs or its objects from another
   repository.
+
+- **A logged subprocess names the repository it ran in.**\
+  `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same
+  way.\
+  Both are written with the `-C` the command would need to run anywhere else.
 
 ## [0.1.0] - 2026-09-08
 
