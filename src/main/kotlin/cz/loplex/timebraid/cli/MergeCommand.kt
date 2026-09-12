@@ -351,9 +351,15 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             ),
             dryRun = reporting.dryRun,
         )
-        val progress = Progress(Progress.level(reporting.quiet, reporting.verbose)) {
-            echo(it, err = true)
-        }
+        val progress = Progress(
+            level = Progress.level(reporting.quiet, reporting.verbose),
+            sink = { echo(it, err = true) },
+            terminal = Progress.stderrTerminal(currentContext.terminal),
+            // Mordant's width, which is the real terminal's when there is one, COLUMNS when that is
+            // set, and its own fallback otherwise — so a heading is ruled to the same width the
+            // help is laid out to.
+            width = currentContext.terminal.size.width,
+        )
 
         val result = try {
             MergeRunner(request, progress).run()
@@ -363,6 +369,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             throw CliktError(e.message ?: "the merge could not be completed")
         } catch (e: IllegalArgumentException) {
             throw CliktError(e.message ?: "invalid input")
+        } finally {
+            // Before the refusal above is thrown, not after: whatever is still being drawn has a
+            // thread painting it, and a message printed into a running bar is a message nobody can
+            // read. This is also what gives the cursor back.
+            progress.stopDrawing()
         }
 
         report(result)
@@ -578,6 +589,9 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     private fun report(result: MergeResult) {
+        // The report is the last thing said and belongs to no phase, so it is set off from the one
+        // that happened to finish before it; under --quiet no phase was printed to set it off from.
+        if (!reporting.quiet) echo("", err = true)
         echo("mainline branch: ${result.braid.mainlineBranch}", err = true)
 
         // Only the splices --splice enabled are worth a line in the closing report. The repository

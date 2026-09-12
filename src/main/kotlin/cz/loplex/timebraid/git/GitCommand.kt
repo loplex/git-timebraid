@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import java.io.BufferedReader
 import java.io.IOException
 import java.nio.file.Path
 
@@ -22,6 +23,13 @@ class GitCommandException(message: String) : RuntimeException(message)
  * Inheriting that environment is the point, so it is passed through almost whole — see
  * [dropRedirectingVariables] for the one class of variable that is not.
  *
+ * Each of the three that have something to report asks git for `--progress`, because git prints
+ * none when its output is not a terminal — and this one's never is, being read here rather than
+ * shown. Adding a remote is the fourth and reports nothing; filling in a working tree moves no
+ * objects but counts files, so it draws. Reading it is not the same as dropping it: what arrives is
+ * handed to the caller's `onProgress` as it arrives, while the lines go on being collected for the
+ * log and for the tail a failure is reported with.
+ *
  * @param log receives the command line and every line it prints — wired to `--verbose`. The line is
  *   rendered to be run: a command with a working directory is written with the `-C` that would take
  *   it there, so it says which repository it acted on rather than leaving that to the reader.
@@ -29,16 +37,18 @@ class GitCommandException(message: String) : RuntimeException(message)
 class GitCommand(private val log: (String) -> Unit = {}) {
 
     /**
-     * `git clone --mirror <remote> <target>` — a bare clone whose `origin` fetch refspec maps every
-     * ref straight across, so [fetch] can later bring it fully up to date. A plain `--bare` clone
-     * records no refspec and would never refresh.
+     * `git clone --mirror --progress <remote> <target>` — a bare clone whose `origin` fetch refspec
+     * maps every ref straight across, so [fetch] can later bring it fully up to date. A plain
+     * `--bare` clone records no refspec and would never refresh.
      */
-    fun cloneMirror(remote: String, target: Path) =
-        exec(null, "clone", "--mirror", remote, target.toString())
+    fun cloneMirror(remote: String, target: Path, onProgress: (String) -> Unit = {}) =
+        exec(null, "clone", "--mirror", "--progress", remote, target.toString(), onProgress = onProgress)
 
-    /** `git fetch --prune origin` in [clone] — bring an existing mirror clone up to date. */
-    fun fetch(clone: Path) =
-        exec(clone, "fetch", "--prune", "origin")
+    /**
+     * `git fetch --prune --progress origin` in [clone] — bring an existing mirror clone up to date.
+     */
+    fun fetch(clone: Path, onProgress: (String) -> Unit = {}) =
+        exec(clone, "fetch", "--prune", "--progress", "origin", onProgress = onProgress)
 
     /**
      * Records [url] as remote [name] of the repository at [repo], and nothing more.
@@ -57,17 +67,17 @@ class GitCommand(private val log: (String) -> Unit = {}) {
         exec(repo, "remote", "add", "--no-tags", name, url)
     }
 
-    /** `git -C <repo> checkout -f <branch>` — populate the working tree of a freshly written repo. */
-    fun checkout(repo: Path, branch: String) =
-        exec(repo, "checkout", "-f", branch)
+    /** `git -C <repo> checkout -f --progress <branch>` — fill the working tree of a fresh repo. */
+    fun checkout(repo: Path, branch: String, onProgress: (String) -> Unit = {}) =
+        exec(repo, "checkout", "-f", "--progress", branch, onProgress = onProgress)
 
-    private fun exec(cwd: Path?, vararg args: String) {
+    private fun exec(cwd: Path?, vararg args: String, onProgress: ((String) -> Unit)? = null) {
         val command = listOf("git", *args)
         // The process takes its working directory from the builder below; a line that only quotes
-        // the arguments leaves that out, and says `git fetch --prune origin` without naming the
-        // repository it fetched into. So the rendering puts it back as the `-C` the command would
-        // need to run anywhere else — which is what the in-process operations log beside it, and
-        // what a failure has to name to be worth reading.
+        // the arguments leaves that out, and says `git fetch --prune --progress origin` without
+        // naming the repository it fetched into. So the rendering puts it back as the `-C` the
+        // command would need to run anywhere else — which is what the in-process operations log
+        // beside it, and what a failure has to name to be worth reading.
         val shown =
             if (cwd == null) command.joinToString(" ")
             else (listOf("git", "-C", cwd.toString()) + args).joinToString(" ")
@@ -87,9 +97,7 @@ class GitCommand(private val log: (String) -> Unit = {}) {
                 "`$shown` could not be started -- is git on PATH? (${e.message})"
             )
         }
-        val output = process.inputStream.bufferedReader().useLines { lines ->
-            lines.onEach(log).toList()
-        }
+        val output = process.inputStream.bufferedReader().use { reader -> read(reader, onProgress) }
         val code = process.waitFor()
         if (code != 0) {
             throw GitCommandException(
@@ -99,6 +107,54 @@ class GitCommand(private val log: (String) -> Unit = {}) {
                 }
             )
         }
+    }
+
+    /**
+     * Everything the process printed, split the two ways git splits it.
+     *
+     * A line ends with `\n` and is what the log and a failure's tail are made of. Progress ends with
+     * a bare `\r`, because it is meant to be drawn over rather than added to — so reading by lines
+     * alone would hold the whole of it back as one enormous line and deliver it once the work was
+     * already done. Splitting on both is the difference between forwarding progress and collecting
+     * it.
+     *
+     * @return the `\n`-terminated lines only. Progress is for watching, not for quoting back in a
+     *   refusal, where a hundred redraws of the same sentence would bury the error under itself.
+     */
+    private fun read(reader: BufferedReader, onProgress: ((String) -> Unit)?): List<String> {
+        val lines = ArrayList<String>()
+        val current = StringBuilder()
+        while (true) {
+            val next = reader.read()
+            if (next < 0) break
+            when (val c = next.toChar()) {
+                '\n' -> {
+                    log(current.toString())
+                    lines.add(current.toString())
+                    current.setLength(0)
+                }
+                '\r' -> {
+                    // A `\r\n` is one line ending, not progress followed by an empty line — which
+                    // is how every line would read on a Windows git.
+                    reader.mark(1)
+                    val following = reader.read()
+                    if (following.toChar() == '\n') {
+                        log(current.toString())
+                        lines.add(current.toString())
+                    } else {
+                        if (following >= 0) reader.reset()
+                        onProgress?.invoke(current.toString())
+                    }
+                    current.setLength(0)
+                }
+                else -> current.append(c)
+            }
+        }
+        if (current.isNotEmpty()) {
+            log(current.toString())
+            lines.add(current.toString())
+        }
+        return lines
     }
 
     internal companion object {

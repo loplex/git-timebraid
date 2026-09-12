@@ -187,6 +187,24 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   Each example is a README quoting what the tool prints, over inputs `build-inputs.sh` builds.\
   Three show the refusal beside the result.
 
+- **The run reports itself by phase, and shows the ones that take the time.**\
+  Each phase opens with a heading, and what came of it is said on an indented line under it; reading
+  and planning, which draw no bar, add how long they took.\
+  While one runs it draws a bar: the transfer what JGit reports of it, the writing a bar over the
+  commits, and a clone, a refresh or a checkout what git itself reports — which had been read and
+  then dropped.\
+  Every bar leaves a line behind carrying what it reached and how long it took, and then goes: what
+  it was showing stops being a question, and the counts are the part worth keeping.\
+  A bar that runs for one input is named after it, which `Receiving objects` alone never said.\
+  Only on a terminal: redirected, no bar is drawn at all, as `git` does with its own progress, and
+  the phases and their lines read the same either way.\
+  `--quiet` silences all of it.\
+  The bar and the spinner are drawn in what the console can encode, each asked separately: a charset
+  that carries one of them and not the other keeps the one it can draw, and the other falls back to
+  ASCII.\
+  Ctrl-C gives the cursor back that the animation hid. A signal unwinds no `finally`, so this is a
+  shutdown hook of this program's own, which stops the threads still painting before it writes.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\

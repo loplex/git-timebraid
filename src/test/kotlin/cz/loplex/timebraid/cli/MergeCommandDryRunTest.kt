@@ -218,7 +218,7 @@ class MergeCommandDryRunTest {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("cannot create the output at '$out'"), result.output)
-        assertTrue(!result.output.contains("git-timebraid: cloning "), result.output)
+        assertTrue(!result.output.contains("making every input a local repository"), result.output)
     }
 
     @Test
@@ -258,7 +258,7 @@ class MergeCommandDryRunTest {
                 assertEquals(1, result.statusCode, "$dryRun -o $out: ${result.output}")
                 assertTrue(result.output.contains(refusal), "$dryRun -o $out: ${result.output}")
                 // Refused before the inputs are read, where every other command-line refusal is.
-                assertTrue(!result.output.contains("git-timebraid: reading "), result.output)
+                assertTrue(!result.output.contains("reading the inputs"), result.output)
             }
         }
         assertEquals(listOf("keep.txt"), occupied.toFile().list()?.toList())
@@ -268,7 +268,7 @@ class MergeCommandDryRunTest {
             val empty = MergeCommand().test(dryRun + listOf("-o", "") + inputs)
             assertEquals(1, empty.statusCode, empty.output)
             assertTrue(empty.output.contains("-o/--output names no directory"), empty.output)
-            assertTrue(!empty.output.contains("git-timebraid: reading "), empty.output)
+            assertTrue(!empty.output.contains("reading the inputs"), empty.output)
         }
 
         // --force takes the occupied directory, a dry run as well as a real one.
@@ -715,7 +715,9 @@ class MergeCommandDryRunTest {
         val result = MergeCommand().test(listOf("--dry-run", "file://C:\\repos\\backend.git"))
 
         assertEquals(1, result.statusCode, result.output)
-        val target = result.output.substringAfter("into ").lineSequence().first().trim()
+        // Read from the refusal, which quotes the whole `git clone` including where it was sending
+        // the clone. The run cannot get further than that: there is no repository at the path.
+        val target = result.output.substringAfter("backend.git ").substringBefore("`").trim()
         assertEquals("backend.git", Path.of(target).fileName.toString(), result.output)
     }
 

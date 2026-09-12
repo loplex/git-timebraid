@@ -4,6 +4,7 @@ import org.eclipse.jgit.internal.storage.file.ObjectDirectory
 import org.eclipse.jgit.lib.CommitBuilder
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.NullProgressMonitor
+import org.eclipse.jgit.lib.ProgressMonitor
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.ObjectInserter
 import org.eclipse.jgit.lib.PersonIdent
@@ -81,14 +82,19 @@ class TargetRepository private constructor(
      *
      * @return how many refs were fetched.
      */
-    fun fetchFrom(source: SourceRepository, refs: List<String>): Int {
+    fun fetchFrom(
+        source: SourceRepository,
+        refs: List<String>,
+        /** Where JGit reports the transfer; the default discards it, as this did for its whole life. */
+        monitor: ProgressMonitor = NullProgressMonitor.INSTANCE,
+    ): Int {
         if (refs.isEmpty()) return 0
         val specs = refs.map { RefSpec("+$it:" + fetchedName(source.name, it)) }
         // The absolute path rather than the one the caller gave, because `-C` has already moved the
         // working directory by the time the rest of the line is read: a relative source would be
         // resolved against the output and the command would not run. Every refspec, too, rather
         // than a count of them — which refs were asked for is the whole question when a commit is
-        // missing from the output, and eliding them says no more than the step line already did.
+        // missing from the output, and eliding them says no more than the phase heading already did.
         val from = source.location.toAbsolutePath().normalize()
         log("git -C $location fetch --no-tags $from ${specs.joinToString(" ")}")
         try {
@@ -100,7 +106,7 @@ class TargetRepository private constructor(
                 // Every ref that matters is named in `specs`. Auto-following would add whatever tags
                 // the input has beyond them, which is the widening the refspec exists to prevent.
                 transport.tagOpt = TagOpt.NO_TAGS
-                transport.fetch(NullProgressMonitor.INSTANCE, specs)
+                transport.fetch(monitor, specs)
             }
         } catch (e: IOException) {
             // JGit's TransportException and NotSupportedException are both IOExceptions, so this is

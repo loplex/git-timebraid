@@ -419,15 +419,21 @@ class MergeCommandOptionsTest {
             tmp.resolve("backend.git").toString(),
             tmp.resolve("webui.git").toString(),
         )
-        assertFalse(quiet.output.contains("git-timebraid:"), quiet.output)
+        assertFalse(quiet.output.contains("-- writing the braid"), quiet.output)
+        // Nor a blank line ahead of the closing report: no phase was printed to set it off from.
+        assertTrue(quiet.stderr.startsWith("mainline branch:"), quiet.stderr)
 
         val verbose = run(
             "-o", tmp.resolve("v.git").toString(), "--verbose", "--keep-remotes",
             tmp.resolve("backend.git").toString(),
             tmp.resolve("webui.git").toString(),
         )
-        assertTrue(verbose.output.contains("git-timebraid:"), verbose.output)
+        assertTrue(verbose.output.contains("-- writing the braid"), verbose.output)
         assertTrue(verbose.output.contains("remote add"), verbose.output)
+        // Creating the output is the fetching phase's first step, and is printed under its heading.
+        val created = verbose.output.indexOf("symbolic-ref")
+        val fetching = verbose.output.indexOf("-- fetching the inputs into the output")
+        assertTrue(fetching in 0 until created, verbose.output)
     }
 
     @Test

@@ -80,6 +80,13 @@ class BraidWriter(
     private val dissolveSubmodules: Boolean = false,
     /** How a refusal tells the user to give an input another subdirectory. */
     private val relocation: Relocation = Relocation.UNSPELLED,
+    /**
+     * Called with the running commit count as [writeCommits] goes, so a caller can narrate the one
+     * phase long enough to look stalled. A count rather than a line per commit: what happens here
+     * is the same thing tens of thousands of times, and the plan that decides it is already
+     * available in full through `--plan-out`.
+     */
+    private val onCommitWritten: (Int) -> Unit = {},
 ) {
 
     private val graph = inputs.graph
@@ -153,6 +160,7 @@ class BraidWriter(
     }
 
     private fun writeCommits() {
+        var done = 0
         for (planned in plan.commits) {
             val commit = planned.commit
             val original = originalOf(commit)
@@ -170,6 +178,7 @@ class BraidWriter(
                 committer = original.committer,
                 message = messageOf(planned, original),
             )
+            onCommitWritten(++done)
         }
     }
 
