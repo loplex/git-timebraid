@@ -1,0 +1,62 @@
+name: Post-release
+
+# Publishing a release is what spends a version. From that moment the branch's pom names something
+# that has been cut, and the tag after it has nothing to move to -- release.yml's own check refuses
+# the pair in each job that packages an archive:
+#
+#     ::error::tag v1.2.4 says 1.2.4 but pom.xml says 1.2.3-SNAPSHOT
+#
+# So this opens the next version on every branch the released tag sits on. It is the counterpart of
+# the version script release.yml runs: that one pins a throwaway checkout and commits nothing, this
+# one writes the commit that was missing.
+#
+# On `published` rather than as a step in the run that builds the release: what that run produces is
+# a *draft*, and a draft can be deleted and its tag cut again. A pom already moved on would refuse
+# the second attempt at the same version, so the bump waits for the point of no return.
+#
+# A push made with GITHUB_TOKEN does not start another workflow run, so the commit this leaves
+# cannot come back round as a second release.
+
+on:
+  release:
+    types: [published]
+
+# The bump commit, and nothing else.
+permissions:
+  contents: write
+
+# Two releases published moments apart would otherwise race for the same branches, and the loser
+# would fail on a ref that moved rather than doing anything wrong.
+concurrency:
+  group: post-release
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: open the next version
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history: the script asks which branches contain the tag, and a shallow
+          # checkout can answer that wrongly rather than not at all.
+          fetch-depth: 0
+
+      # Stated rather than left to the checkout's own refspec, which is not part of its contract:
+      # the branches have to be present as refs/remotes/origin/* for `--contains` to see them.
+      - name: Fetch the branches
+        run: git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      # The version is read and written with Maven, the same way release.yml settles it, rather
+      # than by matching the first <version> in the file.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # A branch whose protection rules refuse this push fails the job by design: the pom is then
+      # still on the released version, and the next tag would fail far less legibly.
+      - name: Open the next version
+        run: .github/scripts/open-next-version.sh "${{ github.event.release.tag_name }}"

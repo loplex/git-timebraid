@@ -20,8 +20,10 @@ name: Release
 #        git tag -a v1.2.3 -m 'git-timebraid 1.2.3'
 #        git push origin v1.2.3
 #
-# Afterwards, open the next version on the branch: set the pom to 1.3.0-SNAPSHOT and commit, or the
-# tag after this one has nothing to agree with.
+# What that leaves is a draft. Publishing it is also what opens the next version: post-release.yml
+# raises the pom to 1.2.4-SNAPSHOT on every branch the tag sits on, so the tag after this one has
+# something to agree with. Nothing moves before then, which is what leaves a deleted draft's version
+# free to be cut again.
 #
 # What comes out is a *draft* release holding one portable archive, one archive per platform, the
 # standalone jar, and a SHA256SUMS file. Nothing is published to anyone until a human opens that
