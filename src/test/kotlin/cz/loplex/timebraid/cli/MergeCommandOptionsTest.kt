@@ -437,6 +437,22 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `the pairs that say opposite things about progress refuse to be combined`() {
+        corpus()
+        val backend = tmp.resolve("backend.git").toString()
+        for (pair in listOf(
+            listOf("--progress", "--no-progress"),
+            listOf("--quiet", "--progress"),
+        )) {
+            val refused = MergeCommand().test(
+                listOf("-o", tmp.resolve("x-${pair.joinToString("")}.git").toString()) + pair + backend
+            )
+            assertEquals(1, refused.statusCode, refused.output)
+            assertTrue(refused.output.contains("cannot be combined"), refused.output)
+        }
+    }
+
+    @Test
     fun `--verbose reports the in-process work too, where nothing runs through GitCommand`() {
         corpus()
 

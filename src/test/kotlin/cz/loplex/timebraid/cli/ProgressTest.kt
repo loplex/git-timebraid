@@ -7,6 +7,8 @@ import com.github.ajalt.mordant.terminal.TerminalInterface
 import com.github.ajalt.mordant.terminal.TerminalRecorder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -619,6 +621,15 @@ class ProgressTest {
 
         val drawn = recorder.output()
         assertTrue(drawn.endsWith("\u001b[?25h"), "the cursor was left hidden: ${drawn.takeLast(40)}")
+    }
+
+    @Test
+    fun `--progress asks for a terminal where the run would not have had one`() {
+        // Nothing here is a terminal — a test harness captures what it runs — so the default is
+        // no drawing, and forcing it is the whole of what the flag does.
+        val base = Terminal(interactive = true, terminalInterface = recorder())
+        assertNull(Progress.stderrTerminal(base), "a captured stderr should draw nothing by default")
+        assertNotNull(Progress.stderrTerminal(base, force = true), "--progress should force one")
     }
 
     @Test

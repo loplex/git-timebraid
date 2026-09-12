@@ -228,6 +228,21 @@ private class ReportingOptions : OptionGroup(
                     "ref written." + BR +
                 "Writing the commits is not one command; --plan-out dumps that."
         )
+
+    // Two flags rather than one with a secondary name, because the default is neither of them: a
+    // run decides for itself, and each of these overrides that decision in one direction. It is
+    // also how --quiet and --verbose are spelled a few lines up.
+    val progress by option("--progress").flag()
+        .help(
+            "Draw progress even when stderr is not a terminal." + BR +
+                "For watching a log of a run that is taking too long."
+        )
+
+    val noProgress by option("--no-progress").flag()
+        .help(
+            "Draw no progress even when stderr is a terminal." + BR +
+                "Default: drawn when stderr is a terminal, and not otherwise."
+        )
 }
 
 /**
@@ -301,6 +316,13 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         if (reporting.quiet && reporting.verbose) {
             throw UsageError("--quiet and --verbose cannot be combined")
         }
+        if (reporting.progress && reporting.noProgress) {
+            throw UsageError("--progress and --no-progress cannot be combined")
+        }
+        if (reporting.quiet && reporting.progress) {
+            // --quiet is about saying nothing, and a bar is not nothing.
+            throw UsageError("--quiet and --progress cannot be combined")
+        }
         if (outputRepo.output == null && !reporting.dryRun) {
             throw UsageError("-o/--output is required unless --dry-run is given")
         }
@@ -354,7 +376,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val progress = Progress(
             level = Progress.level(reporting.quiet, reporting.verbose),
             sink = { echo(it, err = true) },
-            terminal = Progress.stderrTerminal(currentContext.terminal),
+            terminal = when {
+                reporting.noProgress -> null
+                else -> Progress.stderrTerminal(currentContext.terminal, force = reporting.progress)
+            },
             // Mordant's width, which is the real terminal's when there is one, COLUMNS when that is
             // set, and its own fallback otherwise — so a heading is ruled to the same width the
             // help is laid out to.

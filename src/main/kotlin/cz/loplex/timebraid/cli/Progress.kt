@@ -569,9 +569,13 @@ class Progress(
          */
         fun stderrTerminal(
             base: Terminal,
+            force: Boolean = false,
             charset: Charset = Glyphs.stderrCharset,
         ): Terminal? {
-            if (!Tty.stderrIsInteractive) return null
+            if (!force && !Tty.stderrIsInteractive) return null
+            // Interactive either way: what `--progress` overrides is the answer to "is anybody
+            // watching", and a terminal told it is not interactive draws no animation at all, which
+            // would make the flag a way of asking for nothing.
             return Terminal(
                 interactive = true,
                 theme = Glyphs.themeFor(charset),
