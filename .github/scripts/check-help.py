@@ -35,8 +35,10 @@ WIDTH = 100
 # the failure is a rewrite landing somewhere else, not an error.
 BEGIN = "<!-- BEGIN --help -->"
 END = "<!-- END --help -->"
+# The opening fence's info string may be any lowercase word, or none, and is not rewritten: it says
+# how the block renders, while the markers say which block this is.
 BLOCK = re.compile(
-    rf"^{re.escape(BEGIN)}\n```\n(?P<body>.*?)^```\n{re.escape(END)}$", re.M | re.S
+    rf"^{re.escape(BEGIN)}\n```[a-z]*\n(?P<body>.*?)^```\n{re.escape(END)}$", re.M | re.S
 )
 
 

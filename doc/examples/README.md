@@ -57,7 +57,7 @@ An unpacked release archive carries these documents and `build-inputs.sh` but no
 invocations from the archive's root instead, with `bin/git-timebraid`, or `git-timebraid` on
 `PATH`, in place of `./git-timebraid`.
 
-```
+```bash
 ./git-timebraid -o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
     doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B
@@ -71,7 +71,7 @@ Each example's own README gives its exact invocation.
 
 The same CLI, with every ref opted into the interleave:
 
-```
+```bash
 ./git-timebraid -o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
     --order-by committer --interleave-ref '*' \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
@@ -102,6 +102,9 @@ would hold them to the run. Run it locally the same way, after a `mvn -DskipTest
 | `./git-timebraid …`   | an invocation that must succeed; its output is not compared                                                        |
 | `$ ./git-timebraid …` | an invocation whose output must contain the lines below it — its closing report, or the refusal being demonstrated |
 | `$ git …`             | run in the example's own directory; its output must match the lines below it exactly, with nothing on stderr       |
+
+The fences carry a language tag as well — `bash` for the first form, `console` for the other two —
+but that is for rendering: what the script reads is the `$`.
 
 Lines belong to the command above them and nowhere else, so a block with no command in it is never
 read as output — which is what leaves the `<name>@<n>` input notation and example 02's summary of

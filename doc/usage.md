@@ -72,7 +72,7 @@ and shows what each output ends up holding, down to the commit that only a tag r
 
 ## Writing an input
 
-```
+```text
 <path-or-url>[::[<subdir>][=<name>]]
 ```
 
@@ -187,7 +187,7 @@ that directory's `.git`, is a **correction to that finding** rather than a secon
 - That is what settles two findings that derive the same name — `libs/core` and `tools/core` —
   which is refused until one of them is named:
 
-```
+```bash
 git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::=tools-core
 ```
 
@@ -311,7 +311,7 @@ subjects still read `backend: `.
 
 On every commit message, unless `--no-provenance` turns it off:
 
-```
+```text
 webui: fix the date picker on the summary page
 
 [timebraid: repo="webui" commit=5c1a9f2… parents=b2c91f4…,a0d3e11…]
@@ -330,7 +330,7 @@ lands, how many commits there are and how many of them are on the braid, and how
 with each number of parents. `--plan-out <path>` writes that summary to a file, followed by one line
 per commit in the order the commits are written:
 
-```
+```text
 000003 * backend/d83bd47… @1700108000 parents=[webui/08cdbc9…, backend/c28627b…] content=[…]
 ```
 
@@ -361,7 +361,7 @@ is to an option, what it *means* is a section above it on this page, or is in
 [guarantee it gives up](how-it-works.md#trading-the-guarantee-away-on-purpose).
 
 <!-- BEGIN --help -->
-```
+```text
 Usage: git-timebraid [<options>] [<repo>]...
 
   Merge several independent git repositories into one, braided together along the time axis.

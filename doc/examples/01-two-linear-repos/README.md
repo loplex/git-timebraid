@@ -5,7 +5,7 @@ commits interleaved by committer time.
 
 ## Input
 
-```
+```text
 A: a1@10 <- a2@30 <- a3@50
 B: b1@20 <- b2@40
 ```
@@ -14,7 +14,7 @@ Built by `build-inputs.sh`; both repos have a single `main` branch.
 
 ## Command
 
-```
+```bash
 ./git-timebraid -o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
     doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B
@@ -24,7 +24,7 @@ Mainline branch auto-detected as `main` (present in both inputs).
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 9845818 2023-11-17 00:13:20 +0000 A: a3
 0f0b34c 2023-11-16 14:13:20 +0000 B: b2

@@ -19,7 +19,7 @@ checking out a `--no-bare` output.
 
 Verify a download against `SHA256SUMS`:
 
-```
+```bash
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 

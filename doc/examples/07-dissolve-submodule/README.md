@@ -7,7 +7,7 @@ of the submodule.
 
 ## Input
 
-```
+```text
 lib:   l1@15 <- l2@45        src/lib.kt, then src/util.kt
 super: s1@10 <- s2@20 <- s3@35
          s1: a.txt
@@ -15,7 +15,7 @@ super: s1@10 <- s2@20 <- s3@35
          s3: b.txt
 ```
 
-```
+```console
 $ git -C input/super ls-tree -r HEAD
 100644 blob 23dfcb2…    .gitmodules
 100644 blob 655c6e6…    a.txt
@@ -49,7 +49,7 @@ exist for any of this to work.
 ## Refused by default
 
 <!-- wide block: the refusal is quoted as the program prints it, flag and object id and all -->
-```
+```console
 $ ./git-timebraid -o doc/examples/07-dissolve-submodule/output-no-dissolve --no-bare \
     --root-repo super \
     doc/examples/07-dissolve-submodule/input/super \
@@ -70,7 +70,7 @@ for a root repository asked for.
 
 ## Command
 
-```
+```console
 $ ./git-timebraid -o doc/examples/07-dissolve-submodule/output --no-bare \
     --root-repo super --dissolve-submodules \
     --plan-out doc/examples/07-dissolve-submodule/plan.txt \
@@ -84,7 +84,7 @@ repositories:
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 3e2c690 2023-11-16 19:13:20 +0000 lib: l2
 6f4bb86 2023-11-16 09:13:20 +0000 super: s3
@@ -122,7 +122,7 @@ written at all, and `super`'s own copy would come out of the tree with it.)
 
 ### It is decided per commit, not per run
 
-```
+```console
 $ git -C output ls-tree -r HEAD~4          # s1@10: super's first commit
 100644 blob 655c6e6…    a.txt
 
@@ -147,7 +147,7 @@ from `s2` on is there a gitlink to give way, which is what "at 3 commits" counts
 The pin was `l1`. At the tip, `vendor/lib` holds `src/util.kt` too — `l2`'s content, which the
 superproject never pinned:
 
-```
+```console
 $ git -C output ls-tree --name-only -r HEAD -- vendor/lib
 vendor/lib/src/lib.kt
 vendor/lib/src/util.kt

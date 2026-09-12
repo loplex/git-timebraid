@@ -39,7 +39,7 @@ How the sequence is built:
 How parents are rewritten. For every commit `c`, writing `pred` for the commit preceding it in that
 sequence:
 
-```
+```text
 c is not on the braid          →  parents'(c) = parents(c)             unchanged
 pred is already a parent of c  →  parents'(c) = parents(c)             unchanged
 otherwise                      →  parents'(c) = [pred] + parents(c)    braided edge prepended
@@ -74,7 +74,7 @@ which its chain still keeps after that parent.
 The three-parent case is not a curiosity, it is the price of the guarantee. Suppose `webui` merged a
 feature branch, and the commit immediately preceding that merge in time came from `backend`:
 
-```
+```text
 original:   parents(b3)  = [b2, f1]           b3 merges the feature branch f1 into b2
 braid:      parents'(b3) = [a4, b2, f1]
                             │   └── b2 and f1: every original edge, untouched

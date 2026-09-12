@@ -6,7 +6,7 @@ that the braid puts ancestry first, never time.
 
 ## Input
 
-```
+```text
 A: a1@50 <- a2@10
 B: b1@20 <- b2@40
 ```
@@ -17,7 +17,7 @@ older.
 
 ## Command
 
-```
+```bash
 ./git-timebraid -o doc/examples/04-clock-skew-in-repo/output --no-bare \
     --order-by committer --plan-out doc/examples/04-clock-skew-in-repo/plan.txt \
     doc/examples/04-clock-skew-in-repo/input/A doc/examples/04-clock-skew-in-repo/input/B
@@ -25,7 +25,7 @@ older.
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s %p"
 f133712 2023-11-15 08:13:20 +0000 A: a2 d917178
 d917178 2023-11-17 00:13:20 +0000 A: a1 e2b86db

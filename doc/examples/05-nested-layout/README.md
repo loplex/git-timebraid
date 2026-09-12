@@ -6,7 +6,7 @@ costs nothing.
 
 ## Input
 
-```
+```text
 backend: a1@10 <- a2@30      src/Main.kt, then src/Db.kt
 codegen: c1@20               gen.py
 webui:   b1@25 <- b2@40      index.html, then style.css
@@ -17,7 +17,7 @@ purpose — the trees are what this example is about.
 
 ## Command
 
-```
+```bash
 ./git-timebraid -o doc/examples/05-nested-layout/output --no-bare \
     --plan-out doc/examples/05-nested-layout/plan.txt \
     doc/examples/05-nested-layout/input/backend::libs/backend \
@@ -34,7 +34,7 @@ and not `libs/backend: `. A destination can be arbitrarily deep; a name is one s
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 cb225d5 2023-11-16 14:13:20 +0000 webui: b2
 e31b059 2023-11-16 04:13:20 +0000 backend: a2
@@ -59,7 +59,7 @@ hold a `/`, and `backend` and `codegen` share the one for `libs`.
 The tip commit is `webui`'s, so nothing under `libs/` changed at it — and the `libs` tree it points
 at is not a new object but the previous commit's, byte for byte:
 
-```
+```console
 $ git -C output rev-parse HEAD:libs HEAD~1:libs
 5b445c2066a6ad21e434f8074f629d3bcd3095c1
 5b445c2066a6ad21e434f8074f629d3bcd3095c1
@@ -78,7 +78,7 @@ own tree objects, which the fetch already put in the output.
 
 ### A repository that did not exist yet occupies nothing
 
-```
+```console
 $ git -C output ls-tree -r --name-only HEAD~4
 libs/backend/src/Main.kt
 ```

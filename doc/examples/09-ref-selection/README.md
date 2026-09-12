@@ -6,7 +6,7 @@ branch drops the tags *and* the commits only a tag could reach.
 
 ## Input
 
-```
+```text
 backend: a1@10 <- a2@30              on main
          r1@35                       on release/1.x, forked from a1
          tag v1.0 -> a1              lightweight
@@ -15,7 +15,7 @@ webui:   b1@20 <- b2@40              on main
          tag v2.0 -> b2              lightweight
 ```
 
-```
+```console
 $ git -C input/backend for-each-ref
 d83bd476df949d6a17d72b278e3ca63b6cec5474 commit	refs/heads/main
 83f39e552b926c0f3b2607eec4431726d24dc427 commit	refs/heads/release/1.x
@@ -33,7 +33,7 @@ directory, so they can be compared side by side.
 
 ### Everything (the default)
 
-```
+```console
 $ ./git-timebraid -o doc/examples/09-ref-selection/output --no-bare \
     --plan-out doc/examples/09-ref-selection/plan.txt \
     doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
@@ -41,7 +41,7 @@ commits: 5 (braid: 4)
 refs: 2 branches, 3 tags, HEAD -> main
 ```
 
-```
+```console
 $ git -C output for-each-ref --format='%(objecttype) %(refname)'
 commit refs/heads/main
 commit refs/heads/release/1.x
@@ -61,7 +61,7 @@ of the braid.
 
 ### Narrowed to one branch, and this is the one that bites
 
-```
+```console
 $ ./git-timebraid -o doc/examples/09-ref-selection/output-branch-only --no-bare \
     -b main \
     doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
@@ -69,7 +69,7 @@ commits: 4 (braid: 4)
 refs: 1 branches, 0 tags, HEAD -> main
 ```
 
-```
+```console
 $ git -C output-branch-only for-each-ref --format='%(objecttype) %(refname)'
 commit refs/heads/main
 ```
@@ -85,7 +85,7 @@ was read, so a run like this still pulled in whatever the tags could reach. See
 
 ### One branch, keeping the tags
 
-```
+```console
 $ ./git-timebraid -o doc/examples/09-ref-selection/output-branch-and-tags --no-bare \
     -b main --ref 'refs/tags/*' \
     doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
@@ -93,7 +93,7 @@ commits: 5 (braid: 4)
 refs: 1 branches, 3 tags, HEAD -> main
 ```
 
-```
+```console
 $ git -C output-branch-and-tags for-each-ref --format='%(objecttype) %(refname)'
 commit refs/heads/main
 commit refs/tags/backend/v1.0
@@ -109,7 +109,7 @@ it.
 
 ### A glob over a nested branch name
 
-```
+```console
 $ ./git-timebraid -o doc/examples/09-ref-selection/output-release-glob --no-bare \
     --ref 'refs/heads/release/*' \
     doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
@@ -117,7 +117,7 @@ commits: 5 (braid: 4)
 refs: 2 branches, 0 tags, HEAD -> main
 ```
 
-```
+```console
 $ git -C output-release-glob for-each-ref --format='%(objecttype) %(refname)'
 commit refs/heads/main
 commit refs/heads/release/1.x

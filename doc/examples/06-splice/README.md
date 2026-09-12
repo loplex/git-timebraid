@@ -6,7 +6,7 @@ refuses with it.
 
 ## Input
 
-```
+```text
 platform: p1@10 <- p2@40     notes.md, then docs/setup.md
 backend:  a1@20 <- a2@30     src/Main.kt, then src/Db.kt
 ```
@@ -14,7 +14,7 @@ backend:  a1@20 <- a2@30     src/Main.kt, then src/Db.kt
 Plus a third repository, `platform-collide`, used only by the last section: the same `p1`, and then
 a commit that adds an entry of its own at `backend/`.
 
-```
+```text
 platform-collide: p1@10 <- p3@50     notes.md, then backend/README.md
 ```
 
@@ -26,7 +26,7 @@ it, all three runs name the repository `platform`, the collision run too, althou
 ## Refused by default
 
 <!-- wide block: the refusal is quoted as the program prints it, on one line -->
-```
+```console
 $ ./git-timebraid -o doc/examples/06-splice/output-no-splice --no-bare \
     doc/examples/06-splice/input/platform::libs=platform \
     doc/examples/06-splice/input/backend::libs/backend
@@ -41,7 +41,7 @@ which a typo and an intention look identical from.
 
 ## Command
 
-```
+```console
 $ ./git-timebraid -o doc/examples/06-splice/output --no-bare --splice \
     --plan-out doc/examples/06-splice/plan.txt \
     doc/examples/06-splice/input/platform::libs=platform \
@@ -54,7 +54,7 @@ repositories:
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 cb9a83e 2023-11-16 14:13:20 +0000 platform: p2
 fbfa842 2023-11-16 04:13:20 +0000 backend: a2
@@ -82,7 +82,7 @@ A splice is not a merge of two repositories' files. Where `platform` itself hold
 on the paths, it is answered per commit:
 
 <!-- wide block: the collision is quoted as the program prints it, object id and all -->
-```
+```console
 $ ./git-timebraid -o doc/examples/06-splice/output-collision --no-bare --splice \
     'doc/examples/06-splice/input/platform-collide::libs=platform' \
     doc/examples/06-splice/input/backend::libs/backend
