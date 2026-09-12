@@ -439,7 +439,10 @@ Inspecting a run:
   --dry-run          Compute and summarize the plan, write no output.
   --plan-out=<path>  Dump the deterministic plan as text to this file.
   -q, --quiet        Say nothing but the closing report and any error.
-  -v, --verbose      Print each git command the tool shells out to, as it runs.
+  -v, --verbose      Print the git command behind each step.
+                     Every git command it shells out to, and the equivalent of the transfer and of
+                     every ref written.
+                     Writing the commits is not one command; --plan-out dumps that.
 
 Options:
   --version   Show the version and exit

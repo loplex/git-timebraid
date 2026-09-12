@@ -222,7 +222,12 @@ private class ReportingOptions : OptionGroup(
         .help("Say nothing but the closing report and any error.")
 
     val verbose by option("-v", "--verbose").flag()
-        .help("Print each git command the tool shells out to, as it runs.")
+        .help(
+            "Print the git command behind each step." + BR +
+                "Every git command it shells out to, and the equivalent of the transfer and of every " +
+                    "ref written." + BR +
+                "Writing the commits is not one command; --plan-out dumps that."
+        )
 }
 
 /**

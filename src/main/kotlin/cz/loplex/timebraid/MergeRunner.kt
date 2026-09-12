@@ -230,7 +230,13 @@ class MergeRunner(
         braid: BraidInputs,
         plan: MergePlan,
     ): Written {
-        TargetRepository.create(output, braid.mainlineBranch, request.force, request.bare).use { target ->
+        TargetRepository.create(
+            output,
+            braid.mainlineBranch,
+            request.force,
+            request.bare,
+            log = { progress.detail(it) },
+        ).use { target ->
             val fetch = fetchInputs(target, repoOf, braid)
 
             progress.step("writing ${plan.commits.size} commits into $output")

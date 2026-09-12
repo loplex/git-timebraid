@@ -33,11 +33,21 @@ import java.nio.file.Path
  *
  * Objects only become visible to readers — including this repository's own ref updates — after
  * [flushObjects]. Refs are therefore written in a second pass, once every commit exists.
+ *
+ * @param log receives the `git` command each *bounded* operation here is the in-process equivalent
+ *   of — the transfer, each ref written or dropped, and `HEAD` — wired to `--verbose`. What
+ *   it deliberately leaves out is the per-object writing: [writeCommit] and the trees under it run
+ *   once per commit rather than once per run, and no line they could print would be a command
+ *   anyone could run. A `git commit-tree` naming them would quote ids that live in an
+ *   [ObjectInserter] no reader can see until [flushObjects], and re-running it reproduces the id
+ *   only if author, committer, both dates and the message match to the byte. The plan behind those
+ *   writes is available as text, one line per commit, through `--plan-out`.
  */
 class TargetRepository private constructor(
     /** Where the repository was created, for diagnostics. */
     val location: Path,
     private val repository: Repository,
+    private val log: (String) -> Unit = {},
 ) : AutoCloseable {
 
     private val inserter: ObjectInserter =
@@ -74,11 +84,18 @@ class TargetRepository private constructor(
     fun fetchFrom(source: SourceRepository, refs: List<String>): Int {
         if (refs.isEmpty()) return 0
         val specs = refs.map { RefSpec("+$it:" + fetchedName(source.name, it)) }
+        // The absolute path rather than the one the caller gave, because `-C` has already moved the
+        // working directory by the time the rest of the line is read: a relative source would be
+        // resolved against the output and the command would not run. Every refspec, too, rather
+        // than a count of them — which refs were asked for is the whole question when a commit is
+        // missing from the output, and eliding them says no more than the step line already did.
+        val from = source.location.toAbsolutePath().normalize()
+        log("git -C $location fetch --no-tags $from ${specs.joinToString(" ")}")
         try {
             // java.io.File spells a path as the single-slash `file:/…` URI that URIish parses back
             // into a plain local path on both platforms, escaping included — a Windows drive letter
             // survives it where `Path.toUri()`'s `file:///C:/…` is read as a host named C.
-            val uri = URIish(source.location.toAbsolutePath().normalize().toFile().toURI().toString())
+            val uri = URIish(from.toFile().toURI().toString())
             Transport.open(repository, uri).use { transport ->
                 // Every ref that matters is named in `specs`. Auto-following would add whatever tags
                 // the input has beyond them, which is the widening the refspec exists to prevent.
@@ -120,6 +137,7 @@ class TargetRepository private constructor(
     fun dropFetchRefs(): Int {
         val fetched = repository.refDatabase.getRefsByPrefix(FETCH_NAMESPACE)
         for (ref in fetched) {
+            log("git -C $location update-ref -d ${ref.name}")
             val update = repository.updateRef(ref.name).apply { isForceUpdate = true }
             val result = update.delete()
             check(result in ACCEPTED) { "could not delete ${ref.name} in $location: $result" }
@@ -186,6 +204,7 @@ class TargetRepository private constructor(
     /** Points [refName] (a full name such as `refs/heads/main`) at [target]. */
     fun point(refName: String, target: ObjectId) {
         require(isRefName(refName)) { "'$refName' is not a valid ref name" }
+        log("git -C $location update-ref $refName ${target.name}")
         val update = repository.updateRef(refName).apply {
             // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) — same asymmetry as
             // above: assigning through the property does not compile.
@@ -201,6 +220,7 @@ class TargetRepository private constructor(
     fun setHead(branch: String) {
         val target = Constants.R_HEADS + branch
         require(isRefName(target)) { "'$branch' is not a valid branch name" }
+        log("git -C $location symbolic-ref ${Constants.HEAD} $target")
         val result = repository.updateRef(Constants.HEAD, true).link(target)
         check(result in ACCEPTED) { "could not point HEAD at $target in $location: $result" }
     }
@@ -266,6 +286,7 @@ class TargetRepository private constructor(
             initialBranch: String,
             force: Boolean = false,
             bare: Boolean = true,
+            log: (String) -> Unit = {},
         ): TargetRepository {
             val gitDir = gitDirOf(location, bare)
             val existingRepository = RepositoryCache.FileKey.isGitRepository(gitDir, FS.DETECTED)
@@ -291,7 +312,7 @@ class TargetRepository private constructor(
                 }
                 configureForRewriting(repository)
             }
-            val target = TargetRepository(location, repository)
+            val target = TargetRepository(location, repository, log)
             target.setHead(initialBranch)
             return target
         }

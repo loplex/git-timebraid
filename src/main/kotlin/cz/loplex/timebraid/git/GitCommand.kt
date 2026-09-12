@@ -66,7 +66,8 @@ class GitCommand(private val log: (String) -> Unit = {}) {
         // The process takes its working directory from the builder below; a line that only quotes
         // the arguments leaves that out, and says `git fetch --prune origin` without naming the
         // repository it fetched into. So the rendering puts it back as the `-C` the command would
-        // need to run anywhere else, which is what a failure has to name to be worth reading.
+        // need to run anywhere else — which is what the in-process operations log beside it, and
+        // what a failure has to name to be worth reading.
         val shown =
             if (cwd == null) command.joinToString(" ")
             else (listOf("git", "-C", cwd.toString()) + args).joinToString(" ")
