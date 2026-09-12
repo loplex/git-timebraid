@@ -290,7 +290,8 @@ merely unnamed.
   exactly — and it therefore selects that branch *and no tags*.
 - The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
 - Tags are recreated under a prefix, `{repo}/` by default (`--tag-prefix`), so two inputs that both
-  tagged `v1.0` do not collide.
+  tagged `v1.0` do not collide. A branch is qualified the same way, `--branch-prefix`, but only when
+  two inputs used the name.
 
 `--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
 is every ref, no interleave pattern is none of them. It is also matched against what the selection

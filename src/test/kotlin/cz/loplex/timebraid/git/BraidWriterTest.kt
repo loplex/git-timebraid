@@ -423,6 +423,78 @@ class BraidWriterTest {
         val message = error.message!!
         assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
         assertTrue(message.contains("refs/heads/backend/release"), message)
+        // The default prefix is what met it, so the refusal does not recommend that prefix.
+        assertTrue("as {repo}/ does" !in message && message.contains("-b"), message)
+    }
+
+    @Test
+    fun `a qualified branch meeting a plain name written before it is told the same`() {
+        corpus()
+        // Backend comes first, so its `webui/release`, a name only backend has, is written plain
+        // before webui's shared `release` is qualified onto it.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            repo.branch("release", original.getValue("a2"))
+            repo.branch("webui/release", original.getValue("a1"))
+        }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
+
+        val message = assertThrows<IllegalArgumentException> { braid(tmp.resolve("met.git")) }.message!!
+        assertTrue(message.contains("refs/heads/webui/release"), message)
+        assertTrue("as {repo}/ does" !in message && message.contains("-b"), message)
+    }
+
+    @Test
+    fun `the qualifier on a shared branch is a template, and only a shared branch sees it`() {
+        corpus()
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("alone", original.getValue("b1")) }
+
+        val out = tmp.resolve("templated.git")
+        braid(out, options = WriteOptions(branchPrefix = "from-{repo}--"))
+
+        SourceRepository.open(out).use { repo ->
+            val names = repo.branches().map { it.name }
+            assertTrue(names.containsAll(listOf("from-backend--release", "from-webui--release")), names.toString())
+            // The branch only one input has is not a collision, so the template never applies.
+            assertTrue(names.contains("alone"), names.toString())
+        }
+    }
+
+    @Test
+    fun `two inputs meeting on one name under an emptied prefix is refused`() {
+        corpus()
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
+
+        val error = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("collided.git"), options = WriteOptions(branchPrefix = ""))
+        }
+        val message = error.message!!
+        assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
+        assertTrue(message.contains("refs/heads/release"), message)
+        assertTrue(message.contains("--branch-prefix"), message)
+    }
+
+    @Test
+    fun `the provenance trailer is a template`() {
+        corpus()
+        val out = tmp.resolve("trailer.git")
+        braid(out, options = WriteOptions(provenanceTrailer = "origin {commit} of {repo}, from {parents}"))
+
+        // Read without [read], which keys the output by the sha it finds in the default trailer:
+        // a template that does not carry one is exactly what this is testing.
+        SourceRepository.open(out).use { repo ->
+            val messages = repo.readReachable(repo.branches().map { it.target }).map { it.message }
+            assertTrue(
+                messages.contains(
+                    "backend: a2\n\nwith a body line\n\n" +
+                        "origin ${original.getValue("a2").name} of backend," +
+                        " from ${original.getValue("a1").name}\n"
+                ),
+                messages.toString(),
+            )
+        }
     }
 
     @Test

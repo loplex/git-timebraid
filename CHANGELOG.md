@@ -143,6 +143,14 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
 
 ### Added
 
+- **`--branch-prefix TEMPLATE`** — the qualifier on a branch two inputs both have.\
+  `{repo}` is substituted; the default `{repo}/` is what it always was.\
+  A branch only one input has keeps its own name and never sees it.
+
+- **`--provenance-trailer TEMPLATE`** — the line `--provenance` writes.\
+  `{repo}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
+  Leaving out `{commit}` or `{parents}` keeps the trailer and gives up what makes it checkable.
+
 - **A destination may be a nested path.**\
   `git-timebraid -o out backend::libs/backend webui::apps/webui`\
   Inputs sharing a prefix share the tree for it.
