@@ -134,6 +134,12 @@ Twenty-three changes alter what a command line written for 0.1.0 does:
   What an option *means* is left to `doc/usage.md`, which the epilog points at;
   an entry says enough to recognise a flag and gives its default.
 
+- **`-v`/`--verbose` covers the in-process work, not only the subprocesses.**\
+  Four operations shell out to git; the transfer and every object and ref are JGit.\
+  A merge of local inputs into a bare output starts none of the four itself, and the flag printed nothing.\
+  It now gives the transfer and each ref written as the `git` command it is the equivalent of.\
+  The commit-by-commit writing stays out: it is not one command, and `--plan-out` already dumps it.
+
 - **The archives carry each dependency as its own jar in `lib/`,
   beside `git-timebraid.jar`, and a release no longer offers the jar on its own.**\
   The program's jar names the others in its manifest, so `java -jar lib/git-timebraid.jar` still runs it,
