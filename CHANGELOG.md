@@ -100,6 +100,10 @@ Six changes alter what a command line written for 0.1.0 does:
   `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare input as well:
   nothing overrode them, so they read its refs or its objects from another repository.
 
+- **A logged subprocess names the repository it ran in.**\
+  `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same way.\
+  Both are written with the `-C` the command would need to run anywhere else.
+
 ## [0.1.0] - 2026-09-08
 
 First release.
