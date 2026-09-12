@@ -60,8 +60,8 @@ import kotlin.io.path.writeText
 private const val BR = "\u0085"
 
 /*
- * The groups below exist for `--help`, which clikt renders one section per group. Twenty options in
- * one flat list make the required ones look like the rare ones; grouped, a reader meets them in the
+ * The groups below exist for `--help`, which clikt renders one section per group. A single flat
+ * list makes the required ones look like the rare ones; grouped, a reader meets them in the
  * order the decisions arise. Nothing about parsing changes: a grouped option is spelled and given
  * exactly as it was.
  *
@@ -180,6 +180,14 @@ private class OutputContentOptions : OptionGroup(
                 "Default: \"" + WriteOptions().tagPrefix + "\""
         )
 
+    val branchPrefix by option("--branch-prefix").default(WriteOptions().branchPrefix)
+        .help(
+            "Prefix prepended to a branch two inputs both have." + BR +
+                "A branch only one of them has keeps its own name." + BR +
+                "{repo} is substituted." + BR +
+                "Default: \"" + WriteOptions().branchPrefix + "\""
+        )
+
     val subjectPrefix by option("--subject-prefix").default(WriteOptions().subjectPrefix)
         .help(
             "Prefix prepended to every commit subject." + BR +
@@ -190,6 +198,14 @@ private class OutputContentOptions : OptionGroup(
     val provenance by option("--provenance").flag("--no-provenance", default = true)
         .help(
             "Record each commit's original sha and parents in a trailer." + BR + "Default: on."
+        )
+
+    val provenanceTrailer by option("--provenance-trailer").default(WriteOptions().provenanceTrailer)
+        .help(
+            "The trailer --provenance writes, as its own paragraph." + BR +
+                "{repo}, {commit} and {parents} are substituted." + BR +
+                "Dropping {commit} or {parents} gives up what makes the output checkable." + BR +
+                "Default: \"" + WriteOptions().provenanceTrailer + "\""
         )
 }
 
@@ -322,9 +338,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             splice = placement.splice,
             dissolveSubmodules = placement.dissolveSubmodules,
             writeOptions = WriteOptions(
-                outputContent.subjectPrefix,
-                outputContent.tagPrefix,
-                outputContent.provenance,
+                subjectPrefix = outputContent.subjectPrefix,
+                tagPrefix = outputContent.tagPrefix,
+                branchPrefix = outputContent.branchPrefix,
+                provenance = outputContent.provenance,
+                provenanceTrailer = outputContent.provenanceTrailer,
             ),
             dryRun = reporting.dryRun,
         )
@@ -722,8 +740,9 @@ private fun parseRepoSpec(raw: String): RepoSpec {
         ?: subdir?.substringAfterLast('/')
         ?: if (remote) repoNameFromLocation(location)
         else SourceRepository.defaultName(localPath(location, raw))
-    // The name becomes the default subdirectory, the tag prefix and the provenance label, so an
-    // input that yields none is rejected here rather than failing later as an unusable subdirectory.
+    // The name becomes the default subdirectory and, under the default templates, the tag prefix
+    // and the provenance label, so an input that yields none is rejected here rather than failing
+    // later as an unusable subdirectory.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
     // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
     // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead

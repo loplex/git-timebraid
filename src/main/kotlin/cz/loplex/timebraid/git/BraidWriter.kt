@@ -19,8 +19,26 @@ class WriteOptions(
     val subjectPrefix: String = "{repo}: ",
     /** Prepended to every tag name. `{repo}` is substituted. */
     val tagPrefix: String = "{repo}/",
+    /**
+     * Prepended to a branch name two inputs both use. `{repo}` is substituted.
+     *
+     * A branch only one input has keeps its own name and never sees this, which is why it is a
+     * qualifier rather than a prefix: it exists to tell two otherwise identical names apart. One
+     * that does not keep `{repo}` apart from the name can fail to, and so can an unshared name that
+     * equals a qualified one; two inputs meeting on a name are refused then, as they are for
+     * [tagPrefix] — see [BraidWriter.resolveRefs].
+     */
+    val branchPrefix: String = "{repo}/",
     /** Whether to record the original identity of each commit in a trailer. */
     val provenance: Boolean = true,
+    /**
+     * The trailer [provenance] records. `{repo}`, `{commit}` and `{parents}` are substituted.
+     *
+     * The default is what makes the promise that every original edge survives checkable rather than
+     * merely claimed, so a template that drops `{commit}` or `{parents}` gives that up — which is
+     * the caller's to decide.
+     */
+    val provenanceTrailer: String = "[timebraid: repo=\"{repo}\" commit={commit} parents={parents}]",
 )
 
 /** What a run produced, for the closing report. */
@@ -231,8 +249,10 @@ class BraidWriter(
 
         if (!options.provenance) return prefixed
 
-        val trailer = "[timebraid: repo=\"$repo\" commit=${original.id.name}" +
-            " parents=${original.parents.joinToString(",") { it.name }}]\n"
+        val trailer = options.provenanceTrailer
+            .replace("{repo}", repo)
+            .replace("{commit}", original.id.name)
+            .replace("{parents}", original.parents.joinToString(",") { it.name }) + "\n"
         val body = prefixed.trimEnd('\n')
         return if (body.isEmpty()) trailer else "$body\n\n$trailer"
     }
@@ -253,11 +273,11 @@ class BraidWriter(
      * name belongs to a single repository, and is qualified with the repository name where two
      * inputs happen to have used it. Tags carry `--tag-prefix`, `{repo}/` by default, because
      * release names collide across repositories as a matter of course rather than by accident. A
-     * prefix that does not keep `{repo}` apart from the tag name lets two inputs' tags meet on one
-     * name, as does a branch one input alone has under the name another input's shared branch is
-     * qualified to, and a shared branch qualified onto the braid's own. That is refused rather than
-     * resolved: the two can point at different commits, so keeping either would publish one history
-     * under a name the other's reader would look up.
+     * prefix that does not keep `{repo}` apart from the name, either of the two, lets two inputs'
+     * refs meet on one name, as does a branch one input alone has under the name another input's
+     * shared branch is qualified to, and a shared branch qualified onto the braid's own. That is
+     * refused rather than resolved: the two can point at different commits, so keeping either would
+     * publish one history under a name the other's reader would look up.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -277,22 +297,37 @@ class BraidWriter(
 
         var tags = 0
         val branchOwner = HashMap<String, String>()
-        // The braid's own branch is in the running too: input backend's shared branch `x` is
-        // qualified onto a mainline called `backend/x`, and would write over it.
+        // The braid's own branch is in the running too: under `{repo}/`, input backend's shared
+        // branch `x` is qualified onto a mainline called `backend/x`, and would write over it.
         branchOwner[inputs.mainlineBranch] = BRAID
+        // Names written as they stand, for a branch only one input has: no template reaches them.
+        val plain = HashSet<String>()
         val tagOwner = HashMap<String, String>()
         for (input in inputs.sources) {
             for (branch in input.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
                 val name =
                     if (shared[branch.name] == 1) branch.name
-                    else "${input.source.name}/${branch.name}"
+                    else options.branchPrefix.replace("{repo}", input.source.name) + branch.name
+                val alone = shared[branch.name] == 1
                 branchOwner.put(name, input.source.name)?.let { first ->
                     throw IllegalArgumentException(
                         "'$first' and '${input.source.name}' would both write '${Constants.R_HEADS}$name'; " +
-                            if (first == BRAID) "leave that branch out with -b" else "narrow the run"
+                            if (first == BRAID) {
+                                "give --branch-prefix a template that moves the input's branches " +
+                                    "off the braid's, or leave that branch out with -b"
+                            } else if (alone || name in plain) {
+                                // One side keeps its plain name whatever the template says, and
+                                // `{repo}/` may be the very prefix that met it.
+                                "a branch only one input has keeps its name, so leave one of them " +
+                                    "out with -b"
+                            } else {
+                                "give --branch-prefix a template that keeps {repo} apart from the " +
+                                    "name, as {repo}/ does, or narrow the run"
+                            }
                     )
                 }
+                if (alone) plain += name
                 refs[Constants.R_HEADS + name] = idOf(branch.commit)
                 branches++
             }

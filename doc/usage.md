@@ -243,7 +243,8 @@ worked out under [dissolving a submodule](how-it-works.md#dissolving-a-submodule
 - The mainline branch collapses into one: every input contributed its own to the same braid, so the
   output has a single branch of that name, at the braid's tip.
 - Any other branch keeps its own name — unless two inputs happen to have used that name, in which
-  case both are qualified as `<repo>/<branch>`.
+  case both are qualified as `<repo>/<branch>`. The qualifier is `--branch-prefix`, and a branch
+  only one input has never sees it.
 
 Why a side branch needs no special handling, and why a branch from one input still gives you a
 checkout of the whole system, is under [branches](how-it-works.md#branches).
@@ -320,6 +321,10 @@ webui: fix the date picker on the summary page
 This is what makes the braid's promise checkable rather than merely claimed, the promise that
 [every original edge survives](how-it-works.md#the-parent-rule): the original identity and the
 original parents of every commit are recorded, so a script can verify that no edge went missing.
+
+`--provenance-trailer` sets the line — the one above is its default — substituting `{repo}`,
+`{commit}` and `{parents}`. A template that leaves out `{commit}` or `{parents}` keeps the
+trailer and gives up that check, since it is those two that a script reads.
 
 ---
 
@@ -414,11 +419,21 @@ What the output repository holds:
   --tag-prefix=<text>             Prefix prepended to every recreated tag.
                                   {repo} is substituted.
                                   Default: "{repo}/"
+  --branch-prefix=<text>          Prefix prepended to a branch two inputs both have.
+                                  A branch only one of them has keeps its own name.
+                                  {repo} is substituted.
+                                  Default: "{repo}/"
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
                                   Default: "{repo}: "
   --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
                                   Default: on.
+  --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.
+                                  {repo}, {commit} and {parents} are substituted.
+                                  Dropping {commit} or {parents} gives up what makes the output
+                                  checkable.
+                                  Default: "[timebraid: repo="{repo}" commit={commit}
+                                  parents={parents}]"
 
 Inspecting a run:
   --dry-run          Compute and summarize the plan, write no output.
