@@ -20,7 +20,7 @@ recording the inputs as remotes under `--keep-remotes`, and checking out a `--no
 
 Verify a download against `SHA256SUMS`:
 
-```
+```bash
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 

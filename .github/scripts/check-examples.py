@@ -12,21 +12,24 @@ command, needs no edit here.
 
 Three block conventions in an example's README, and nothing else is looked at:
 
-  ```
+  ```bash
   ./git-timebraid ...                         an invocation that must succeed. Continuation lines
   ```                                         end with a backslash, as in the READMEs.
 
-  ```
+  ```console
   $ ./git-timebraid ...                       an invocation whose output must contain the lines
                                               below it -- either its closing report, or the refusal
   spliced: libs/backend inside libs at ...    three of the examples demonstrate. Which of the two
   ```                                         it is, is settled by the text and needs no marker:
                                               a refusal cannot print a report, or the reverse.
 
-  ```
+  ```console
   $ git -C output log ...                     run in the example's directory; its output must match
   cf6b66a 2023-11-16 14:13:20 +0000 ...       the lines that follow, exactly, and it must write
   ```                                         nothing to stderr.
+
+The info string is not read -- `bash` and `console` are there for rendering, and what settles which
+rule applies is the `$`.
 
 A line belongs to the command above it and nowhere else. There is no rule that reads a command-free
 block, because a README also uses those for things that are not output at all -- the `<name>@<n>`

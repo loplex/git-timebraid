@@ -6,7 +6,7 @@ and how an argument corrects a finding rather than adding a second input.
 
 ## Input
 
-```
+```text
 input/platform/                              repo, and the base of the scan   README.md
 input/platform/libs/backend/                 repo                             src/Main.kt
 input/platform/libs/core/                    repo                             core.kt
@@ -23,7 +23,7 @@ it sits outside the scanned tree and takes no part in the run.
 ## Refused as it stands
 
 <!-- wide block: the refusal is quoted as the program prints it, one line naming both locations -->
-```
+```console
 $ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
     --scan doc/examples/08-scan/input/platform
 
@@ -38,7 +38,7 @@ The scan cannot invent a distinction it was not given, so it refuses and says ho
 
 ## Command
 
-```
+```console
 $ ./git-timebraid -o doc/examples/08-scan/output --no-bare \
     --scan doc/examples/08-scan/input/platform \
     --plan-out doc/examples/08-scan/plan.txt \
@@ -57,7 +57,7 @@ It gives a name and no destination, which is exactly what was needed here.
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 7fc1594 2023-11-16 09:13:20 +0000 webui: b1
 ef5bc09 2023-11-16 04:13:20 +0000 tools-core: t1
@@ -91,7 +91,7 @@ Everything landed where it sits on disk, and four separate rules can be read str
 
 ### What the walk left out
 
-```
+```console
 $ git -C output ls-tree -r --name-only HEAD | grep -E 'cache|inner'
 (no output)
 ```

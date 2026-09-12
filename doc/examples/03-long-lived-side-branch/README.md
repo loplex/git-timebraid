@@ -8,7 +8,7 @@ and (unlike example 02) interleaving over the mainline chains and over the whole
 
 ## Input
 
-```
+```text
 A: a1@0 <- a2@100 ; f1(a1)@10 <- f2@60 <- f3@150 <- m(a2,f3)@200
 B: b1@30 <- b2@80 <- b3@130 <- b4@180
 ```
@@ -20,7 +20,7 @@ so there is no clock-skew anomaly here.
 
 ## Commands
 
-```
+```bash
 ./git-timebraid -o doc/examples/03-long-lived-side-branch/output --no-bare \
     --order-by committer --plan-out doc/examples/03-long-lived-side-branch/plan.txt \
     doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B
@@ -28,7 +28,7 @@ so there is no clock-skew anomaly here.
 
 The whole-graph contrast, from the same CLI with every ref opted in:
 
-```
+```bash
 ./git-timebraid -o doc/examples/03-long-lived-side-branch/output-whole-graph --no-bare \
     --order-by committer --interleave-ref '*' \
     doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B
@@ -36,7 +36,7 @@ The whole-graph contrast, from the same CLI with every ref opted in:
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --date=iso --pretty="format:%h %ad %s"
 cac126f 2023-11-23 06:13:20 +0000 A: m
 01660f1 2023-11-22 10:13:20 +0000 B: b4

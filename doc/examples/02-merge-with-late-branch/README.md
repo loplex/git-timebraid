@@ -7,7 +7,7 @@ not just a different write order, an actually different interleaving with the ot
 
 ## Input
 
-```
+```text
 A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30
 B: b1@25 <- b2@35
 ```
@@ -16,7 +16,7 @@ B: b1@25 <- b2@35
 timestamped *after* `m` itself (a slow review, or clock skew, can produce exactly this).\
 `m` merges `f` back into `A`'s mainline.
 
-```
+```console
 $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
 *   ebb3dc6 2023-11-16 04:13:20 +0000  (HEAD -> main) m
 |\
@@ -42,7 +42,7 @@ $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
 
 Production (the real CLI):
 
-```
+```bash
 ./git-timebraid -o doc/examples/02-merge-with-late-branch/output --no-bare \
     --order-by committer --plan-out doc/examples/02-merge-with-late-branch/plan.txt \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
@@ -50,7 +50,7 @@ Production (the real CLI):
 
 The whole-graph contrast, from the same CLI with every ref opted in:
 
-```
+```bash
 ./git-timebraid -o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
     --order-by committer --interleave-ref '*' \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B
@@ -58,7 +58,7 @@ The whole-graph contrast, from the same CLI with every ref opted in:
 
 ## Result
 
-```
+```console
 $ git -C output log --first-parent main --pretty="format:%h %s %p"
 5910c21 B: b2 7e7e370 b1c756f
 7e7e370 A: m b1c756f 80015c9 e55db99
@@ -76,14 +76,14 @@ aa48ad1 A: a1
 
 Braids (oldest to newest):
 
-```
+```text
 BraidInterleave (production):   a1, a2, b1, m,  b2      <- m by its own time (30), ignoring f
 whole-graph pass:               a1, a2, b1, b2, m       <- m pushed past b2, waiting for f
 ```
 
 `m`'s own parents confirm exactly what changes and what does not:
 
-```
+```text
 output              m's parents: b1(braid pred), a2(original), f(original)
 output-whole-graph  m's parents: b2(braid pred), a2(original), f(original)
 ```
@@ -98,7 +98,7 @@ Pinned as a permanent test in `BraidInterleaveTest`
 
 The braid edge is the one edge this tool invents, and under the whole-graph pass it can point into the future:
 
-```
+```console
 $ git -C output-whole-graph ls-tree -r e9a085d -- B      # checkout of m, recorded 2023-11-16 04:13
 100644 blob c9c6af7f…  B/b1.txt
 100644 blob e6bfff5c…  B/b2.txt                          # b2 is dated 2023-11-16 09:13 -- 5h later
