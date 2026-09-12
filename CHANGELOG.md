@@ -196,6 +196,8 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   Every bar leaves a line behind carrying what it reached and how long it took, and then goes: what
   it was showing stops being a question, and the counts are the part worth keeping.\
   A bar that runs for one input is named after it, which `Receiving objects` alone never said.\
+  The stretches with nothing to count spin rather than going quiet for seconds under a heading
+  already printed.\
   Only on a terminal: redirected, no bar is drawn at all, as `git` does with its own progress, and
   the phases and their lines read the same either way.\
   `--quiet` silences all of it.\

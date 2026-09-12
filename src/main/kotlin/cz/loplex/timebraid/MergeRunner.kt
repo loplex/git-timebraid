@@ -21,7 +21,6 @@ import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Locale
 import kotlin.io.path.createDirectories
 
 /** One input to the merge, as the CLI layer parsed it. */
@@ -103,18 +102,6 @@ class MergeRunner(
 
     private val git = GitCommand { progress.detail(it) }
 
-    /**
-     * How long something took, as the tail of the line reporting it.
-     *
-     * Tenths of a second: a phase worth reporting takes seconds, and the digits below that are
-     * noise that changes on every run — which matters here because two runs of the same merge are
-     * otherwise expected to say the same thing.
-     */
-    private fun since(start: Long): String =
-        // Locale.ROOT, or a Czech or German JVM writes the separator as a comma — which is correct
-        // for those readers and wrong for a line the rest of the program spells in English.
-        String.format(Locale.ROOT, ", %.1fs", (System.nanoTime() - start) / 1_000_000_000.0)
-
     /** The directory [cloneRoot] made when there was no output to put the clones beside. */
     private var temporaryClones: Path? = null
 
@@ -132,39 +119,40 @@ class MergeRunner(
         try {
             locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
             progress.phase("reading the inputs and planning the braid")
-            val readAt = System.nanoTime()
-            val braid = CommitGraphReader.read(
-                repositories = sources,
-                orderBy = request.orderBy,
-                mainlineBranch = request.mainlineBranch,
-                refs = request.refs,
-                interleaveRefs = request.interleaveRefs,
-            )
+            val braid = progress.whileWorking(
+                "reading ${sources.size} repositories",
+                finished = { "${sources.size} repositories, ${it.graph.size} commits" },
+            ) {
+                CommitGraphReader.read(
+                    repositories = sources,
+                    orderBy = request.orderBy,
+                    mainlineBranch = request.mainlineBranch,
+                    refs = request.refs,
+                    interleaveRefs = request.interleaveRefs,
+                )
+            }
 
-            progress.result(
-                "${sources.size} repositories, ${braid.graph.size} commits" + since(readAt)
-            )
-            val planAt = System.nanoTime()
             if (braid.interleaveTips.isNotEmpty()) {
                 progress.detail(
                     "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +
                         "wait for them"
                 )
             }
-            val plan = braid.graph
-                .braid(braid.heads, braid.interleaveTips)
-                .plan(
-                    // The strands are in the order the inputs were given, so the two are paired by
-                    // position here rather than by asking a Source where it sits.
-                    braid.graph.sources
-                        .mapIndexed { index, source -> source to request.inputs[index].subdir }
-                        .toMap(),
-                    splice = request.splice,
-                )
-
-            progress.result(
-                "${plan.commits.size} commits planned, ${plan.braid.size} on the braid" + since(planAt)
-            )
+            val plan = progress.whileWorking(
+                "planning",
+                finished = { "${it.commits.size} commits planned, ${it.braid.size} on the braid" },
+            ) {
+                braid.graph
+                    .braid(braid.heads, braid.interleaveTips)
+                    .plan(
+                        // The strands are in the order the inputs were given, so the two are paired
+                        // by position here rather than by asking a Source where it sits.
+                        braid.graph.sources
+                            .mapIndexed { index, source -> source to request.inputs[index].subdir }
+                            .toMap(),
+                        splice = request.splice,
+                    )
+            }
 
             // The one place that pairs the two: these are the repositories handed to read() above,
             // and it gives back one SourceInputs per repository in the same order, each naming the
@@ -175,7 +163,9 @@ class MergeRunner(
             // Before anything is written into the output, and on a dry run too — a splice that
             // collides does so at one commit of the braid rather than at all of them, so a dry run
             // that skipped this would report a plan it cannot carry out.
-            val splices = SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+            val splices = progress.whileWorking("checking the splices") {
+                SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+            }
             for (splice in splices) {
                 val dissolved =
                     if (splice.dissolved == 0) ""
@@ -277,9 +267,10 @@ class MergeRunner(
                 dissolveSubmodules = request.dissolveSubmodules,
                 relocation = relocation,
                 onCommitWritten = progress.counter(plan.commits.size, "commits written"),
+                publishing = { publish -> progress.whileWorking("publishing the refs", work = publish) },
             ).write()
 
-            target.dropFetchRefs()
+            progress.whileWorking("dropping the refs the transfer parked") { target.dropFetchRefs() }
             return Written(fetch, write)
         }
     }

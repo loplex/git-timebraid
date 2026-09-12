@@ -273,6 +273,37 @@ class ProgressTest {
     }
 
     @Test
+    @Timeout(30)
+    fun `a detail printed while a spinner is drawn gets a line of its own above it`() {
+        // On a real terminal the sink and the terminal write to one stream, so a detail printed
+        // past the terminal landed after the spinner's frame, on its line. Through the terminal it
+        // is printed where the frame was, and the frame is drawn again on the line below.
+        val watched = Watched(recorder())
+        val printed = ArrayList<String>()
+        val progress = Progress(
+            Progress.Level.VERBOSE,
+            { printed.add(it) },
+            terminal = Terminal(interactive = true, terminalInterface = watched),
+        )
+        val detail = "  git -C out update-ref refs/tags/v1 abc"
+        progress.whileWorking("publishing the refs") {
+            watched.awaitRepaints(2)
+            progress.detail(detail.trimStart())
+            watched.repaints.drainPermits()
+            watched.awaitRepaints(2)
+        }
+
+        assertFalse(printed.any { "update-ref" in it }, "the detail went past the terminal: $printed")
+        val drawn = watched.recorder.output().split("\n")
+        val at = drawn.indexOfFirst { "update-ref" in it }
+        assertTrue(at >= 0, "the detail was not printed: $drawn")
+        // What a carriage return leaves on the line: the detail, and none of the frame it replaced.
+        val shown = drawn[at].substringAfterLast("\r")
+        assertTrue(shown.endsWith(detail) && "publishing" !in shown, "the detail shares its line: $drawn")
+        assertTrue(drawn.drop(at + 1).any { "publishing the refs" in it }, "no frame below it: $drawn")
+    }
+
+    @Test
     fun `a detail the terminal fails to print goes to the sink instead`() {
         val recorder = recorder()
         var failing = false
@@ -395,6 +426,17 @@ class ProgressTest {
     }
 
     @Test
+    fun `a spinner's line carries the counts its work finished with`() {
+        val collected = ArrayList<String>()
+        val progress = Progress(Progress.Level.NORMAL, { collected.add(it) }, terminal = null)
+
+        progress.whileWorking("reading", finished = { n: Int -> "2 repositories, $n commits" }) { 7 }
+
+        assertEquals(1, collected.size, collected.toString())
+        assertTrue(collected.single().trimStart().startsWith("2 repositories, 7 commits, "), collected.toString())
+    }
+
+    @Test
     fun `nothing opened after stopDrawing is drawn or reported`() {
         // A shutdown hook stops the drawing while the merge thread goes on into its next phase,
         // and that phase must neither draw again nor leave its line.
@@ -402,6 +444,7 @@ class ProgressTest {
         val progress = Progress(Progress.Level.NORMAL, { collected.add(it) }, terminal = null)
 
         progress.stopDrawing()
+        progress.whileWorking("planning") { }
         val tick = progress.counter(3, "commits written")
         for (done in 1..3) tick(done)
 

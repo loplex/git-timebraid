@@ -87,6 +87,12 @@ class BraidWriter(
      * available in full through `--plan-out`.
      */
     private val onCommitWritten: (Int) -> Unit = {},
+    /**
+     * Runs the stage that makes the braid visible — the pack flush and the refs pointed at it.
+     * Handed over so a caller can say it is happening; it has nothing to count, so nothing here
+     * could.
+     */
+    private val publishing: (() -> Unit) -> Unit = { it() },
 ) {
 
     private val graph = inputs.graph
@@ -143,11 +149,15 @@ class BraidWriter(
         writeCommits()
         val refs = resolveRefs()
 
-        // Annotated tags are objects too, and a ref pointing at an object no reader can see is
-        // rejected, so nothing may be published before everything is flushed.
-        target.flushObjects()
-        for ((name, id) in refs.targets) target.point(name, id)
-        target.setHead(inputs.mainlineBranch)
+        // Wrapped, because this is where a large braid goes quiet: the flush writes the whole pack
+        // in one call and the refs follow it one at a time, which is seconds with nothing to count.
+        publishing {
+            // Annotated tags are objects too, and a ref pointing at an object no reader can see is
+            // rejected, so nothing may be published before everything is flushed.
+            target.flushObjects()
+            for ((name, id) in refs.targets) target.point(name, id)
+            target.setHead(inputs.mainlineBranch)
+        }
 
         return WriteSummary(
             commits = plan.commits.size,

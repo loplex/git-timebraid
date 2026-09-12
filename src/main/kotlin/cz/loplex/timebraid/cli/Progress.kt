@@ -209,7 +209,9 @@ class Progress(
         private val animation: ThreadProgressTaskAnimator<Unit>?,
         terminal: Terminal?,
         private val total: Long?,
-        private val label: String,
+        /** What the line left behind says. A caller that only knows it once the work is done
+         *  replaces it through [relabel] rather than printing a second line. */
+        private var label: String,
     ) {
 
         private val startedAt = System.nanoTime()
@@ -267,6 +269,9 @@ class Progress(
          * which is all it ever claimed.
          */
         private fun finishedLine(): String {
+            // Locale.ROOT, or a Czech or German JVM writes the separator as a comma — which is
+            // correct for those readers and wrong for a line the rest of the program spells in
+            // English.
             val elapsed = String.format(
                 Locale.ROOT, "%.1fs", (System.nanoTime() - startedAt) / 1_000_000_000.0
             )
@@ -286,6 +291,9 @@ class Progress(
                 if (!again) return
             }
         }
+
+        /** Says what the finished line will say, once the work has produced it. */
+        fun relabel(text: String) = synchronized(lock) { label = text }
 
         fun close() = synchronized(lock) {
             if (closed) return@synchronized
@@ -376,6 +384,30 @@ class Progress(
             // that follows in the same phase — and a line printed into a running animation lands
             // in the middle of it.
             if (done >= total) drawn.close()
+        }
+    }
+
+    /**
+     * Runs [work] under a spinner labelled [label], for a stretch that cannot say how far along it
+     * is, and leaves the same kind of line behind as a bar does.
+     *
+     * Some of the longest stretches of a run are these: reading the inputs, planning the braid,
+     * flushing a pack and publishing the refs on top of it. None has a count to offer — a pack
+     * flush is one call that returns when it returns — and each was several silent seconds under
+     * a heading that had already been printed. A spinner claims no more than that something is
+     * still happening, which is exactly what is known.
+     */
+    fun <T> whileWorking(label: String, finished: ((T) -> String)? = null, work: () -> T): T {
+        val drawn = draw(progressBarLayout { spinner(Glyphs.spinnerFor(charset)); text(label) }, null, label)
+        try {
+            val value = work()
+            // The counts a step has to report are known only once it is done, and a second call to
+            // say them would leave the step two lines, timed from two different starts. So the one
+            // line the spinner leaves behind is what carries them.
+            finished?.let { drawn?.relabel(it(value)) }
+            return value
+        } finally {
+            drawn?.close()
         }
     }
 
