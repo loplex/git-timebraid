@@ -201,6 +201,10 @@ Seventeen changes alter what a command line written for 0.1.0 does:
 - **The archives carry the documents README.md links to.**\
   Its links into `doc/` led nowhere once an archive was unpacked.
 
+- **The jar settles which `META-INF/LICENSE.txt` it carries, rather than letting one shadow
+  another.**\
+  Which copy reached it followed the order the dependencies resolved in.
+
 - **`--interleave-ref` brings the whole ancestry of what it names into scope.**\
   A ref sitting on a mainline was skipped whole, so naming a mainline branch, or a release tag on
   one, did nothing.\

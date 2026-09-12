@@ -263,6 +263,33 @@
                                         <exclude>META-INF/versions/*/module-info.class</exclude>
                                     </excludes>
                                 </filter>
+                                <!--
+                                    Three jars carry META-INF/LICENSE.txt: commons-codec the Apache
+                                    License 2.0, both slf4j artifacts an identical copy of the MIT
+                                    license. Shade has no merge rule for that path, so the first one
+                                    written stays and the others are dropped, and which one that is
+                                    follows the order the dependencies happen to resolve in. Dropping
+                                    two of the three makes the survivor a decision rather than an
+                                    accident, and NOTICE names the path as slf4j's.
+
+                                    Neither exclusion loses a text. commons-codec's copy is the Apache
+                                    License 2.0, which ships here anyway as
+                                    META-INF/git-timebraid/LICENSE, this program being under the same
+                                    license; the two copies differ only in one URL, written with https
+                                    in commons-codec's. slf4j-simple's is byte-for-byte slf4j-api's.
+                                -->
+                                <filter>
+                                    <artifact>commons-codec:commons-codec</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/LICENSE.txt</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>org.slf4j:slf4j-simple</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/LICENSE.txt</exclude>
+                                    </excludes>
+                                </filter>
                             </filters>
                             <transformers>
                                 <!-- Concatenates META-INF/services/* rather than letting one jar win. -->

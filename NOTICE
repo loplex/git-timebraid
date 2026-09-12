@@ -34,6 +34,9 @@ MIT License
 
 Apache License, Version 2.0
 
+    Full text in the jar as META-INF/git-timebraid/LICENSE, the same file
+    that carries this program's own license, which is the same license.
+
     com.github.ajalt.clikt:clikt-jvm
     com.github.ajalt.clikt:clikt-core-jvm
     com.github.ajalt.mordant:mordant-jvm
