@@ -173,18 +173,18 @@ private class OutputContentOptions : OptionGroup(
                     "not."
         )
 
-    val tagPrefix by option("--tag-prefix").default("{repo}/")
+    val tagPrefix by option("--tag-prefix").default(WriteOptions().tagPrefix)
         .help(
             "Prefix prepended to every recreated tag." + BR +
                 "{repo} is substituted." + BR +
-                "Default: \"{repo}/\""
+                "Default: \"" + WriteOptions().tagPrefix + "\""
         )
 
-    val subjectPrefix by option("--subject-prefix").default("{repo}: ")
+    val subjectPrefix by option("--subject-prefix").default(WriteOptions().subjectPrefix)
         .help(
             "Prefix prepended to every commit subject." + BR +
                 "{repo} and {subdir} are substituted." + BR +
-                "Default: \"{repo}: \""
+                "Default: \"" + WriteOptions().subjectPrefix + "\""
         )
 
     val provenance by option("--provenance").flag("--no-provenance", default = true)
