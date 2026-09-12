@@ -398,6 +398,33 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `a branch one input alone has, named like another's qualified branch, is refused, not written over`() {
+        corpus()
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("release", original.getValue("b1"))
+            repo.branch("backend/hotfix", original.getValue("b2"))
+        }
+
+        // Apart, a branch only webui has keeps its own name beside the two qualified ones, even one
+        // that opens with another input's name.
+        val apart = tmp.resolve("apart.git")
+        braid(apart)
+        SourceRepository.open(apart).use { repo ->
+            val names = repo.branches().map { it.name }
+            assertTrue(names.containsAll(listOf("backend/release", "webui/release", "backend/hotfix")), "$names")
+        }
+
+        // Meeting: webui's own backend/release is the name backend's shared release is qualified to,
+        // and neither may quietly win it.
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("backend/release", original.getValue("b2")) }
+        val error = assertThrows<IllegalArgumentException> { braid(tmp.resolve("collided.git")) }
+        val message = error.message!!
+        assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
+        assertTrue(message.contains("refs/heads/backend/release"), message)
+    }
+
+    @Test
     fun `two inputs' tags meeting under a prefix without {repo} are refused, not written over`() {
         corpus()
 

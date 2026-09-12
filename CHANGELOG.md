@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Eight changes alter what a command line written for 0.1.0 does:
+Nine changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -49,6 +49,10 @@ Eight changes alter what a command line written for 0.1.0 does:
   `{repo}` among them, refuses two inputs whose tags meet on a name.\
   0.1.0 kept the tag of whichever input came last; a template that keeps `{repo}` apart from the
   tag name, as `{repo}/` does, keeps both.
+
+- A branch one input alone has, under the name another input's shared branch is qualified to,
+  refuses the run.\
+  0.1.0 kept whichever of the two was written last; leave one of them out with `-b`.
 
 ### Fixed
 
@@ -147,6 +151,12 @@ Eight changes alter what a command line written for 0.1.0 does:
   The output kept the tag of the input given last, and the closing report counted both.\
   The refusal names both inputs and the tag; a template that keeps `{repo}` apart from the tag
   name, as `{repo}/` does, keeps both.
+
+- **Two inputs' branches meeting on one name are refused, not resolved by whichever came last.**\
+  In 0.1.0 a branch one input alone had kept its own name, which could be the one another input's
+  shared branch was qualified to: `A/release` in C, beside a `release` that A and B both had.\
+  The output kept the branch of the input written last, and the closing report counted both.\
+  The refusal names both inputs and the branch.
 
 ## [0.1.0] - 2026-09-08
 
