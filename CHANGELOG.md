@@ -196,12 +196,13 @@ Twenty-three changes alter what a command line written for 0.1.0 does:
   The stretches with nothing to count spin rather than going quiet for seconds under a heading already printed.\
   Only on a terminal: redirected, no bar is drawn at all, as `git` does with its own progress,
   and the phases and their lines read the same either way.\
-  `--quiet` silences all of it.\
+  `--quiet` silences all of it, and `--progress`/`--no-progress` override which way that is decided.\
   The bar and the spinner are drawn in what the console can encode, each asked separately:
   a charset that carries one of them and not the other keeps the one it can draw, and the other falls back to ASCII.\
   Ctrl-C gives the cursor back that the animation hid.\
   A signal unwinds no `finally`, so this is a shutdown hook of this program's own,
-  which stops the threads still painting before it writes.
+  which stops the threads still painting before it writes.\
+  `doc/usage.md` says what a run prints, stream by stream.
 
 ### Fixed
 
