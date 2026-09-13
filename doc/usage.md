@@ -315,6 +315,36 @@ Even with it, an input can meet the braid's own branch, which takes no prefix: u
 input `release`'s branch `x` becomes `release/x`, which is the output's branch where the mainline is
 called `release/x`. That is refused the same way, naming the braid.
 
+### Commit notes
+
+Notes live outside the two namespaces a selection speaks about, and they are not carried over unless
+a run asks:
+
+```bash
+--notes
+```
+
+Every `refs/notes/*` of every input is then read and **rekeyed**: a note is filed under the sha of
+the object it annotates, a merge gives every commit a new sha, so a note carried over unchanged
+would be attached to nothing. This is the provenance trailer's move from the other side — the
+trailer records where a commit came from, the rekeying moves what was said about it.
+
+- Notes refs are prefixed like everything else, `--notes-prefix`, default `{repo}/`. An input with
+  notes usually has `refs/notes/commits`, which `git notes` writes by default, so without
+  the qualifier two inputs meeting on that one name is refused, naming both, rather than resolved.
+- A note on an object this run did not write — one on a commit an unselected ref reached, or on a
+  blob or a tree — is **skipped**, and the run says how many, in the closing report as well, which
+  `-q` still prints (on its `refs:` line, or on a line of its own on a dry run).
+- Only the notes themselves come over, not the history of the notes ref. Every tree behind it is
+  keyed by shas the output never wrote under those names, so carrying that chain would carry notes
+  attached to nothing. The output's notes ref is one commit, keeping the input's author, committer
+  and message.
+- Read them the way you read any notes ref: `git log --notes=backend/commits`.
+
+`--ref` does not reach here. A pattern aimed at `refs/notes/` is **refused**, naming this flag: a
+note contributes no commit and reaches no ancestry, so it cannot be part of the selection that
+decides what is read.
+
 ### Choosing which refs are carried over
 
 `-b` and `--ref` are one selection rather than two: `-b main` *is* `--ref refs/heads/main`, and
@@ -462,7 +492,9 @@ They are in the output too, with their own shas intact, next to the rewritten on
 - `--keep-remotes` points `refs/remotes/<name>/*` at every ref the run carried over instead, and at
   each input's mainline whether the selection took it or not — a branch at its own name, everything
   else under the tail of its namespace, so a tag lands under `tags/` — which reaches all of them, so
-  the originals stay one `git log` away.
+  the originals stay one `git log` away. Notes are the exception: they are written under
+  `refs/notes/`, and a notes ref names a notes commit, which is not in the braid and so has no
+  original to point at.
 - Either way the fetch covers the refs that were read, so narrowing the selection narrows what
   arrives: a commit only an unselected ref could reach is not merely unreferenced in the output,
   its objects are not there.
@@ -701,7 +733,8 @@ What the output repository holds:
   --keep-remotes                  Add each input as a remote.
                                   Every ref it carried over lands under refs/remotes/<name>/*, at
                                   the original commits, and so does each input's mainline whether
-                                  the selection took it or not.
+                                  the selection took it or not. Notes are written under refs/notes/
+                                  and are not mirrored.
   --tag-prefix=<text>             Prefix prepended to every recreated tag.
                                   {repo} is substituted; an empty value qualifies nothing.
                                   Two inputs then meeting on one name is refused, not resolved.
@@ -713,6 +746,16 @@ What the output repository holds:
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
                                   Default: "{repo}: "
+  --notes                         Carry over every input's refs/notes/, rekeyed onto the commits
+                                  this run writes.
+                                  A merge gives every commit a new sha, so a note carried over
+                                  unchanged would be attached to nothing.
+                                  A note on an object the run did not write is skipped, and the run
+                                  says how many.
+                                  Default: notes are not read.
+  --notes-prefix=<text>           Prefix prepended to every recreated notes ref, below refs/notes/.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Default: "{repo}/"
   --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
                                   tagger, date and message.
                                   Default: an annotated tag stays annotated.

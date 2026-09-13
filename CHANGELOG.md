@@ -177,6 +177,17 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
 
 ### Added
 
+- **`--notes`** — carry over every input's `refs/notes/`, rekeyed onto the commits the run writes.\
+  A note is filed under the sha of what it annotates, and a merge gives every commit a new one, so a
+  note carried over unchanged would be attached to nothing.\
+  `--notes-prefix` qualifies the refs, `{repo}/` by default: an input with notes usually has
+  `refs/notes/commits`.\
+  A note on an object the run did not write is skipped, and the closing report says how many.\
+  The history of a notes ref is not carried over — the output's is one commit, keeping the input's
+  author, committer and message.\
+  A ref pattern that can match nothing under `refs/heads/` or `refs/tags/` is refused rather than
+  matching nothing; one aimed at `refs/notes/` names `--notes`.
+
 - **`--lightweight-tags`** — recreate every annotated tag as a lightweight one.\
   The ref lands at the same commit and no tag object is written.\
   For a run that wants the ref names without the tagger, date and message of each release.\

@@ -191,7 +191,7 @@ private class OutputContentOptions : OptionGroup(
             "Add each input as a remote." + BR +
                 "Every ref it carried over lands under refs/remotes/<name>/*, at the original " +
                     "commits, and so does each input's mainline whether the selection took it or " +
-                    "not."
+                    "not. Notes are written under refs/notes/ and are not mirrored."
         )
 
     val tagPrefix by option("--tag-prefix").default(WriteOptions().tagPrefix)
@@ -215,6 +215,22 @@ private class OutputContentOptions : OptionGroup(
             "Prefix prepended to every commit subject." + BR +
                 "{repo} and {subdir} are substituted." + BR +
                 "Default: \"" + WriteOptions().subjectPrefix + "\""
+        )
+
+    val notes by option("--notes").flag()
+        .help(
+            "Carry over every input's refs/notes/, rekeyed onto the commits this run writes." + BR +
+                "A merge gives every commit a new sha, so a note carried over unchanged would " +
+                "be attached to nothing." + BR +
+                "A note on an object the run did not write is skipped, and the run says how many." +
+                BR + "Default: notes are not read."
+        )
+
+    val notesPrefix by option("--notes-prefix").default(WriteOptions().notesPrefix)
+        .help(
+            "Prefix prepended to every recreated notes ref, below refs/notes/." + BR +
+                "{repo} is substituted; an empty value qualifies nothing." + BR +
+                "Default: \"" + WriteOptions().notesPrefix + "\""
         )
 
     val lightweightTags by option("--lightweight-tags").flag()
@@ -410,12 +426,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             refs = branchPatterns(history.branches) + history.refs,
             interleaveRefs = history.interleaveRefs,
             labelRefs = history.labelRefs,
+            notes = outputContent.notes,
             splice = placement.splice,
             dissolveSubmodules = placement.dissolveSubmodules,
             writeOptions = WriteOptions(
                 subjectPrefix = outputContent.subjectPrefix,
                 tagPrefix = outputContent.tagPrefix,
                 branchPrefix = outputContent.branchPrefix,
+                notesPrefix = outputContent.notesPrefix,
                 lightweightTags = outputContent.lightweightTags,
                 provenance = outputContent.provenance,
                 provenanceTrailer = outputContent.provenanceTrailer,
@@ -723,11 +741,12 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             )
             val remotes =
                 if (summary.remoteRefs > 0) ", ${summary.remoteRefs} remote-tracking" else ""
+            val notes = if (summary.notes > 0) ", ${summary.notes} notes refs" else ""
             // What was left out is said here as well as in its phase, because -q prints this alone.
-            val skipped = result.braid.labelsSkipped
-            val labels = if (skipped > 0) ", $skipped labels skipped" else ""
+            val labels = result.braid.labelsSkipped.let { if (it > 0) ", $it labels skipped" else "" }
+            val notesLeft = result.braid.notesSkipped.let { if (it > 0) ", $it notes skipped" else "" }
             echo(
-                "refs: ${summary.branches} branches, ${summary.tags} tags$remotes$labels, " +
+                "refs: ${summary.branches} branches, ${summary.tags} tags$notes$remotes$labels$notesLeft, " +
                     "HEAD -> ${summary.head}",
                 err = true,
             )
@@ -735,8 +754,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         // A dry run writes no refs and so prints no refs: line, but what the run would leave out is
         // said all the same, -q included: a dry run is how a pattern is tuned.
         if (result.write == null) {
-            val skipped = result.braid.labelsSkipped
-            if (skipped > 0) echo("$skipped labels skipped", err = true)
+            val skipped = listOfNotNull(
+                result.braid.labelsSkipped.takeIf { it > 0 }?.let { "$it labels skipped" },
+                result.braid.notesSkipped.takeIf { it > 0 }?.let { "$it notes skipped" },
+            )
+            if (skipped.isNotEmpty()) echo(skipped.joinToString(", "), err = true)
         }
     }
 

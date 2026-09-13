@@ -281,7 +281,8 @@ not share.
   that history as `dangling commit`, and an annotated tag's original object as `dangling tag`, until
   `git gc --prune=now` reclaims them. `--keep-remotes` gives the commits refs, not the tag objects.
   On a 139 MB corpus they are 3 MB of the 97 the output takes.
-- **Not transferred:** `refs/notes/*`, reflogs, and any repository-local configuration.
+- **Not transferred:** reflogs and any repository-local configuration; `refs/notes/*` only with
+  `--notes`.
 
 ## License
 

@@ -5,8 +5,10 @@ import cz.loplex.timebraid.GitCli
 import cz.loplex.timebraid.git.OutputRepo
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
+import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.revwalk.RevWalk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -1009,9 +1011,174 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `--notes rekeys every note onto the commit the braid wrote`() {
+        val ids = HashMap<String, ObjectId>()
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            val a2 = r.commit("a2", parents = listOf(a1), at = at("11:00"))
+            r.branch("main", a2)
+            // Two notes refs, and a fan-out on one of them: the depth is a storage detail of the
+            // input, and the key is the sha whichever way the directories were cut.
+            // Authored before it was committed, so a notes commit's author and committer show apart.
+            // Two notes on one ref, so that every note of a ref is carried and not only its first.
+            r.notes(notes = mapOf(a1 to "reviewed by nobody\n", a2 to "and a2\n"), authorAt = at("08:00"))
+            r.notes(ref = "builds", notes = mapOf(a2 to "green\n"), fanout = 2)
+            ids += mapOf("a1" to a1, "a2" to a2)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.notes(notes = mapOf(b1 to "the other input's default ref\n"))
+            ids += mapOf("b1" to b1)
+        }
+        val out = tmp.resolve("noted.git")
+
+        braid("-o", out.toString(), "--notes", path("backend.git"), path("webui.git"))
+
+        val written = OutputRepo.read(out)
+        SourceRepository.open(out).use { repo ->
+            // Both inputs wrote refs/notes/commits at home; qualified, neither overwrote the other.
+            assertEquals(
+                setOf("backend/builds", "backend/commits", "webui/commits"),
+                repo.notes().map { it.name }.toSet(),
+            )
+            val byRef = repo.notes().associateBy { it.name }
+            fun noteOn(ref: String, fixture: String): String? {
+                val target = written.byOriginalSha.getValue(ids.getValue(fixture).name).id
+                val blob = byRef.getValue(ref).entries[target.name] ?: return null
+                return String(repo.blob(blob), StandardCharsets.UTF_8)
+            }
+            // Keyed by the *new* sha: the note follows the commit the braid actually wrote.
+            assertEquals("reviewed by nobody\n", noteOn("backend/commits", "a1"))
+            assertEquals("and a2\n", noteOn("backend/commits", "a2"))
+            assertEquals("green\n", noteOn("backend/builds", "a2"))
+            assertEquals("the other input's default ref\n", noteOn("webui/commits", "b1"))
+            // And nothing is left keyed by an original sha, which would be a note on nothing.
+            assertTrue(
+                byRef.values.none { note -> note.entries.keys.any { it == ids.getValue("a1").name } },
+                "a note stayed on the original sha",
+            )
+        }
+        // The notes commit keeps the input's author, committer and message.
+        fun notesCommit(repo: Path, ref: String): List<String> = Git.open(repo.toFile()).use { git ->
+            RevWalk(git.repository).use { walk ->
+                val commit = walk.parseCommit(git.repository.exactRef("refs/notes/$ref").objectId)
+                listOf(
+                    commit.authorIdent.toExternalString(),
+                    commit.committerIdent.toExternalString(),
+                    commit.fullMessage,
+                )
+            }
+        }
+        val input = notesCommit(tmp.resolve("backend.git"), "commits")
+        assertNotEquals(input[0], input[1], "the fixture dates author and committer alike")
+        assertEquals(input, notesCommit(out, "backend/commits"))
+    }
+
+    @Test
+    fun `without --notes nothing under refs-notes is read or written`() {
+        val notes = TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.notes(notes = mapOf(a1 to "not asked for\n"))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("plain.git")
+
+        braid("-o", out.toString(), path("backend.git"), path("webui.git"))
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(listOf<String>(), repo.notes().map { it.name })
+        }
+        // Nor read: a notes ref the run had asked for would have brought its commit along.
+        if (GitCli.available) assertTrue(objectMissing(out, notes), "the input's notes were fetched")
+    }
+
+    @Test
+    fun `a note on an object the run did not write is skipped, not an error`() {
+        val ids = HashMap<String, ObjectId>()
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            val dropped = r.commit("wip", parents = listOf(a1), at = at("09:30"))
+            r.branch("wip", dropped)
+            r.notes(notes = mapOf(a1 to "kept\n", dropped to "on a commit no ref will reach\n"))
+            // A notes ref whose every note is skipped is not written at all, as an empty one.
+            r.notes(ref = "wip-builds", notes = mapOf(dropped to "green\n"))
+            ids += mapOf("a1" to a1, "wip" to dropped)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("partial.git")
+
+        // `wip` is left out of the selection, so its commit is never read and the note on it has
+        // nothing to attach to.
+        val run = MergeCommand().test(
+            listOf(
+                // No -v: what a run skipped is a result line, the same as a label that matched
+                // nothing loaded.
+                "-o", out.toString(), "--notes", "--ref", "backend::refs/heads/main",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertEquals(0, run.statusCode, run.output)
+        assertTrue(run.output.contains("1 notes rekeyed"), run.output)
+        assertTrue(run.output.contains("skipping 2"), run.output)
+        // The closing report counts the notes commit with the braid's, and says what was skipped.
+        assertTrue(run.output.contains("wrote 3 commits"), run.output)
+        // One notes ref written and two notes skipped: refs and notes are counted apart.
+        assertTrue(run.output.contains("1 notes refs, 2 notes skipped"), run.output)
+        // A dry run says it too, though it writes no refs: line, and -q leaves it in.
+        val dry = MergeCommand().test(
+            listOf(
+                "-q", "--dry-run", "--notes", "--ref", "backend::refs/heads/main",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertEquals(0, dry.statusCode, dry.output)
+        assertTrue(dry.output.contains("2 notes skipped"), dry.output)
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(listOf("backend/commits"), repo.notes().map { it.name })
+            assertEquals(1, repo.notes().single().entries.size)
+        }
+    }
+
+    @Test
+    fun `two inputs' notes meeting under an emptied --notes-prefix are refused`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.notes(notes = mapOf(a1 to "backend's\n"))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.notes(notes = mapOf(b1 to "webui's\n"))
+        }
+
+        val run = MergeCommand().test(
+            listOf(
+                "-o", path("out.git"), "--notes", "--notes-prefix", "",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+
+        assertEquals(1, run.statusCode, run.output)
+        assertTrue(run.output.contains("'backend'") && run.output.contains("'webui'"), run.output)
+        assertTrue(run.output.contains("refs/notes/commits"), run.output)
+        assertTrue(run.output.contains("--notes-prefix"), run.output)
+    }
+
+    @Test
     fun `a pattern aimed outside the two namespaces is refused, not left to match nothing`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
-            r.branch("main", r.commit("a1", at = at("09:00")))
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.notes(notes = mapOf(a1 to "a note\n"))
         }
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
             r.branch("main", r.commit("b1", at = at("10:00")))
@@ -1024,8 +1191,10 @@ class BraidPipelineIT {
             run(*extra).also { assertNotEquals(0, it.statusCode, it.output) }.output
 
         // The case this refusal exists for: a well-formed selection that could never match, and
-        // used to be as quiet as a pattern that merely found nothing. A short name is that mistake
-        // made by hand.
+        // used to be as quiet as a pattern that merely found nothing.
+        val notes = refused("--ref", "refs/notes/*")
+        assertTrue(notes.contains("--notes"), notes)
+        // A short name is the same mistake made by hand.
         assertTrue(refused("--ref", "main").contains("refs/heads/"))
         // It holds on every ref option, including the two that do not select.
         assertTrue(refused("--interleave-ref", "refs/replace/*").contains("refs/tags/"))

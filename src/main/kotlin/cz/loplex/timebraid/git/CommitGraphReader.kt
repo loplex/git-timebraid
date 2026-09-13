@@ -6,6 +6,7 @@ import cz.loplex.timebraid.plan.CommitGraphBuilder
 import cz.loplex.timebraid.plan.Source
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.PersonIdent
 
 /** Which of a commit's two timestamps interleaves the strands. */
 enum class OrderBy { AUTHOR, COMMITTER }
@@ -42,6 +43,15 @@ class BraidInputs(
      * pattern matching no ref at all is a different case, and this does not see it.
      */
     val labelsSkipped: Int = 0,
+    /** Notes carried over onto the commits this run wrote, across every input. */
+    val notesAttached: Int = 0,
+    /**
+     * Notes whose annotated object is not in the graph, across every input. A note on a commit an
+     * unselected ref reached, or on a blob or a tree, has nowhere to go: the output never wrote that
+     * object under a name of its own. Counted rather than refused, for the same reason a label this
+     * run could not attach is.
+     */
+    val notesSkipped: Int = 0,
 )
 
 /** What was read out of one input repository, with every ref resolved to the commit it names. */
@@ -60,13 +70,42 @@ class SourceInputs(
     val mainlineBranch: String,
     val branches: List<BraidRef>,
     val tags: List<BraidTag>,
+    /** Notes refs carried over, empty unless the run asked for them. */
+    val notes: List<BraidNotes> = emptyList(),
+    /**
+     * Full names of this repository's notes refs, which the fetch has to name as well.
+     *
+     * Kept apart from [readRefs] because they answer different questions. [readRefs] is what the
+     * graph was built from and must stay exactly that; these contribute no commit to it, but their
+     * blobs have to reach the output before a tree can point at one. A notes ref's own history
+     * comes along with it and stays unreferenced in the output, whose notes commit has no parent.
+     */
+    val noteRefs: List<String> = emptyList(),
     /**
      * Full names of the refs this repository was read from, mainline first. The output fetches
-     * exactly these (see [TargetRepository.fetchFrom]), so the set has to be the one the graph was
-     * built from — anything less and the output would be missing objects it points at, anything
-     * more and it would carry history the run never read.
+     * these (see [TargetRepository.fetchFrom]), plus [noteRefs], so the set has to be the one the
+     * graph was built from — anything less and the output would be missing objects it points at,
+     * anything more and it would carry history the run never read. The notes refs fetched beside
+     * them are the one such addition, and [noteRefs] says why.
      */
     val readRefs: List<String>,
+)
+
+/**
+ * One notes ref of an input, its keys resolved to the commits the braid rewrote.
+ *
+ * The output writes its own notes commit from this: a merge gives every commit a new sha, so a note
+ * keyed by the old one would be attached to nothing. Rekeying is the same move the provenance
+ * trailer makes, from the other side.
+ */
+class BraidNotes(
+    /** The ref's name below `refs/notes/`, before the output's own prefix goes on. */
+    val name: String,
+    /** The commit a note is attached to, to the blob holding that note's text. */
+    val entries: Map<Commit, ObjectId>,
+    val author: PersonIdent,
+    val committer: PersonIdent,
+    val message: String,
 )
 
 /** The two ref namespaces this program reads from, and the two it writes into. */
@@ -163,6 +202,13 @@ object CommitGraphReader {
      *   A label never extends what is read and never becomes an interleave tip, which makes the
      *   safety a property rather than a coincidence of two globs missing each other: **adding any
      *   label to a run cannot change a single commit the run writes.**
+     * @param notes whether every input's `refs/notes/` is read and rekeyed onto the commits this run
+     *   writes. Off by default: reading a third namespace is work a run that has no notes should not
+     *   pay for, and rewriting one is a decision rather than a detail.
+     *
+     *   It is a flag rather than a pattern because notes are not history. A note contributes no
+     *   commit and reaches no ancestry, so it cannot be part of the selection that decides what is
+     *   read — which is also why [refs] refuses a pattern aimed at `refs/notes/`.
      */
     fun read(
         repositories: List<SourceRepository>,
@@ -171,6 +217,7 @@ object CommitGraphReader {
         refs: List<String> = emptyList(),
         interleaveRefs: List<String> = emptyList(),
         labelRefs: List<String> = emptyList(),
+        notes: Boolean = false,
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
         require(repositories.map { it.name }.toSet().size == repositories.size) {
@@ -191,6 +238,8 @@ object CommitGraphReader {
         val inputs = ArrayList<SourceInputs>(repositories.size)
         var labelsAttached = 0
         var labelsSkipped = 0
+        var notesAttached = 0
+        var notesSkipped = 0
 
         for (repo in repositories) {
             val source = builder.addSource(repo.name)
@@ -273,6 +322,18 @@ object CommitGraphReader {
                 (labelledBranches.size - labelBranchRefs.size) +
                 (labelledTags.size - labelTagRefs.size)
 
+            // After the commits, because a note is keyed by the object it annotates and the graph is
+            // the only thing that can say whether this run wrote that object at all.
+            val sourceNotes = if (!notes) emptyList() else repo.notes().map { notesRef ->
+                val rekeyed = LinkedHashMap<Commit, ObjectId>(notesRef.entries.size)
+                for ((sha, blob) in notesRef.entries) {
+                    val commit = builder.find(source, sha)
+                    if (commit == null) notesSkipped++ else rekeyed[commit] = blob
+                }
+                notesAttached += rekeyed.size
+                BraidNotes(notesRef.name, rekeyed, notesRef.author, notesRef.committer, notesRef.message)
+            }
+
             inputs += SourceInputs(
                 source = source,
                 mainlineBranch = mainline,
@@ -288,6 +349,8 @@ object CommitGraphReader {
                         BraidTag(tag.name, it, tag.annotation, writeAs = selected.writeAs(name) ?: RefKind.TAG)
                     }
                 } + labelTagRefs,
+                notes = sourceNotes.filter { it.entries.isNotEmpty() },
+                noteRefs = sourceNotes.map { Constants.R_NOTES + it.name },
                 readRefs = readRefs.toList(),
             )
         }
@@ -306,6 +369,8 @@ object CommitGraphReader {
             interleaveTips = interleaveTips(scopedInterleave, inputs),
             labelsAttached = labelsAttached,
             labelsSkipped = labelsSkipped,
+            notesAttached = notesAttached,
+            notesSkipped = notesSkipped,
         )
     }
 
@@ -485,9 +550,14 @@ object CommitGraphReader {
      * be as quiet as `--ref 'refs/tags/v9.*'` against a repository with no v9. One of those is a fact
      * about the input and one is a fact about this program, and only the second can be said here.
      */
-    private fun outsideKnownNamespaces(option: String, value: String, glob: String): String =
-        "$option '$value' can match no ref: '$glob' is outside ${Constants.R_HEADS} and " +
-            "${Constants.R_TAGS}, the only namespaces this program reads"
+    private fun outsideKnownNamespaces(option: String, value: String, glob: String): String {
+        val remedy =
+            if (glob.startsWith(Constants.R_NOTES)) " -- notes are carried by --notes, which rekeys " +
+                "them onto the commits this run writes, rather than selected as history"
+            else ""
+        return "$option '$value' can match no ref: '$glob' is outside ${Constants.R_HEADS} and " +
+            "${Constants.R_TAGS}, the only namespaces this program reads$remedy"
+    }
 
     /**
      * Matches a full ref name against [pattern], where `*` is the only metacharacter and it spans

@@ -70,6 +70,11 @@ class MergeRequest(
      * [CommitGraphReader.read].
      */
     val labelRefs: List<String>,
+    /**
+     * Whether every input's `refs/notes/` is carried over, rekeyed onto the commits this run writes.
+     * Off by default — see [CommitGraphReader.read].
+     */
+    val notes: Boolean,
     /** Whether one input's destination may lie inside another's, the two spliced into one tree. */
     val splice: Boolean,
     /**
@@ -142,6 +147,7 @@ class MergeRunner(
                     refs = request.refs,
                     interleaveRefs = request.interleaveRefs,
                     labelRefs = request.labelRefs,
+                    notes = request.notes,
                 )
             }
 
@@ -150,6 +156,12 @@ class MergeRunner(
                     if (braid.labelsSkipped == 0) ""
                     else ", skipping ${braid.labelsSkipped} that matched nothing loaded"
                 progress.result("${braid.labelsAttached} refs attached by label$skipped")
+            }
+            if (braid.notesAttached > 0 || braid.notesSkipped > 0) {
+                val skipped =
+                    if (braid.notesSkipped == 0) ""
+                    else ", skipping ${braid.notesSkipped} attached to objects this run did not write"
+                progress.result("${braid.notesAttached} notes rekeyed onto the new commits$skipped")
             }
             // Through detail and not result: this count is of what --interleave-ref asked for — the
             // commits its refs name, whose ancestry was allowed to widen the scope — and only a
@@ -297,7 +309,10 @@ class MergeRunner(
         }
     }
 
-    /** Fetches each input into [target], narrowed to the refs its strand was read from. */
+    /**
+     * Fetches each input into [target], narrowed to the refs its strand was read from and, under
+     * `--notes`, its notes refs.
+     */
     private fun fetchInputs(
         target: TargetRepository,
         repoOf: Map<Source, SourceRepository>,
@@ -306,10 +321,13 @@ class MergeRunner(
         var refs = 0
         for (input in braid.sources) {
             val repo = repoOf.getValue(input.source)
+            // The notes refs ride along: they contribute no commit, but the blobs a note is made
+            // of have to be in the output before a tree of the output's own can point at one.
+            val wanted = input.readRefs + input.noteRefs
             // Ahead of the transfer, because it says what is about to be asked for; what came of
             // it is what the transfer's own tasks leave behind.
-            progress.result("[${repo.name}] ${input.readRefs.size} refs")
-            refs += target.fetchFrom(repo, input.readRefs, progress.monitor(repo.name))
+            progress.result("[${repo.name}] ${wanted.size} refs")
+            refs += target.fetchFrom(repo, wanted, progress.monitor(repo.name))
         }
         return FetchSummary(braid.sources.size, refs)
     }

@@ -5,6 +5,7 @@ import cz.loplex.timebraid.plan.MergePlan
 import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.PlannedCommit
 import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.lib.ObjectId
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
@@ -36,6 +37,14 @@ class WriteOptions(
      */
     val branchPrefix: String = "{repo}/",
     /**
+     * Prepended to every recreated notes ref, below `refs/notes/`. `{repo}` is substituted.
+     *
+     * The same rule as the other two, for the same reason: `refs/notes/commits` is what `git notes`
+     * writes by default, so an input with notes usually has that one. Two inputs then meeting on one
+     * name is refused rather than resolved — see [BraidWriter.resolveRefs].
+     */
+    val notesPrefix: String = "{repo}/",
+    /**
      * Whether an annotated tag is recreated as a lightweight one, dropping its tagger and message.
      *
      * Off, because dropping them loses text no other object holds and a merge should not do that
@@ -57,10 +66,17 @@ class WriteOptions(
 
 /** What a run produced, for the closing report. */
 class WriteSummary(
+    /** Every commit written: the braid's, and the one each notes ref points at. */
     val commits: Int,
+    /**
+     * Every tree written: the distinct trees the braid built, a nested destination's own levels
+     * among them, and each notes commit's own.
+     */
     val trees: Int,
     val branches: Int,
     val tags: Int,
+    /** Notes refs written, zero unless the run asked for the notes. */
+    val notes: Int,
     /** Remote-tracking refs written for the inputs, zero unless the inputs were kept as remotes. */
     val remoteRefs: Int,
     val head: String,
@@ -88,7 +104,7 @@ class BraidWriter(
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
-    /** Whether to mirror the refs carried over and each input's mainline — see [mirrorInputs]. */
+    /** Whether to mirror the refs carried over and each input's mainline, bar notes — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
     /** Whether an input may land on a gitlink of the repository around it — see [TreeAssembler]. */
     private val dissolveSubmodules: Boolean = false,
@@ -174,10 +190,12 @@ class BraidWriter(
         }
 
         return WriteSummary(
-            commits = plan.commits.size,
-            trees = trees.treesWritten,
+            // A notes ref is one commit over one flat tree, written by [rewrittenNotes].
+            commits = plan.commits.size + refs.notes,
+            trees = trees.treesWritten + refs.notes,
             branches = refs.branches,
             tags = refs.tags,
+            notes = refs.notes,
             remoteRefs = refs.remoteRefs,
             head = inputs.mainlineBranch,
         )
@@ -294,6 +312,7 @@ class BraidWriter(
         val targets: Map<String, ObjectId>,
         val branches: Int,
         val tags: Int,
+        val notes: Int,
         val remoteRefs: Int,
     )
 
@@ -364,10 +383,48 @@ class BraidWriter(
             }
         }
 
+        var notes = 0
+        for (input in inputs.sources) {
+            for (notesRef in input.notes) {
+                val repo = input.source.name
+                val name = Constants.R_NOTES + options.notesPrefix.replace("{repo}", repo) + notesRef.name
+                claim(claimed, name, repo, "--notes-prefix")
+                refs[name] = rewrittenNotes(notesRef)
+                notes++
+            }
+        }
+
         val remoteRefs = if (mirrorRemotes) mirrorInputs(refs) else 0
 
         checkRefNames(refs.keys)
-        return Refs(refs, branches, tags, remoteRefs)
+        return Refs(refs, branches, tags, notes, remoteRefs)
+    }
+
+    /**
+     * Writes [notesRef] as a notes commit of the output, keyed by the shas the braid gave those
+     * commits.
+     *
+     * A flat tree, with no fan-out: git reads a notes tree at whatever depth it finds one, and the
+     * fan-out exists to keep a directory listing small in a repository with a great many notes. The
+     * numbers here do not call for it — a note is written by hand, one commit at a time — and a flat
+     * tree is the one shape that needs no rule about when to split.
+     *
+     * One commit with no parents. The original's author, committer and message come across because
+     * the output has no business inventing either, but its ancestry cannot: every tree behind it is
+     * keyed by shas the output never wrote under those names, so carrying the history would carry
+     * a chain of notes attached to nothing.
+     */
+    private fun rewrittenNotes(notesRef: BraidNotes): ObjectId {
+        val entries = notesRef.entries.map { (commit, blob) ->
+            TreeEntry(idOf(commit).name, FileMode.REGULAR_FILE, blob)
+        }
+        return target.writeCommit(
+            tree = target.writeTree(entries),
+            parents = emptyList(),
+            author = notesRef.author,
+            committer = notesRef.committer,
+            message = notesRef.message,
+        )
     }
 
     /** The full output name of [repo]'s ref [name], under the prefix its output kind carries. */
