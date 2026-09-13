@@ -51,8 +51,8 @@ mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/
 The whole-graph contrast, from the same CLI with every ref opted in:
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
-    --order-by committer --interleave-ref * \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph \
+    --no-bare --order-by committer --interleave-ref * \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
 
@@ -114,10 +114,9 @@ so a cross-repository braid predecessor is never timestamped later than the comm
 `BraidInterleaveTest` proves that over 300 seeded histories with deliberate timestamp inversions —
 and `--interleave-ref` is how you give that up on purpose, which is exactly what this second output shows.
 
-What neither can fix —
-and what [doc/how-it-works.md's caveat](../../how-it-works.md#a-merge-can-carry--and-pass-on--a-repositorys-future)
-on a merge carrying a repository's future is about —
-is content arriving from the future through a merge that is already in the *input*:
+What neither can fix — and what
+[a merge carrying a repository's future](../../how-it-works.md#a-merge-can-carry-a-repositorys-future-and-pass-it-on)
+is about — is content arriving from the future through a merge that is already in the *input*:
 `m`'s own tree contains `f`'s work from 2023-11-18, so `m` shows it in both outputs,
 and so does every later commit inheriting `A/` forward — in `output`, `B: b2`.
 That is a property of the input history, not of any interleave.
