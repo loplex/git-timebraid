@@ -247,10 +247,10 @@ jobs:
   # nor the examples job can see either one: the first tests behaviour, the second compares quoted
   # command output. This reads the documents themselves.
   #
-  # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
-  # job wants nothing but a checkout, and it finishes in under a second.
+  # No JDK and no build: the checks read tracked files as text, the Kotlin sources and the manual
+  # page included, so the job wants a checkout and groff, and finishes in seconds.
   docs:
-    name: doc and KDoc links resolve, blocks fit
+    name: doc and KDoc links resolve, blocks fit, man page renders
     runs-on: ubuntu-latest
 
     steps:
@@ -284,3 +284,18 @@ jobs:
       # which this does not see.
       - name: Check no doc comment stands on another
         run: .github/scripts/check-doc-comments.py
+
+      # groff rather than the runner's luck: it is not in the image's package list, and a check
+      # that quietly skips itself where its tool is missing is no check. Installing it costs a few
+      # seconds in a job that otherwise finishes in one. The package index is refreshed first: the
+      # image's can be stale, and an install from a stale index can fail.
+      - name: Install groff
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends groff
+
+      # What the man page is, as opposed to what it says: valid roff that renders inside the margin.
+      # The option names are check-man.py's job, in the examples job, where the jar to compare
+      # against has been built.
+      - name: Check the man page is roff that renders clean
+        run: .github/scripts/check-roff.sh

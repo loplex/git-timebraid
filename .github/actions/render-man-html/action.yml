@@ -10,9 +10,9 @@ runs:
   steps:
     # What is asked is whether groff can write HTML, not whether there is a groff: the Ubuntu image
     # carries groff-base, whose groff has no html device and fails the render. Where it can, nothing
-    # is installed. The package index is refreshed first: the image's can be stale, and an install
-    # from a stale index can fail. `sed` rather than `head` takes the first line, so that groff
-    # never writes into a closed pipe.
+    # is installed. The package index is refreshed first, for the reason the docs job in ci.yml
+    # gives. `sed` rather than `head` takes the first line, so that groff never writes into a closed
+    # pipe.
     - name: Install groff
       shell: bash
       run: |
