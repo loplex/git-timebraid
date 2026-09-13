@@ -30,7 +30,8 @@ import java.util.Locale
  *   which is what a run gets when stderr is not a terminal somebody is watching.\
  *   It must be a terminal whose output goes to stderr; [stderrTerminal] builds one.
  * @param charset what the drawing is encoded in, which decides whether a spinner may be braille — see [Glyphs].\
- *   Taken from stderr, and a parameter only so that a test can ask for a console this machine does not have.
+ *   Taken from stderr unless `--ascii` or `--no-ascii` names one,
+ *   and a parameter so that a test can ask for a console this machine does not have through the same door.
  */
 class Progress(
     private val level: Level,
