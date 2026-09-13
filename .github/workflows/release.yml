@@ -106,6 +106,8 @@ jobs:
           version=$(.github/scripts/set-release-version.sh "$RELEASE_TAG")
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - uses: ./.github/actions/render-man-html
+
       # The tag gets its own test run rather than trusting the branch build: a tag can be moved,
       # and what is released has to be what was tested.
       - name: mvn verify
@@ -168,6 +170,8 @@ jobs:
       - name: Settle the version to build
         shell: bash
         run: .github/scripts/set-release-version.sh "$RELEASE_TAG"
+
+      - uses: ./.github/actions/render-man-html
 
       # A jlink image is built for one platform, which is why this job exists once per platform
       # rather than once. The tests ran in the portable job; this is the archive itself. A cross leg

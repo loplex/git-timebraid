@@ -8,6 +8,8 @@
             bin/git-timebraid.bat
             lib/git-timebraid.jar
             runtime/                 the jlink image; bin/java is what the launcher runs
+            share/man/man1/git-timebraid.1
+            share/doc/git-doc/git-timebraid.html
             doc/
             README.md CHANGELOG.md LICENSE NOTICE
 

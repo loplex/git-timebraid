@@ -54,6 +54,9 @@ jobs:
       - name: mvn verify
         run: mvn -B -ntp verify
 
+      - uses: ./.github/actions/render-man-html
+        if: runner.os != 'Windows'
+
       # The bundled-runtime profile is the part of the build most likely to fail on a platform
       # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
       # and links a hand-written module list. Building it in the same matrix that runs the tests
@@ -98,6 +101,8 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+
+      - uses: ./.github/actions/render-man-html
 
       # Assigned before it is used: a failing substitution inside an argument would leave the
       # build to run on the jmods of this JDK instead, and name a Linux image for Windows.

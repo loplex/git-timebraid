@@ -1,11 +1,13 @@
 ## Install
 
 Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) beside
-`lib/git-timebraid.jar`. Unpack it and put `bin/` on `PATH` — `git timebraid …` then works as well as
+`lib/git-timebraid.jar`, and the manual page under `share/man/man1` and as HTML under
+`share/doc/git-doc`. Unpack it and put `bin/` on `PATH` — `git timebraid …` then works as well as
 `git-timebraid …`, because git runs any `git-<name>` it finds there. `--help` is the exception: git
-takes `git timebraid --help` for itself and looks for the command's page in git's documentation, a
-manual page or, where git is set to show HTML help, an HTML one; so the program's own help is
-`git-timebraid --help`.
+takes `git timebraid --help` for itself and opens that manual page where `man` finds it, or on Git
+for Windows the HTML page once it is copied where git looks
+([doc/install.md](https://github.com/loplex/git-timebraid/blob/main/doc/install.md) says when and
+where), so the program's own help is `git-timebraid --help`, or `git timebraid -hh`.
 
 | Asset                                                 | What it is                                                                                           |
 |-------------------------------------------------------|------------------------------------------------------------------------------------------------------|

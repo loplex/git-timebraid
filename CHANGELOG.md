@@ -373,6 +373,22 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   shutdown hook of this program's own, which stops the threads still painting before it writes.\
   `doc/usage.md` says what a run prints, stream by stream.
 
+- **A `git-timebraid(1)` manual page, which is what `git timebraid --help` shows.**\
+  Git handles `--help` on a subcommand itself and looks for a manual page rather than running the
+  program, so that spelling used to report no manual entry — in `man`'s words, with `man`'s exit
+  status, neither of which said the program had never run.\
+  The archive carries the page under `share/man/man1`, found while `MANPATH` is unset or has an
+  empty entry — a leading or trailing `:`, or a `::` — because `man` then adds the search path it
+  derives from `PATH`: from the archive's `bin/` on it, or from a link to the launcher with the page
+  linked into the `share/man/man1/` beside that link's directory.\
+  Git for Windows asks for an HTML page instead, and only in git's own `git --html-path`: every
+  archive carries the page as `share/doc/git-doc/git-timebraid.html`, which `--help` opens once it
+  is copied there.\
+  `-h` and `-hh` reach the program under either spelling; where git has no viewer to hand the page
+  to, `-hh` is still the one to use.\
+  The page is written rather than generated, so it words an option the way a manual page should
+  rather than repeating `--help`.
+
 ### Fixed
 
 - **An `-o` that exists and is not a directory is refused.**\

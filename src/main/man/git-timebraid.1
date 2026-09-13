@@ -1,0 +1,497 @@
+.\" The manual page git reaches for when `git timebraid --help` is typed: git handles --help on a
+.\" subcommand itself rather than passing it on, and looks for this file.
+.\"
+.\" Written, not generated. A manual page is allowed to word an option differently from --help, and
+.\" mostly should -- it is read by someone who wants to understand the option, not to be reminded of
+.\" it. What it may not do is describe an option the program does not have, or leave one out.
+.\"
+.\" The line after each .TP in OPTIONS is the signature, and it is written one way throughout:
+.\" names bold and hyphens escaped, the metavar italic after an unspaced `=`. So
+.\"
+.\"     \fB\-o\fR, \fB\-\-output\fR=\fI<path>\fR
+.\"
+.\" and not the .BR/.BI spellings, which say the same thing another way. Prose below the signature
+.\" is free, and uses the macros.
+.\"
+.\" The version in .TH is the one being worked towards, as pom.xml carries it. The date is the day
+.\" this page was last changed, which is what a reader takes it for.
+.TH GIT\-TIMEBRAID 1 "2026\-09\-13" "git\-timebraid 0.2.0" "Git Extensions"
+.
+.SH NAME
+git\-timebraid \- merge several git repositories into one, braided along the time axis
+.
+.SH SYNOPSIS
+.SY git\-timebraid
+.OP \-o path
+.OP options
+.RI [ repo ]...
+.YS
+.
+.SH DESCRIPTION
+Merges several independent git repositories into one. Their commits are interleaved by timestamp,
+so the result reads as a single history rather than as several histories stitched end to end, and
+each input keeps its own subdirectory, or the root for the one placed there, in every tree that
+holds it.
+.PP
+Nothing is written into the output until the whole plan is computed. A run whose plan cannot be
+carried out says so before it has created the output, and
+.B \-\-dry\-run
+stops there deliberately. A remote input is cloned before that, beside the output, and the clone is
+kept for the next run; a dry run without
+.B \-o
+clones into a temporary directory and removes it.
+.PP
+Every commit the run writes records where it came from, in a trailer naming the input repository and
+the original commit and parents. That is what makes the result checkable rather than merely claimed:
+a script can walk the output and confirm that no edge went missing.
+.
+.SS The repo argument
+Each
+.I repo
+is written
+.IR <path\-or\-url>[::[<subdir>][=<name>]] .
+Everything before the last
+.B ::
+is the location and is used verbatim, never escaped, so a location holding a
+.B ::
+of its own needs a bare
+.B ::
+appended to say where it ends.
+.PP
+.I <subdir>
+is where that input's content lands, and may be nested, as in
+.BR ::libs/backend .
+It defaults to
+.IR <name> .
+.PP
+.I <name>
+is the input's identity: the prefix on its recreated refs, the label in its provenance trailers, and
+what
+.B \-\-root\-repo
+matches. It defaults to the last segment of
+.IR <subdir> ,
+or of the location. Neither field may be written with a
+.B :
+or a
+.BR = .
+.
+.SH OPTIONS
+.SS Where the result is written
+.TP
+\fB\-o\fR, \fB\-\-output\fR=\fI<path>\fR
+The repository to write. It must not exist yet or must be an empty directory;
+.B \-\-force
+also takes one that is not empty.
+.TP
+\fB\-\-force\fR
+Write into a non-empty output directory instead of refusing it, over whatever it already holds: a
+ref of a name the braid writes is replaced, and under \fB\-\-no\-bare\fR the checkout overwrites the
+files at the braid's paths and removes those the output tracked that the braid does not have.
+Untracked files are left as they were, and so is every ref the braid does not write, an earlier
+run's included, but for those under \fBrefs/timebraid\-fetch/\fR, where a run parks what it
+fetches. A directory holding an unrelated repository is a poor choice of output rather than a safe
+one.
+.
+.SS Finding the inputs, and placing their content
+.TP
+\fB\-\-scan\fR=\fI<path>\fR
+Take the layout from this directory instead of naming the inputs one by one. Every repository
+beneath it becomes an input, placed in the output where it sits on disk, so the tree of clones you
+already have is the tree the braid gets. A repository already found is not descended into, so what
+it holds of its own \- a submodule, a vendored checkout \- is never a second input. A directory whose
+name begins with a dot, and one reached through a symlink, are skipped along with anything under
+them.
+.TP
+\fB\-\-root\-repo\fR=\fI<text>\fR
+The input whose content lands at the output root rather than in a subdirectory of its own. Named by
+identity, so it is the
+.I <name>
+of an input and not its path.
+.TP
+\fB\-\-splice\fR
+Allow one input's subdirectory to lie inside another's, splicing the two into one directory. Without
+it such a pair is refused, because a placement that buries one input inside another is more often a
+mistake in the arguments than an intention.
+.TP
+\fB\-\-dissolve\-submodules\fR
+Where an input lands exactly on a gitlink, replace that submodule with the input's own content. The
+.B .gitmodules
+section describing it is dropped along with it, so the output has the files rather than a pointer to
+the repository they came from.
+.
+.SS Which history is read, and how it interleaves
+.TP
+\fB\-\-mainline\-branch\fR=\fI<branch>\fR
+The branch treated as the mainline in every input. Every input contributed its own, and they
+collapse into one branch at the braid's tip.
+.IP
+Repeatable. Prefixing a value with
+.IB <input> ::
+gives that one input a mainline of its own, and one quoted argument may hold several values
+separated by spaces. An unscoped value covers the inputs not named that way, and is also the name
+the output's branch takes; with none, the branch is named after the first input's mainline.
+.IP
+Defaults to the first of
+.BR main ,
+.B master
+or
+.B develop
+that is present in every input.
+.TP
+\fB\-\-order\-by\fR=\fI(author|committer)\fR
+Which of a commit's two timestamps decides where it lands among the commits of the other inputs.
+Defaults to the committer date, which is the one that moves when a history is rewritten, and so the
+one that reflects when the commit arrived where it now sits.
+.
+.SS Which refs a pattern speaks for
+A
+.I <ref\-pattern>
+is
+.IR [<input>::][^]<refspec> ,
+matched against full ref names.
+.IB <input> ::
+narrows the pattern to one input, and a
+.B ^
+in front subtracts its matches instead of selecting them.
+With nothing selected,
+.B \-b
+and
+.B \-\-ref
+subtract from every branch and tag, while
+.B \-\-label\-ref
+and
+.BR \-\-interleave\-ref ,
+which take no ref unless asked, refuse a
+.B ^
+alone.
+.PP
+The
+.I <refspec>
+is git's,
+.IR <glob>[:<destination>] ,
+and a value git takes as a refspec means the same here.
+.BR \-b ,
+.B \-\-ref
+and
+.B \-\-label\-ref
+take the destination, saying where the matches land:
+.B refs/heads/*:refs/tags/
+writes every branch as a tag. Unlike git's fetch, a destination may name a namespace, as that one
+does, left to the namespace's prefix; a glob with stars may go without a destination, which git
+fetch allows only in a negative refspec, or name one ref as its destination; and there is no
+.BR + ,
+no empty glob or destination and no short name.
+.PP
+A destination substitutes
+.B {repo}
+for the input's name, and a
+.B *
+in it stands for what the glob's own star matched. A destination that names a ref outright, with
+neither, gives every input the same output name and the prefixes do not apply \- which is what
+makes two inputs meet, and what the refusal means when it says to give the destination a template
+holding
+.BR {repo} .
+.PP
+Every option in this section is repeatable, and one quoted argument may hold several patterns
+separated by spaces.
+.TP
+\fB\-b\fR, \fB\-\-branch\fR=\fI<branch>\fR
+Carry over these branches, by short name, or with
+.B ^
+leave them out. Shorthand for
+.BI \-\-ref " refs/heads/<branch>" \fR,
+and so subject to the same rule: naming one ref without a
+.B ^
+leaves out every ref not named, tags included. A run narrowed to a branch carries no tags unless it
+says so as well.
+.IP
+The grammar above goes around the short name rather than inside it: a scope, a subtracting
+.B ^
+and a destination are held back, and only the branch is prefixed. So
+.B \-b backend::^wip
+says what
+.B \-\-ref backend::^refs/heads/wip
+says.
+.TP
+\fB\-\-ref\fR=\fI<ref\-pattern>\fR
+Carry over the refs matching this pattern, branches and tags alike. Defaults to every branch and
+every tag, each recreated in the namespace it came from.
+.TP
+\fB\-\-label\-ref\fR=\fI<ref\-pattern>\fR
+Also recreate the refs matching this pattern, where the run already holds what they point at.
+Adding one cannot change a commit the run writes, which a selection can: it names a ref without
+letting it pull any history in. Defaults to none.
+.TP
+\fB\-\-interleave\-ref\fR=\fI<ref\-pattern>\fR
+Let the commits on this ref delay a mainline merge that merges them in, rather than letting the
+merge land by its own timestamp.
+.B \&'refs/heads/* ^refs/heads/main'
+is every side branch; a bare star opts in every tag as well. Defaults to none.
+.
+.SS What the output repository holds
+.B \-\-tag\-prefix\fR,
+.B \-\-branch\-prefix
+and
+.B \-\-notes\-prefix
+qualify a ref name of the output. Each substitutes
+.B {repo}
+for the input's name, and an empty value qualifies nothing. Two inputs then meeting on one ref name
+is refused, naming both, rather than resolved in favour of whichever was written last \- and the
+same refusal applies where a pattern's destination spells a name out and takes the prefix off
+entirely.
+.TP
+\fB\-\-[no\-]bare\fR
+Write a bare output repository, which is the default.
+.B \-\-no\-bare
+checks out a working tree instead.
+.TP
+\fB\-\-keep\-remotes\fR
+Add each input as a remote of the output, every ref it carried over landing under
+.BR refs/remotes/<name>/* ,
+at the original commits \- as does each input's mainline, whether the selection took it or not.
+Notes are written under
+.B refs/notes/
+and are not mirrored. Those commits are in the output either way, since the run fills it by
+fetching what every ref it read reaches; this is what keeps them one
+.B git log
+away instead of leaving them unreferenced.
+.TP
+\fB\-\-tag\-prefix\fR=\fI<text>\fR
+The prefix on every recreated tag, so
+.B v1.2
+from
+.B webui
+becomes
+.BR webui/v1.2 .
+Defaults to
+.BR {repo}/ .
+.TP
+\fB\-\-branch\-prefix\fR=\fI<text>\fR
+The prefix on every recreated branch, the mainline aside \- that one collapses into a single
+unprefixed branch. Defaults to
+.BR {repo}/ .
+.TP
+\fB\-\-subject\-prefix\fR=\fI<text>\fR
+The prefix on every commit subject, so a subject from
+.B webui
+reads
+.BR "webui: fix the date picker" .
+Substitutes
+.B {repo}
+and
+.BR {subdir} ,
+the input's name and its destination. Defaults to
+.B "\(dq{repo}: \(dq"
+\- the quotes mark the trailing space rather than being part of it.
+.TP
+\fB\-\-notes\fR
+Read every input's
+.B refs/notes/
+and carry the notes over, rekeyed onto the commits this run writes \- a note is filed under the sha
+of the object it annotates, and every commit here has a new one. A note on an object the run did not
+write is skipped, and the run reports how many. Notes are not read at all unless this is given.
+.TP
+\fB\-\-notes\-prefix\fR=\fI<text>\fR
+The prefix on every recreated notes ref, below
+.BR refs/notes/ .
+An input with notes usually has
+.BR refs/notes/commits ,
+which is what
+.BR git\-notes (1)
+writes by default, so with an empty prefix two inputs meeting on that name is refused, naming both,
+rather than resolved.
+Defaults to
+.BR {repo}/ .
+.TP
+\fB\-\-lightweight\-tags\fR
+Recreate every annotated tag as a lightweight one, writing no tag object and dropping its tagger,
+date and message. It asks for that loss deliberately. Without it an annotated tag stays annotated.
+.TP
+\fB\-\-[no\-]provenance\fR
+Record each commit's original sha and parents in a trailer on its message. On by default;
+.B \-\-no\-provenance
+gives up the record and with it the ability to check the result.
+.TP
+\fB\-\-provenance\-trailer\fR=\fI<text>\fR
+The trailer
+.B \-\-provenance
+writes, as its own paragraph. Substitutes
+.BR {repo} ,
+.B {commit}
+and
+.BR {parents} ;
+a template leaving out the last two keeps the trailer and gives up what makes the result checkable,
+since those are what a checking script reads. Defaults to:
+.RS 7
+.EX
+[timebraid: repo="{repo}" commit={commit} parents={parents}]
+.EE
+.RE
+.
+.SS Inspecting a run
+.TP
+\fB\-\-dry\-run\fR
+Compute the plan, summarize it, and write no output.
+.TP
+\fB\-\-plan\-out\fR=\fI<path>\fR
+Dump the deterministic plan as text to this file. It is the commit-by-commit account that
+.B \-\-verbose
+cannot give, writing the commits being the one step that is not a git command.
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Say nothing but the closing report and any error: no phase headings, no bars. Refused together with
+.BR \-\-verbose .
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Print the git command behind each step: each one it shells out to, and the equivalent of the object
+transfer and of every ref written.
+.TP
+\fB\-\-[no\-]progress\fR
+Draw progress, or refuse to, whatever standard error happens to be \- for a log of a run that is
+taking too long, or a terminal to keep clean. Drawn by default when standard error is a terminal,
+and not otherwise.
+.IP
+These are two options and not one switch, unlike
+.BR \-\-[no\-]bare
+and
+.BR \-\-[no\-]provenance :
+giving both is an error, as is
+.B \-\-progress
+together with
+.BR \-\-quiet .
+.TP
+\fB\-\-[no\-]ascii\fR
+Draw progress with ASCII characters only, or with the full set, for a console that shows the bar as
+question marks or one that was misread the other way. Defaults to whichever of the two the console
+can encode. Two options rather than one switch, so giving both is an error.
+.
+.SS Getting help
+.TP
+\fB\-h\fR
+Show each option's first line and exit. Every option is there; what is left out is the qualifiers
+and the defaults beneath each first line, and all but the first paragraph of the text above the
+options and above each group of them.
+.TP
+\fB\-hh\fR, \fB\-\-help\fR
+Show every option with its defaults and exit.
+.B \-hh
+is the spelling that reaches the program under either name: run as
+.BR "git timebraid" ,
+.B \-\-help
+is handled by git itself and prints this page.
+.TP
+\fB\-\-version\fR
+Show the version and exit.
+.
+.SH EXIT STATUS
+.TP
+.B 0
+The braid was written, or the run was asked only to describe itself.
+.TP
+.B 1
+The run was refused or failed. A refusal of the plan happens before anything is written into the
+output; one of a ref name, or a failure part way, leaves the output where it got to, which is why
+the output has to be new or empty unless
+.B \-\-force
+says otherwise.
+.PP
+Reached as
+.BR "git timebraid \-\-help" ,
+the status is neither of these: it belongs to whatever git handed the page to.
+.
+.SH ENVIRONMENT
+.TP
+.B TIMEBRAID_JAVA
+The
+.B java
+binary to run, overriding the launcher's own search for one.
+.TP
+.B JAVA_HOME
+The JVM run where the archive carries no runtime of its own and
+.B TIMEBRAID_JAVA
+is not set; without either, the
+.B java
+on
+.BR PATH .
+.TP
+.B JAVA_OPTS
+Passed to that JVM. Typically a larger heap for a large graph, as in
+.BR JAVA_OPTS=\-Xmx4g .
+.TP
+.B COLUMNS
+The width
+.B \-h
+and
+.B \-hh
+lay out to, in place of what the terminal reports. A run's own phase headings are ruled to it as
+well, so it decides how wide the output of a merge is and not only that of the help.
+.
+.SH EXAMPLES
+Merge two bare clones, each into a subdirectory named after it:
+.PP
+.RS 7
+.EX
+git timebraid \-o /tmp/merged \e
+    \-\-mainline\-branch develop \e
+    ~/repos/backend.git ~/repos/webui.git
+.EE
+.RE
+.PP
+Group the inputs under a layout of your own, two of them sharing
+.BR libs/ :
+.PP
+.RS 7
+.EX
+git timebraid \-o /tmp/merged \e
+    ~/repos/backend.git::libs/backend \e
+    ~/repos/codegen.git::libs/codegen \e
+    ~/repos/webui.git::apps/webui
+.EE
+.RE
+.PP
+Put
+.B backend
+at the root, and give
+.B webui
+the subdirectory
+.B ui
+without letting that rename it, so its tags stay
+.BR webui/v1.2 :
+.PP
+.RS 7
+.EX
+git timebraid \-o /tmp/merged \e
+    \-\-root\-repo backend \-\-mainline\-branch main \e
+    ~/repos/backend.git ~/repos/webui.git::ui=webui
+.EE
+.RE
+.PP
+Carry over two branches and one release series of tags, and inspect the
+plan without writing the output repository:
+.PP
+.RS 7
+.EX
+git timebraid \-\-dry\-run \-\-plan\-out /tmp/plan.txt \e
+    \-b main \-b release/2.2 \-\-ref 'refs/tags/v2.*' \e
+    ~/repos/backend.git ~/repos/webui.git
+.EE
+.RE
+.
+.SH SEE ALSO
+.BR git (1),
+.BR git\-fetch (1),
+.BR git\-notes (1)
+.PP
+.\" Each URL on a line of its own, and none of them hyphenated: a reader copies it out of the
+.\" terminal, and a hyphen groff put in to fill the line is then part of what gets copied.
+.nh
+More on each option, and what the output holds:
+.br
+.UR https://github.com/loplex/git\-timebraid/blob/main/doc/usage.md
+.UE
+.PP
+Worked examples:
+.br
+.UR https://github.com/loplex/git\-timebraid/blob/main/doc/examples/README.md
+.UE
+.hy

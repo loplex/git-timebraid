@@ -6,6 +6,8 @@
             bin/git-timebraid        launcher, resolves lib/ relative to itself
             bin/git-timebraid.bat
             lib/git-timebraid.jar    the shaded jar
+            share/man/man1/git-timebraid.1
+            share/doc/git-doc/git-timebraid.html
             doc/                     what README.md links to
             README.md CHANGELOG.md LICENSE NOTICE
 
