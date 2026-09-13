@@ -174,6 +174,9 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   It now gives the transfer and each ref written as the `git` command it is the equivalent of.\
   The commit-by-commit writing stays out: it is not one command, and `--plan-out` already dumps it.
 
+- **A flag that can be turned off is written `--[no-]bare`, not `--bare / --no-bare`.**\
+  That is how git writes one, and it is a line shorter each time.
+
 - **The archives carry each dependency as its own jar in `lib/`,
   beside `git-timebraid.jar`, and a release no longer offers the jar on its own.**\
   The program's jar names the others in its manifest, so `java -jar lib/git-timebraid.jar` still runs it,
