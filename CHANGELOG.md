@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-six changes alter what a command line written for 0.1.0 does:
+Twenty-seven changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -31,7 +31,8 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
   `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
   A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.\
   A `:<destination>` after the branch means what it means in `--ref`, and a value it does not fit
-  is refused.
+  is refused.\
+  A `^` in the branch is refused.
 
 - Every branch is now qualified as `<repo>/<branch>`, not only one two inputs share.\
   One that then sits under the braid's own branch refuses the run: input `main`'s `x`, qualified as
@@ -44,6 +45,11 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
 - An `--interleave-ref` value holding a `:` after its scope, scoped to a name that is no input, or
   empty, is refused.\
   0.1.0 took each for a pattern, one that matched no ref.
+
+- A `^` in front of an `--interleave-ref` pattern subtracts, and an input given nothing but
+  subtractions is refused; a `^` anywhere else in a pattern is refused.\
+  0.1.0 took each for a pattern, one that matched no ref: `--interleave-ref '*'` beside
+  `--interleave-ref '^refs/heads/main'` opted `main` in.
 
 - A space in a `-b` or an `--interleave-ref` value separates two values, and a value of nothing but
   whitespace is refused.\
@@ -239,7 +245,8 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
   `git-timebraid -o out backend::libs/backend webui::apps/webui`\
   Inputs sharing a prefix share the tree for it.
 
-- **`--ref PATTERN`** — carry over only the refs matching this glob (repeatable).\
+- **`--ref PATTERN`** — carry over the refs matching this glob, or with `^` leave them out
+  (repeatable).\
   Branches and tags alike.\
   The default is every branch and tag, and the mainline is kept whatever the patterns say.
 
@@ -268,6 +275,28 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
   without one the output takes the first input's.\
   Detection is unchanged: the first of `main`/`master`/`develop` present in every input still
   awaiting one, rather than per input.
+
+- **A ref pattern may subtract**, written `^<pattern>` — git's own spelling for a negative
+  refspec, in the same place.\
+  `--ref '^refs/heads/wip/*'` drops those and keeps every other branch and tag, so narrowing a run
+  no longer means naming everything it wanted.\
+  A `^` is decidable as the mark rather than a convention: git refuses one anywhere in a ref name,
+  as it refuses the `:` a refspec is divided on.\
+  It goes in front of the refspec, not the value: `backend::^refs/heads/wip`, since `^backend::`
+  would read as *not backend*.\
+  A subtraction carries no destination — nothing lands from it — and git refuses that spelling
+  too.\
+  It applies after the patterns that select, over what they left; with none, over that option's
+  empty case. `--ref` starts from every branch and tag, so `^` alone is *every one of those
+  except*; `--label-ref` and `--interleave-ref` start from none, so subtractions alone are
+  refused.\
+  That last part is where this parts company with git, whose command line drops the configured
+  refspec as soon as one is named and so gives nothing back for subtractions alone.\
+  `--interleave-ref 'refs/heads/* ^refs/heads/main'` is the pairing worth knowing: every side
+  branch, a mainline tip's ancestry being everything it ever merged.\
+  A bare star opts in every tag as well, and a tag on a mainline reaches what it had merged.\
+  It subtracts the ref, not the commits behind it — they stay in scope if another opted-in ref
+  reaches them.
 
 - **`--label-ref PATTERN`** — also recreate the refs matching this glob whose target the run
   already holds (repeatable).\

@@ -720,6 +720,197 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `a caret on --ref keeps every branch and tag it does not name`() {
+        // The headline case, and the one that made the negation worth having: --ref's empty case is
+        // every branch and tag, so a run that wants to drop two branches out of four says which two
+        // rather than naming the other two — and gains nothing to maintain when a fifth appears.
+        //
+        // Git parts company here, its own command line dropping the configured refspec as soon as
+        // one is named, so a command line holding only subtractions fetches nothing. The rule is the
+        // same, a subtraction taking refs out of what was selected; only the empty case differs.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip/one", r.commit("aw1", parents = listOf(a1), at = at("09:20")))
+            r.branch("wip/two", r.commit("aw2", parents = listOf(a1), at = at("09:40")))
+            // A side branch no pattern names: the mainline is written from the braid whatever the
+            // selection says, so it alone could not show a branch the subtraction took by mistake.
+            r.branch("feature", r.commit("af", parents = listOf(a1), at = at("09:50")))
+            r.lightweightTag("v1.0", a1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val merged = tmp.resolve("merged.git")
+
+        braid(
+            "-o", merged.toString(),
+            "--ref", "^refs/heads/wip/*",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(merged).use { repo ->
+            assertEquals(setOf("main", "backend/feature"), repo.branches().map { it.name }.toSet())
+            // The tag no pattern spoke about is still there, which is the whole difference between
+            // subtracting and narrowing: nothing else had to be named to keep it.
+            assertEquals(setOf("backend/v1.0"), repo.tags().map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun `a caret is refused where the option's empty case is no ref at all`() {
+        // --interleave-ref and --label-ref start from nothing, so a run holding only subtractions
+        // has nothing to take back out. Git is silent about the same shape; here it is a mistake the
+        // program can name, and a quiet no-op is indistinguishable from a pattern that missed.
+        reference()
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--interleave-ref", "^refs/heads/main",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, result.statusCode)
+        assertTrue(result.output.contains("subtract"), result.output)
+    }
+
+    @Test
+    fun `a caret carries no destination`() {
+        // Nothing lands from a pattern that subtracts, so there is nothing for a destination to
+        // name. Git refuses the same spelling outright: '^refs/heads/x:refs/remotes/y' is an
+        // invalid refspec rather than a negation with a destination it would ignore.
+        //
+        // A '^' in front of the scope is the mark written a scope early, and is named as that; in
+        // front of a scope written with one colon, the form offered keeps it, once.
+        reference()
+        fun refused(pattern: String) = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged-${pattern.hashCode()}.git").toString(),
+                "--ref", pattern,
+                path("backend.git"), path("webui.git"),
+            )
+        ).also { assertNotEquals(0, it.statusCode, pattern) }.output
+
+        assertTrue(refused("^refs/heads/wip:refs/tags/").contains("nothing to name"))
+        assertTrue(refused("backend::^refs/heads/wip:refs/tags/").contains("nothing to name"))
+        assertTrue(refused("^backend::refs/heads/wip").contains("belongs in"))
+        assertTrue(refused("^backend:refs/heads/wip").contains("as 'backend::^refs/heads/wip'"))
+        assertTrue(refused("^backend:^refs/heads/wip").contains("as 'backend::^refs/heads/wip'"))
+    }
+
+    @Test
+    fun `a caret takes a ref back out of the opted-in set`() {
+        // The subtraction a pattern that only selects cannot express. Opting feature in moves m;
+        // taking it straight back out has to land on the default exactly, not merely near it.
+        val ids = lateMergeFixture()
+        val plain = tmp.resolve("plain.git")
+        val cancelled = tmp.resolve("cancelled.git")
+
+        braid("-o", plain.toString(), path("backend.git"), path("webui.git"))
+        braid(
+            "-o", cancelled.toString(),
+            "--interleave-ref", "refs/heads/feature",
+            "--interleave-ref", "^refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        assertEquals(
+            OutputRepo.read(plain).byOriginalSha.getValue(ids.getValue("m").name).id,
+            OutputRepo.read(cancelled).byOriginalSha.getValue(ids.getValue("m").name).id,
+        )
+    }
+
+    @Test
+    fun `a caret on the mainline stops a star dragging the whole graph in`() {
+        // The use the negation really earns its place for. A star opts the mainline tips in too,
+        // the selection carrying them by default, and a flood from a mainline tip reaches
+        // everything that mainline ever merged — so '*' is close to the widest scope there is.
+        // Excluding the mainline refs takes that flood back out, as far as nothing else opted in
+        // reaches it: the star opts every tag in too, and a tag made on main after the merge would
+        // bring it back.
+        //
+        // The fixture is deliberately not lateMergeFixture: there the only side ref is feature, and
+        // opting feature in moves m exactly as the star does, so every run agrees and the assertion
+        // would hold with the subtraction doing nothing at all. Here the only side ref is a tag on a1,
+        // which reaches nothing that is not on the braid already — so the star and the star minus
+        // the mainline have to differ, and that difference is what is asserted.
+        val ids = HashMap<String, ObjectId>()
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            val a2 = r.commit("a2", parents = listOf(a1), at = at("10:00"))
+            val f = r.commit("f", parents = listOf(a1), at = at("20:00"))
+            val m = r.commit("m", parents = listOf(a2, f), at = at("12:00"))
+            r.branch("main", m)
+            r.lightweightTag("early", a1)
+            ids += mapOf("a1" to a1, "m" to m)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("11:00"))
+            val b2 = r.commit("b2", parents = listOf(b1), at = at("13:00"))
+            r.branch("main", b2)
+            ids += mapOf("b1" to b1, "b2" to b2)
+        }
+
+        val plain = tmp.resolve("plain.git")
+        val star = tmp.resolve("star.git")
+        val starMinusMain = tmp.resolve("star-minus-main.git")
+
+        braid("-o", plain.toString(), path("backend.git"), path("webui.git"))
+        braid(
+            "-o", star.toString(),
+            "--interleave-ref", "*",
+            path("backend.git"), path("webui.git"),
+        )
+        braid(
+            "-o", starMinusMain.toString(),
+            "--interleave-ref", "* ^refs/heads/main",
+            path("backend.git"), path("webui.git"),
+        )
+
+        fun mOf(dir: Path) = OutputRepo.read(dir).byOriginalSha.getValue(ids.getValue("m").name).id
+
+        assertNotEquals(
+            mOf(plain), mOf(star),
+            "the star was supposed to reach f through main and move m",
+        )
+        assertEquals(
+            mOf(plain), mOf(starMinusMain),
+            "with the mainline excluded only the tag is opted in, and it reaches nothing new",
+        )
+    }
+
+    @Test
+    fun `a caret cannot subtract a branch a mainline already merged`() {
+        // The boundary, asserted so it is not mistaken for a defect later. The subtraction drops a
+        // ref, not the commits behind it, and f is reachable from m — so under a star, which opts
+        // the mainline in, f is in scope by way of main whatever is said about refs/heads/feature.
+        //
+        // This is not an implementation shortcut. A branch merged into a mainline *is* that
+        // mainline's ancestry, so asking for it to be out of scope while the mainline is in scope
+        // asks for a contradiction. What subtracts is a positive pattern that leaves the mainline
+        // out, which the test above is.
+        lateMergeFixture()
+        val star = tmp.resolve("star.git")
+        val starMinusFeature = tmp.resolve("star-minus-feature.git")
+
+        braid(
+            "-o", star.toString(),
+            "--interleave-ref", "*",
+            path("backend.git"), path("webui.git"),
+        )
+        braid(
+            "-o", starMinusFeature.toString(),
+            "--interleave-ref", "* ^refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        assertEquals(
+            OutputRepo.read(star).commits.map { it.id.name }.toSet(),
+            OutputRepo.read(starMinusFeature).commits.map { it.id.name }.toSet(),
+        )
+    }
+
+    @Test
     fun `--label-ref attaches a ref without letting it weigh on the braid`() {
         // The property the flag exists for, on the fixture that makes the difference visible: f is
         // an ancestor of main, so naming it adds no commits either way, and f is timestamped after

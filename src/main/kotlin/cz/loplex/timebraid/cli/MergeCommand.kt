@@ -146,10 +146,12 @@ private class HistoryOptions : OptionGroup(
 
     val refs by option("--ref").multiple()
         .help(
-            "Carry over only the refs matching this glob, branches and tags alike " +
-                "(repeatable)." + BR +
+            "Carry over the refs matching this glob, branches and tags alike, or with ^ leave " +
+                "them out (repeatable)." + BR +
                 "Patterns are matched against full ref names, and may be prefixed <input>:: " +
                 "to narrow one input." + BR +
+                "A ^ in front of the pattern subtracts instead of selecting: ^refs/heads/wip/* " +
+                "keeps every other branch and tag, with nothing else to name." + BR +
                 "A :<destination> after the pattern is a refspec's right half, naming where the matches land." +
                 BR +
                 "refs/tags/ hands them to --tag-prefix; a destination holding a star spells the " +
@@ -167,7 +169,9 @@ private class HistoryOptions : OptionGroup(
                 "Reads nothing extra and never delays a merge, so adding one cannot change a " +
                 "commit." + BR +
                 "A match whose target was not loaded is skipped, not an error." + BR +
-                "Takes an <input>:: prefix and a :<destination>, as --ref does." + BR +
+                "Takes an <input>:: prefix, a leading ^ and a :<destination>, as --ref does." +
+                BR + "A ^ needs something positive to subtract from: no pattern here means no " +
+                "label, so subtractions alone are refused." + BR +
                 "One quoted argument may hold several." + BR +
                 "Default: none."
         )
@@ -176,8 +180,15 @@ private class HistoryOptions : OptionGroup(
         .help(
             "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
                 BR + "Takes an <input>:: prefix; one quoted argument may hold several." +
+                BR + "A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every side " +
+                "branch; a bare '*' opts in every tag too." +
+                BR + "It subtracts the ref, not its commits: they stay in scope if another " +
+                "opted-in ref reaches them." +
+                BR + "A ^ needs something positive to subtract from, no pattern here meaning no " +
+                "ref at all." +
                 BR + "Default: none."
         )
+
 }
 
 private class OutputContentOptions : OptionGroup(

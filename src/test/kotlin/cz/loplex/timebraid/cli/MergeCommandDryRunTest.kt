@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.testing.test
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
@@ -93,6 +94,22 @@ class MergeCommandDryRunTest {
         )
         assertEquals(1, scoped.statusCode, scoped.output)
         assertTrue(scoped.output.contains("--mainline-branch is given twice for input 'backend'"), scoped.output)
+    }
+
+    @Test
+    fun `a caret before a --mainline-branch scope is refused without advice to subtract`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run", "--mainline-branch", "^backend::main",
+                tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("a mainline is a branch to braid along"), result.output)
+        assertFalse(result.output.contains("subtracts"), result.output)
     }
 
     @Test

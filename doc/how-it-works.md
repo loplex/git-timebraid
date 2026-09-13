@@ -334,7 +334,7 @@ the last of those: the star is substituted with what the pattern's own star matc
 it, and no prefix goes near the result. That is also why a pattern reading such a namespace must
 carry a destination: there would otherwise be nothing to name the result with.
 
-[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+[Example 09](examples/09-ref-selection/README.md) runs five selections over one pair of repositories
 and lists what each output holds — including the commit that disappears entirely under `-b main`,
 and comes back when the tags are asked for.
 
@@ -391,6 +391,26 @@ guarantee, and `--interleave-ref` is how you give it up deliberately:
   predecessor younger than itself.
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
+
+A plain pattern can only add, so a `^` in front of one takes refs back out of what the rest matched
+— the same mark git puts on a negative refspec. The subtraction is over ref names and happens before
+any commit is reached, so a commit two refs name is opted in by whichever of them survives rather
+than by neither.
+
+The pairing that matters is `--interleave-ref 'refs/heads/* ^refs/heads/main'`. Since the scope is
+the ancestry of every opted-in tip, and a mainline tip's ancestry is everything that mainline ever
+merged, opting the mainlines in is nearly the whole graph; subtracting the mainline refs from the
+branches is what leaves *every side branch* as the scope. A bare star opts in every tag besides, and
+a tag on a mainline reaches what that mainline had merged by then.
+
+Here a subtraction needs something to subtract from: this option's empty case is *no ref*, so a
+value holding nothing but subtractions is refused rather than resolving to nothing. `--ref` reads
+its empty case the other way, and `^` alone there means *every branch and tag except* — see
+[taking refs back out](usage.md#taking-refs-back-out).
+
+What it cannot do is take a commit out of scope that something else opted in reaches — and that is a
+property of the history rather than of this implementation. A branch merged into a mainline is that
+mainline's ancestry, so *in scope, except the commits of this merged branch* describes no graph.
 
 [Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a six-commit
 history you can build and inspect: two inputs, braided both ways, with the merge landing before the

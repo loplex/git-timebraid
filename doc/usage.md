@@ -11,7 +11,7 @@
 - [Dissolving a submodule into its content](#dissolving-a-submodule-into-its-content) —
   `--dissolve-submodules`.
 - [Which history is read, and how it interleaves](#which-history-is-read-and-how-it-interleaves) —
-  mainlines that do not agree.
+  mainlines that do not agree, and narrowing what may weigh on the interleave.
 - [What ends up in the output](#what-ends-up-in-the-output) — what the output repository holds when
   the run finishes: its refs, its commits, and the messages on them.
 - [What a run prints](#what-a-run-prints) — the headings, the lines a bar leaves behind, and what
@@ -69,7 +69,7 @@ git-timebraid \
 ```
 
 Without that `--ref`, this run would carry no tags at all: naming any ref leaves out the rest.
-[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+[Example 09](examples/09-ref-selection/README.md) runs five selections over one pair of repositories
 and shows what each output ends up holding, down to the commit that only a tag reaches.
 
 ---
@@ -266,6 +266,34 @@ Where nothing is named, the mainline is detected as the first of `main`/`master`
 in **every** input still awaiting one. It is not done per input, which would quietly pick `main` for
 one repository and `master` for another wherever both exist.
 
+### Narrowing what may weigh
+
+`--interleave-ref` only adds, so a [subtraction](#taking-refs-back-out) is how a run says *broadly,
+except these*:
+
+```bash
+--interleave-ref 'refs/heads/* ^refs/heads/main'
+```
+
+That one is worth knowing by name: *every side branch*. A pattern reaching the mainline tips opts
+them in when the selection carries them, as it does by default, and the scope is the ancestry of
+everything opted in — so a mainline tip reaches every commit that mainline ever merged, which is
+close to the widest scope there is. Subtracting the mainline refs leaves the side branches. An input
+whose mainline is named otherwise needs its own subtraction:
+`'refs/heads/* ^refs/heads/main webui::^refs/heads/master'`.
+
+A bare star is not the same thing. It opts every tag in as well, and a tag on a mainline reaches
+what that mainline had merged by then, so `'* ^refs/heads/main'` still brings a merged branch into
+scope through any release tag made after the merge.
+
+**It subtracts the ref, not the commits behind it.** They stay in scope if some other opted-in ref
+reaches them, so subtracting a branch a mainline already merged does nothing at all under a star.
+
+That is a limit worth reading twice, because it is not an implementation shortcut: a branch merged
+into a mainline **is** that mainline's ancestry, so asking for it to be out of scope while the
+mainline is in scope asks for a contradiction. What subtracts is a pattern that leaves the mainline
+out — the example above, or a narrow one over a release series.
+
 ---
 
 ## What ends up in the output
@@ -347,7 +375,7 @@ decides what is read.
 
 ### Writing a ref pattern
 
-A ref pattern is `[<input>::]<refspec>`: an optional scope, ended by `::`, the separator a
+A ref pattern is `[<input>::][^]<refspec>`: an optional scope, ended by `::`, the separator a
 [`<repo>`](#writing-an-input) puts between its location and its suffix, and after it git's refspec.
 The first `::` is the separator, since an input's name holds no `:`. What the scope does is under
 [saying it for one input only](#saying-it-for-one-input-only).
@@ -370,7 +398,8 @@ two it means.
 What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
 
 **One quoted argument may hold several values, separated by spaces**: a space cannot occur in a ref
-name, as a `:` cannot, so the split can never cut a pattern in half. These two are the same run:
+name, as a `:` and a `^` cannot, so the split can never cut a pattern in half. These two are the
+same run:
 
 ```bash
 --ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
@@ -384,7 +413,7 @@ read as input repositories.
 ### Choosing which refs are carried over
 
 `-b` and `--ref` are one selection rather than two: `-b main` *is* `--ref refs/heads/main`, and
-naming any ref at all leaves out every ref not named.
+naming any ref at all, other than with a `^`, leaves out every ref not named.
 
 So a run narrowed to a branch carries no tags unless it says so — write both halves out to keep
 them:
@@ -399,6 +428,9 @@ them:
   or a tag.
 - The mainline is loaded whatever the patterns say — the braid is built along it — and the output's
   mainline branch comes from the braid's tip.
+
+- A pattern may also **subtract** rather than select, written with a leading `^` — see [taking refs
+  back out](#taking-refs-back-out).
 
 The selection also decides which commits are read at all, and `--interleave-ref` reads its empty
 case the other way round. Both are worked out under
@@ -538,6 +570,55 @@ is *naming any ref leaves out every ref not named* read one input at a time; an 
 Narrowing one input leaves every other input's ref **names** alone: the qualifier goes on wherever a
 pattern has not spelled a destination out, so narrowing decides which refs exist and not what the
 surviving ones are called. That was not true before 0.2.0 — see [branches](#branches).
+
+### Taking refs back out
+
+A `^` in front of the pattern **subtracts** instead of selecting. It is git's own spelling for a
+negative refspec, unchanged since git 2.29:
+
+```bash
+git fetch origin 'refs/heads/*:refs/remotes/origin/*' '^refs/heads/wip/*'
+```
+
+```bash
+--ref '^refs/heads/wip/*'
+```
+
+It is the same mark in the same place, in front of the refspec, and it is decidable rather than a
+convention: `git check-ref-format` refuses a `^` anywhere in a ref name, exactly as it refuses the
+`:` a refspec is divided on.
+
+**The mark goes on the refspec, not on the value.** `backend::^refs/heads/wip` subtracts in one
+input; `^backend::refs/heads/wip` would read as *not backend*, which is a meaning this never has, so
+it is refused and says where the `^` belongs.
+
+**A subtraction carries no destination.** Nothing lands from it, so there is nothing for a
+destination to [name](#saying-where-a-ref-lands) — and git refuses the same spelling outright,
+`^refs/heads/x:refs/remotes/y` being an invalid refspec rather than a negation with a destination.
+
+#### What a run holding only subtractions means
+
+A subtraction is applied after the patterns that select, over whatever they left — and with no
+pattern selecting, that is [the option's own empty case](#saying-it-for-one-input-only), per input:
+
+| option             | empty case           | `^` alone                                          |
+|--------------------|----------------------|----------------------------------------------------|
+| `--ref`            | every branch and tag | every branch and tag except those — the useful one |
+| `--label-ref`      | no ref               | refused                                            |
+| `--interleave-ref` | no ref               | refused                                            |
+
+So dropping two branches out of forty is two patterns rather than thirty-eight, and a forty-first
+branch needs no edit. Where the empty case is *no ref*, there is nothing to take back out, and a run
+holding nothing but subtractions is refused rather than quietly resolving to nothing.
+
+**This is where subtractions alone part company with git.** Git's command line drops the
+configured refspec as soon as it names one, so `git fetch origin '^refs/heads/wip/*'` fetches
+nothing at all — silently. The rule is the same either way, a subtraction taking refs out of what
+was selected; only the empty case underneath it differs.
+
+**It subtracts a ref, not the commits behind it.** A commit two refs name is kept by whichever of
+them survives. That is not a shortcut — see [narrowing what may weigh](#narrowing-what-may-weigh),
+where the limit bites hardest.
 
 ### The inputs' original commits
 
@@ -769,10 +850,13 @@ Which history is read, and how it interleaves:
                                  Shorthand for --ref refs/heads/<name>, so naming one leaves out
                                  every ref not named, tags included.
                                  One quoted argument may hold several, separated by spaces.
-  --ref=<text>                   Carry over only the refs matching this glob, branches and tags
-                                 alike (repeatable).
+  --ref=<text>                   Carry over the refs matching this glob, branches and tags alike, or
+                                 with ^ leave them out (repeatable).
                                  Patterns are matched against full ref names, and may be prefixed
                                  <input>:: to narrow one input.
+                                 A ^ in front of the pattern subtracts instead of selecting:
+                                 ^refs/heads/wip/* keeps every other branch and tag, with nothing
+                                 else to name.
                                  A :<destination> after the pattern is a refspec's right half,
                                  naming where the matches land.
                                  refs/tags/ hands them to --tag-prefix; a destination holding a star
@@ -786,12 +870,21 @@ Which history is read, and how it interleaves:
                                  Reads nothing extra and never delays a merge, so adding one cannot
                                  change a commit.
                                  A match whose target was not loaded is skipped, not an error.
-                                 Takes an <input>:: prefix and a :<destination>, as --ref does.
+                                 Takes an <input>:: prefix, a leading ^ and a :<destination>, as
+                                 --ref does.
+                                 A ^ needs something positive to subtract from: no pattern here
+                                 means no label, so subtractions alone are refused.
                                  One quoted argument may hold several.
                                  Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).
                                  Takes an <input>:: prefix; one quoted argument may hold several.
+                                 A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every
+                                 side branch; a bare '*' opts in every tag too.
+                                 It subtracts the ref, not its commits: they stay in scope if
+                                 another opted-in ref reaches them.
+                                 A ^ needs something positive to subtract from, no pattern here
+                                 meaning no ref at all.
                                  Default: none.
 
 What the output repository holds:

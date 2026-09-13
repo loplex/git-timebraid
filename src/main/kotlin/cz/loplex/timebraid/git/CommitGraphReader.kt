@@ -205,10 +205,12 @@ object CommitGraphReader {
      * @param refs glob patterns matched against full ref names — `refs/heads/main` for one branch,
      *   `refs/tags/v1.*` for a release series, a star alone for every branch and tag — selecting
      *   which of each input's refs are loaded and later recreated. Empty selects every branch and
-     *   tag, which is the default. Branches and tags are selected by one set of patterns rather
-     *   than one set each, so a run says what it wants to carry over once and gets exactly that:
-     *   naming only branches leaves the tags behind, which is the whole point of being able to
-     *   narrow.
+     *   tag, which is the default, and a `^` in front of a pattern subtracts from whatever the rest
+     *   selected — so `^refs/heads/wip` alone drops that branch and keeps every other branch and
+     *   tag, without the run having to name the ones it wants. Branches and tags are selected by one set of
+     *   patterns rather than one set each, so a run says what it wants to carry over once and gets
+     *   exactly that: naming only branches leaves the tags behind, which is the whole point of
+     *   narrowing.
      *
      *   The resolved mainline is loaded whatever the patterns say, since the braid is built along
      *   it, and the output's mainline branch is written from the braid's tip rather than from this
@@ -219,6 +221,14 @@ object CommitGraphReader {
      *   `<input>::` scope names. A matched ref's ancestry is allowed to delay a braid
      *   commit; see `BraidInterleave` for what that trades away. Matched against what [refs]
      *   selected, so widening the interleave cannot widen what is loaded.
+     *
+     *   A `^` in front of a pattern subtracts, which is how *opt in broadly, except these* is
+     *   written: a pattern reaching the mainline tips opts them in when [refs] carries them, as it
+     *   does by default, and their ancestry is everything the mainlines ever merged, so every
+     *   branch with `^refs/heads/main` taken back out is every side branch. A bare star opts in
+     *   every tag as well, and a tag on a mainline reaches what that mainline had merged. Since the
+     *   empty case here is *no ref*, a value holding nothing but subtractions has nothing to take
+     *   back out and is refused.
      * @param labelRefs glob patterns matched against full ref names, recreating every matched ref
      *   whose target the graph *already* holds. Empty matches nothing, the flag being opt-in.
      *
@@ -257,9 +267,11 @@ object CommitGraphReader {
         val names = repositories.map { it.name }
         // Before the mainlines, so that a mistyped input name is reported as the mistyped input name
         // rather than being masked by whatever the mainline resolution makes of the run.
-        val scopedRefs = ScopedPatterns(refs, "--ref", names, destinations = true)
-        val scopedLabels = ScopedPatterns(labelRefs, "--label-ref", names, destinations = true)
-        val scopedInterleave = ScopedPatterns(interleaveRefs, "--interleave-ref", names)
+        val scopedRefs = ScopedPatterns(refs, "--ref", names, emptyMeans = true, destinations = true)
+        val scopedLabels =
+            ScopedPatterns(labelRefs, "--label-ref", names, emptyMeans = false, destinations = true)
+        val scopedInterleave =
+            ScopedPatterns(interleaveRefs, "--interleave-ref", names, emptyMeans = false)
         val mainlines = resolveMainlines(repositories, mainlineBranch)
         val outputBranch = mainlines.output
         val builder = CommitGraphBuilder()
@@ -405,6 +417,9 @@ object CommitGraphReader {
         patterns: List<RefPattern>,
     ): List<SourceRef> {
         val namespaces = patterns
+            // A pattern that subtracts names nothing to read; it only takes back what something
+            // else brought in, so it cannot be what opens a namespace.
+            .filterNot { it.negated }
             .filterNot { pattern -> RefKind.entries.any { reaches(pattern.glob, it.namespace) } }
             .mapNotNull { foreignNamespace(it.glob) }
             .toSortedSet()
@@ -495,16 +510,23 @@ object CommitGraphReader {
      * they reach in scope. A ref of another namespace is taken only by a pattern that names that
      * namespace, as the selection takes one.
      * A label is none of those, whatever the pattern says: see the loop.
+     *
+     * A `^` pattern subtracts, and [Selection] does it here by ref name, before a commit is reached
+     * — so a commit two refs name is opted in by the one that was not subtracted rather than by
+     * neither.
      */
-    private fun interleaveTips(patterns: ScopedPatterns, inputs: List<SourceInputs>): List<Commit> {
+    private fun interleaveTips(
+        patterns: ScopedPatterns,
+        inputs: List<SourceInputs>,
+    ): List<Commit> {
         val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
-            val matches = Selection(patterns.of(input.source.name), emptyMeans = false)
+            val opted = Selection(patterns.of(input.source.name), emptyMeans = false)
             // A label is skipped whatever the pattern says. That is the whole of the separation:
             // the interleave matches what a run chose to read, and a label chose nothing.
             for (ref in input.refs) {
                 if (ref.labelOnly) continue
-                if (matches.matches(ref.fullName)) tips += ref.commit
+                if (opted.matches(ref.fullName)) tips += ref.commit
             }
         }
         return tips.toList()
@@ -518,8 +540,17 @@ object CommitGraphReader {
      * that namespace's prefix; or a name holding a `*`, which is substituted with whatever the
      * glob's own `*` matched and leaves no room for a prefix at all; or a plain name, for the one
      * ref a pattern without a star can reach.
+     *
+     * [negated] is a pattern written with a leading `^`, as `^refs/heads/wip`, which subtracts
+     * rather than selects: it takes back every ref it matches, whatever else brought them in. It
+     * carries no destination, nothing landing that could be named, and it reads no namespace of its
+     * own for the same reason.
      */
-    private class RefPattern(val glob: String, val destination: String?) {
+    private class RefPattern(
+        val glob: String,
+        val destination: String?,
+        val negated: Boolean = false,
+    ) {
 
         /** Whether the destination is a namespace to hand back to the prefix rules. */
         val toNamespace: Boolean =
@@ -549,8 +580,8 @@ object CommitGraphReader {
 
     /**
      * A pattern, the input it speaks for, and where its matches land, written
-     * `[<input>::]<refspec>`: `backend::refs/heads/main` narrows to one input, while a pattern with
-     * no `::` speaks for every one of them.
+     * `[<input>::][^]<refspec>`: `backend::refs/heads/main` narrows to one input, while a pattern
+     * with no `::` speaks for every one of them.
      *
      * **What follows the scope is git's refspec**, `<pattern>[:<destination>]`, so a value valid as
      * a git refspec means the same here: `refs/heads/main:refs/tags/main` reads the branch and
@@ -571,6 +602,17 @@ object CommitGraphReader {
      * every ref not named* from the run to the input. An unscoped pattern narrows every input
      * exactly as before.
      *
+     * **A `^` in front of the pattern subtracts instead of selecting**, the way git has written a
+     * negative refspec since 2.29, and in the same place, before the refspec. It is decidable rather
+     * than a convention, git refusing a `^` anywhere in a ref name. The mark goes after the scope
+     * rather than in front of the whole value: `^backend::refs/heads/wip` would read as *not
+     * backend*, which is a meaning this never has.
+     *
+     * @param emptyMeans what no pattern for an input says about that input — every branch and tag,
+     *   or none. It is also what a run holding nothing but subtractions resolves against, which is
+     *   why it is known here and not only in [Selection]: where the empty case is no ref at all
+     *   there is nothing to take back out, and such a run is refused rather than quietly matching
+     *   nothing.
      * @param destinations whether a destination is meaningful at all. It is for the two options that
      *   write refs; for the one that decides what may weigh on the braid it would name a namespace
      *   nothing is ever written to, so it is refused rather than accepted and ignored.
@@ -579,6 +621,7 @@ object CommitGraphReader {
         raw: List<String>,
         option: String,
         inputs: Collection<String>,
+        emptyMeans: Boolean,
         destinations: Boolean = false,
     ) {
         private val unscoped = ArrayList<RefPattern>()
@@ -587,10 +630,19 @@ object CommitGraphReader {
         init {
             for (value in words(raw, option)) {
                 val (input, written) = scopeOf(option, value, inputs)
-                val fields = written.split(':')
-                refuseFields(option, value, fields, inputs)
+                // A leading '^' is decidable rather than a convention: git refuses a '^' anywhere in
+                // a ref name, so one here can only be the mark.
+                val negated = written.startsWith('^')
+                val fields = (if (negated) written.substring(1) else written).split(':')
+                refuseFields(option, value, fields, inputs, negated)
                 val glob = fields[0]
-                require(glob.isNotEmpty()) { "$option '$value' names no pattern" }
+                require(glob.isNotEmpty()) {
+                    if (negated) "$option '$value' subtracts no pattern" else "$option '$value' names no pattern"
+                }
+                require(!glob.contains('^')) {
+                    "$option '$value' holds a '^' inside its pattern; git refuses one anywhere in " +
+                        "a ref name, so it can only be the leading mark that makes a pattern subtract"
+                }
                 require(!glob.startsWith('+')) {
                     "$option '$value' begins its refspec with '+', which git reads as allowing an " +
                         "update that is no fast-forward; a run writes every ref afresh, so there is " +
@@ -598,6 +650,10 @@ object CommitGraphReader {
                 }
 
                 val destination = fields.getOrNull(1)?.let { destination ->
+                    require(!negated) {
+                        "$option '$value' gives a destination to a pattern that subtracts; nothing " +
+                            "lands from it, so there is nothing to name"
+                    }
                     require(destinations) {
                         "$option '$value' gives a destination, and $option decides what a run " +
                             "reads rather than what it writes; a destination belongs on --ref or " +
@@ -606,12 +662,33 @@ object CommitGraphReader {
                     require(destination.isNotEmpty()) { "$option '$value' names no destination" }
                     destination
                 }
-                val pattern = RefPattern(glob, destination)
+                val pattern = RefPattern(glob, destination, negated)
                 checkDestination(option, value, glob, pattern)
                 // After the destination, because whether a pattern may read a namespace the output
-                // has no name rule for depends on whether it said what the matches are called.
-                checkReachable(option, value, glob, writes = destinations, named = destination != null)
+                // has no name rule for depends on whether it said what the matches are called. A
+                // pattern that subtracts reads no namespace of its own, so it is asked for nothing.
+                checkReachable(
+                    option,
+                    value,
+                    glob,
+                    writes = destinations && !negated,
+                    named = destination != null,
+                )
                 if (input == null) unscoped += pattern else byInput.getOrPut(input) { ArrayList() } += pattern
+            }
+
+            // Checked per input rather than per run, because the empty case is per input: an
+            // unscoped subtraction and no positive anywhere leaves every input with nothing to take
+            // it out of, while one input's scoped subtraction is answered by an unscoped positive.
+            if (!emptyMeans) {
+                for (input in inputs) {
+                    val patterns = of(input)
+                    require(patterns.isEmpty() || patterns.any { !it.negated }) {
+                        "$option holds nothing but patterns that subtract for input '$input', and " +
+                            "its empty case is no ref at all -- so there is nothing to take back " +
+                            "out. Say what is opted in first, a star for all of it"
+                    }
+                }
             }
         }
 
@@ -632,12 +709,31 @@ object CommitGraphReader {
      * tag* for the selection, so narrowing a run is opt-in and a plain invocation still loads
      * everything; the interleave and the labels read their own empty list the other way, a ref that
      * delays a merge or gets a name it did not earn being the exception rather than the rule.
+     *
+     * A pattern that subtracts is applied after the ones that select, and over the empty case as
+     * readily as over a positive pattern: with [emptyMeans] true, `^refs/heads/wip` alone is *every
+     * branch and tag but that one* — the two namespaces a selection reads, a ref outside them being
+     * on offer only where a pattern names it. That is where subtractions alone part company with
+     * git, which drops the configured refspec as soon as the command line names one and so gives
+     * nothing back for a command line holding only subtractions. The rule is the same either way —
+     * a subtraction takes refs out of what was selected — and only the empty case underneath it
+     * differs.
+     *
+     * **Subtraction is by ref name, not by commit.** A commit two refs name is in as long as one of
+     * them survives, which is not a shortcut: once a branch is merged into a mainline its commits
+     * *are* that mainline's ancestry, and asking for them to be out while the mainline is in asks
+     * for a contradiction. So a subtraction bites where a ref carries history of its own, and is a
+     * no-op against a ref whose history something else already reaches.
      */
     private class Selection(patterns: List<RefPattern>, private val emptyMeans: Boolean) {
 
-        private val matchers = patterns.map { glob(it.glob) to it }
+        private val matchers = patterns.filterNot { it.negated }.map { glob(it.glob) to it }
+        private val subtractors = patterns.filter { it.negated }.map { glob(it.glob) }
 
-        fun matches(name: String): Boolean {
+        fun matches(name: String): Boolean = selected(name) && subtractors.none { it(name) }
+
+        /** Whether a pattern that selects took [name], the empty case standing in for having none. */
+        private fun selected(name: String): Boolean {
             // A ref outside refs/heads/ and refs/tags/ is on offer only because some pattern named
             // its namespace, and only a pattern that would itself have named it may take it. The
             // condition is [foreignRefs]'s own, applied to the taking rather than to the
@@ -665,10 +761,16 @@ object CommitGraphReader {
          * it, and it is the one carrying the destination such a ref has to be given. Letting a bare
          * star win instead leaves the ref with no rule for its name, decided by the order two
          * values happen to be written in.
+         *
+         * A subtracted ref was taken by nothing, whoever else matched it. Callers reach this only
+         * for refs [matches] already let through, so the guard says what the answer means rather
+         * than changing any of them.
          */
-        fun taking(name: String): RefPattern? =
-            matchers.firstOrNull { (match, pattern) -> match(name) && names(pattern, name) }?.second
+        fun taking(name: String): RefPattern? = when {
+            !matches(name) -> null
+            else -> matchers.firstOrNull { (match, pattern) -> match(name) && names(pattern, name) }?.second
                 ?: matchers.firstOrNull { (match, _) -> match(name) }?.second
+        }
     }
 
     /**
@@ -920,7 +1022,8 @@ object CommitGraphReader {
      *
      * The scope is what stands before the first `::`: an input's name holds no `:`, so the first one
      * ends it, where the `<repo>` grammar takes the last because a location may hold one. An empty
-     * one is refused, the unscoped form already saying it, and so is a name that is none of [inputs].
+     * one is refused, the unscoped form already saying it; so is a `^` opening it, the mark written a
+     * scope too early, and a name that is none of [inputs].
      */
     private fun scopeOf(option: String, value: String, inputs: Collection<String>): Pair<String?, String> {
         val at = value.indexOf(SCOPE)
@@ -928,6 +1031,16 @@ object CommitGraphReader {
         val input = value.substring(0, at)
         require(input.isNotEmpty()) {
             "$option '$value' names no input before its '::'; leave the '::' out to speak for every input"
+        }
+        require(!input.startsWith('^')) {
+            if (option == "--mainline-branch") {
+                "$option '$value' begins with '^', where the input goes, and a mainline is a branch to " +
+                    "braid along, not a pattern a '^' could subtract from"
+            } else {
+                "$option '$value' begins with '^', where the input goes. The mark belongs in front of " +
+                    "the pattern: 'backend::^refs/heads/wip/*' subtracts in one input, " +
+                    "'^refs/heads/wip/*' in every one"
+            }
         }
         require(input in inputs) {
             "$option '$value' is for input '$input', which is not one of: " + inputs.joinToString()
@@ -941,15 +1054,24 @@ object CommitGraphReader {
     /**
      * Refuses a refspec of more than two `:`-separated [fields], and one whose first field is an
      * input's name: a scope written with one colon, which reads as a pattern and a destination.
+     *
+     * @param negated whether a `^` stood in front of [fields], which the form offered keeps, once.
      */
-    private fun refuseFields(option: String, value: String, fields: List<String>, inputs: Collection<String>) {
+    private fun refuseFields(
+        option: String,
+        value: String,
+        fields: List<String>,
+        inputs: Collection<String>,
+        negated: Boolean,
+    ) {
         require(fields.size <= 2) {
             "$option '$value' has ${fields.size} ':'-separated fields after its scope; the form is " +
-                "[<input>::]<pattern>[:<destination>]"
+                "[<input>::][^]<pattern>[:<destination>]"
         }
         require(fields.size == 1 || fields[0] !in inputs) {
+            val mark = if (negated && !fields[1].startsWith('^')) "^" else ""
             "$option '$value' reads as the pattern '${fields[0]}' written to '${fields[1]}', and " +
-                "'${fields[0]}' is an input: a scope is ended by '::', as '${fields[0]}::${fields[1]}'"
+                "'${fields[0]}' is an input: a scope is ended by '::', as '${fields[0]}::$mark${fields[1]}'"
         }
     }
 }
