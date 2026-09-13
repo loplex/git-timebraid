@@ -69,13 +69,35 @@ class SourceInputs(
     val readRefs: List<String>,
 )
 
+/** The two ref namespaces this program reads from, and the two it writes into. */
+enum class RefKind(val namespace: String) {
+    BRANCH(Constants.R_HEADS),
+    TAG(Constants.R_TAGS);
+
+    companion object {
+        /** The kind a destination names, or `null` when [namespace] is neither of the two. */
+        fun of(namespace: String): RefKind? =
+            entries.firstOrNull { it.namespace == namespace || it.namespace == "$namespace/" }
+    }
+}
+
 /**
  * A branch resolved to the commit it points at.
  *
  * [labelOnly] marks one attached by `--label-ref` rather than selected by `--ref`: it named a commit
  * the graph already held instead of bringing one in, and it is not eligible to weigh on the braid.
+ *
+ * [writeAs] is the namespace the output writes it into, which the pattern that matched it may set —
+ * a branch carried over as a tag is how a dead branch is archived without dropping the commits only
+ * it reaches. It changes nothing about the reading: [name] stays the input's own, and so does the
+ * namespace every pattern is matched against.
  */
-class BraidRef(val name: String, val commit: Commit, val labelOnly: Boolean = false)
+class BraidRef(
+    val name: String,
+    val commit: Commit,
+    val labelOnly: Boolean = false,
+    val writeAs: RefKind = RefKind.BRANCH,
+)
 
 /** A tag resolved to the commit it peels to, keeping its annotation if it had one. */
 class BraidTag(
@@ -84,6 +106,8 @@ class BraidTag(
     val annotation: TagAnnotation?,
     /** As [BraidRef.labelOnly]. */
     val labelOnly: Boolean = false,
+    /** As [BraidRef.writeAs]. */
+    val writeAs: RefKind = RefKind.TAG,
 )
 
 /**
@@ -156,8 +180,8 @@ object CommitGraphReader {
         val names = repositories.map { it.name }
         // Before the mainlines, so that a mistyped input name is reported as the mistyped input name
         // rather than being masked by whatever the mainline resolution makes of the run.
-        val scopedRefs = ScopedPatterns(refs, "--ref", names)
-        val scopedLabels = ScopedPatterns(labelRefs, "--label-ref", names)
+        val scopedRefs = ScopedPatterns(refs, "--ref", names, destinations = true)
+        val scopedLabels = ScopedPatterns(labelRefs, "--label-ref", names, destinations = true)
         val scopedInterleave = ScopedPatterns(interleaveRefs, "--interleave-ref", names)
         val mainlines = resolveMainlines(repositories, mainlineBranch)
         val outputBranch = mainlines.output
@@ -171,29 +195,29 @@ object CommitGraphReader {
         for (repo in repositories) {
             val source = builder.addSource(repo.name)
 
-            val selected = selection(scopedRefs.of(repo.name))
+            val selected = Selection(scopedRefs.of(repo.name), emptyMeans = true)
             // Empty matches nothing here, the other way round from the selection: a label is
             // something a run asks for, where carrying the refs over is what it does by default.
-            val labelled = globsOrNone(scopedLabels.of(repo.name))
+            val labelled = Selection(scopedLabels.of(repo.name), emptyMeans = false)
 
             val mainline = mainlines.perInput.getValue(repo.name)
             val mainlineTip = repo.resolveBranch(mainline)
                 ?: error("repository '${repo.name}' has no branch '$mainline'")
 
-            val selectedBranches = repo.branches().filter { selected("${Constants.R_HEADS}${it.name}") }
-            val selectedTags = repo.tags().filter { selected("${Constants.R_TAGS}${it.name}") }
+            val selectedBranches = repo.branches().filter { selected.matches(Constants.R_HEADS + it.name) }
+            val selectedTags = repo.tags().filter { selected.matches(Constants.R_TAGS + it.name) }
 
             // Labels are what the selection did not already take. A ref matched by both is selected,
             // which is the wider meaning of the two: it is read from as well as recreated. The
             // mainline is no label either: it is read whatever is selected, and the braid's own
             // branch stands for it, so the writer skips it and a count of it would be of nothing.
             val labelledBranches = repo.branches().filter {
-                val name = "${Constants.R_HEADS}${it.name}"
-                it.name != mainline && !selected(name) && labelled(name)
+                val name = Constants.R_HEADS + it.name
+                it.name != mainline && !selected.matches(name) && labelled.matches(name)
             }
             val labelledTags = repo.tags().filter {
-                val name = "${Constants.R_TAGS}${it.name}"
-                !selected(name) && labelled(name)
+                val name = Constants.R_TAGS + it.name
+                !selected.matches(name) && labelled.matches(name)
             }
 
             // The refs the graph is read from, and the objects they point at. Both are needed and
@@ -233,12 +257,16 @@ object CommitGraphReader {
             // Nothing above put its target in, so it is there only if something else's ancestry
             // carried it, and the miss is counted instead of being a fact about the input.
             val labelBranchRefs = labelledBranches.mapNotNull { branch ->
-                builder.find(source, branch.target.name)
-                    ?.let { BraidRef(branch.name, it, labelOnly = true) }
+                val name = Constants.R_HEADS + branch.name
+                builder.find(source, branch.target.name)?.let {
+                    BraidRef(branch.name, it, labelOnly = true, writeAs = labelled.writeAs(name) ?: RefKind.BRANCH)
+                }
             }
             val labelTagRefs = labelledTags.mapNotNull { tag ->
-                builder.find(source, tag.target.name)
-                    ?.let { BraidTag(tag.name, it, tag.annotation, labelOnly = true) }
+                val name = Constants.R_TAGS + tag.name
+                builder.find(source, tag.target.name)?.let {
+                    BraidTag(tag.name, it, tag.annotation, labelOnly = true, writeAs = labelled.writeAs(name) ?: RefKind.TAG)
+                }
             }
             labelsAttached += labelBranchRefs.size + labelTagRefs.size
             labelsSkipped +=
@@ -249,11 +277,16 @@ object CommitGraphReader {
                 source = source,
                 mainlineBranch = mainline,
                 branches = selectedBranches.mapNotNull { branch ->
-                    builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
+                    val name = Constants.R_HEADS + branch.name
+                    builder.find(source, branch.target.name)?.let {
+                        BraidRef(branch.name, it, writeAs = selected.writeAs(name) ?: RefKind.BRANCH)
+                    }
                 } + labelBranchRefs,
                 tags = selectedTags.mapNotNull { tag ->
-                    builder.find(source, tag.target.name)
-                        ?.let { BraidTag(tag.name, it, tag.annotation) }
+                    val name = Constants.R_TAGS + tag.name
+                    builder.find(source, tag.target.name)?.let {
+                        BraidTag(tag.name, it, tag.annotation, writeAs = selected.writeAs(name) ?: RefKind.TAG)
+                    }
                 } + labelTagRefs,
                 readRefs = readRefs.toList(),
             )
@@ -288,81 +321,118 @@ object CommitGraphReader {
     private fun interleaveTips(patterns: ScopedPatterns, inputs: List<SourceInputs>): List<Commit> {
         val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
-            val matches = globsOrNone(patterns.of(input.source.name))
+            val matches = Selection(patterns.of(input.source.name), emptyMeans = false)
             // A label is skipped whatever the pattern says. That is the whole of the separation:
             // the interleave matches what a run chose to read, and a label chose nothing.
             for (branch in input.branches) {
                 if (branch.labelOnly) continue
-                if (matches("${Constants.R_HEADS}${branch.name}")) tips += branch.commit
+                if (matches.matches("${Constants.R_HEADS}${branch.name}")) tips += branch.commit
             }
             for (tag in input.tags) {
                 if (tag.labelOnly) continue
-                if (matches("${Constants.R_TAGS}${tag.name}")) tips += tag.commit
+                if (matches.matches("${Constants.R_TAGS}${tag.name}")) tips += tag.commit
             }
         }
         return tips.toList()
     }
 
+    /** One glob, and the namespace the refs it matches are written into when it says. */
+    private class RefPattern(val glob: String, val writeAs: RefKind?)
+
     /**
-     * A pattern and the input it speaks for: `backend::refs/heads/main` narrows to one input, while
+     * A pattern, the input it speaks for, and where its matches land, written
+     * `[<input>::]<pattern>[:<destination>]`: `backend::refs/heads/main` narrows to one input, while
      * a pattern with no `::` speaks for every one of them.
      *
      * **The scope is ended by `::`**, the separator the `<repo>` grammar puts between a location and
-     * its suffix. It is decidable rather than a convention this asks to be trusted: git refuses a
-     * colon anywhere in a ref name, so a pattern holds none, and a `::` in one of these values can
-     * only ever be the separator.
+     * its suffix, and **a single `:` begins the destination**, the separator git itself puts between
+     * the two halves of a refspec, where the left half says what is read and the right half what it
+     * is called. Both are decidable rather than a convention this asks to be trusted. Git refuses a
+     * colon anywhere in a ref name, and [cz.loplex.timebraid.cli.MergeCommand] refuses one in an
+     * input's name, so a colon in one of these values can only ever be a separator.
      *
      * **The empty case stays per input, and keeps the meaning it had.** No pattern for an input is
-     * that option's empty case for that input — every ref for [selection], none for the interleave
+     * that option's empty case for that input — every ref for [Selection], none for the interleave
      * and the labels. So `--ref backend::refs/heads/main` narrows backend and leaves the other inputs
      * carrying everything, which is the generalisation of *naming any ref leaves out every ref not
      * named* from the run to the input. An unscoped pattern narrows every input exactly as before.
+     *
+     * @param destinations whether a destination is meaningful at all. It is for the two options that
+     *   write refs; for the one that decides what may weigh on the braid it would name a namespace
+     *   nothing is ever written to, so it is refused rather than accepted and ignored.
      */
-    private class ScopedPatterns(raw: List<String>, option: String, inputs: Collection<String>) {
-        private val unscoped = ArrayList<String>()
-        private val byInput = HashMap<String, MutableList<String>>()
+    private class ScopedPatterns(
+        raw: List<String>,
+        option: String,
+        inputs: Collection<String>,
+        destinations: Boolean = false,
+    ) {
+        private val unscoped = ArrayList<RefPattern>()
+        private val byInput = HashMap<String, MutableList<RefPattern>>()
 
         init {
             for (value in words(raw, option)) {
-                val (input, pattern) = scopeOf(option, value, inputs)
-                // No ref name holds a ':', so one here is a mistake; where an input's name stands
-                // before it, it is a scope written with one colon, and is named as that.
-                val colon = pattern.indexOf(':')
-                require(colon < 0) {
-                    val before = pattern.substring(0, colon)
-                    if (before in inputs) {
-                        "$option '$value' names the pattern '$pattern', and '$before' is an input: " +
-                            "a scope is ended by '::', as '$before::${pattern.substring(colon + 1)}'"
-                    } else {
-                        "$option '$value' holds a ':', which git refuses anywhere in a ref name"
+                val (input, written) = scopeOf(option, value, inputs)
+                val fields = written.split(':')
+                refuseFields(option, value, fields, inputs)
+                val glob = fields[0]
+                require(glob.isNotEmpty()) { "$option '$value' names no pattern" }
+
+                val writeAs = fields.getOrNull(1)?.let { destination ->
+                    require(destinations) {
+                        "$option '$value' gives a destination, and $option decides what a run " +
+                            "reads rather than what it writes; a destination belongs on --ref or " +
+                            "--label-ref"
                     }
+                    require(destination.isNotEmpty()) { "$option '$value' names no destination" }
+                    RefKind.of(destination) ?: throw IllegalArgumentException(
+                        "$option '$value' writes to '$destination'; a destination is " +
+                            "${Constants.R_HEADS} or ${Constants.R_TAGS}, the namespace and " +
+                            "nothing deeper -- the prefix under it is --branch-prefix or " +
+                            "--tag-prefix"
+                    )
                 }
-                require(pattern.isNotEmpty()) { "$option '$value' names no pattern" }
+                val pattern = RefPattern(glob, writeAs)
                 if (input == null) unscoped += pattern else byInput.getOrPut(input) { ArrayList() } += pattern
             }
         }
 
-        /** The patterns applying to [input]: the unscoped ones, plus those naming it. */
-        fun of(input: String): List<String> = unscoped + (byInput[input] ?: emptyList())
+        /**
+         * The patterns applying to [input], the ones naming it first.
+         *
+         * The order only matters to a destination, where the first pattern that matches a ref
+         * decides where it lands: a scoped pattern is the more specific of the two, so it is the one
+         * that should win over an unscoped pattern covering the same ref.
+         */
+        fun of(input: String): List<RefPattern> = (byInput[input] ?: emptyList<RefPattern>()) + unscoped
     }
 
     /**
-     * Which refs a run carries over, as a predicate over full ref names.
+     * What a set of patterns says about a ref: whether it is taken, and where it is written.
      *
-     * No pattern means every ref, so the two options that narrow a run are opt-in and a plain
-     * invocation still loads everything. This is the one place the empty case means *all* rather
-     * than *none*; the interleave reads its own empty list the other way, since a ref that delays a
-     * merge is the exception there rather than the rule.
+     * [emptyMeans] is the whole difference between the options. No pattern means *every ref* for the
+     * selection, so narrowing a run is opt-in and a plain invocation still loads everything; the
+     * interleave and the labels read their own empty list the other way, a ref that delays a merge
+     * or gets a name it did not earn being the exception rather than the rule.
      */
-    private fun selection(patterns: List<String>): (String) -> Boolean {
-        if (patterns.isEmpty()) return { true }
-        return globs(patterns)
-    }
+    private class Selection(patterns: List<RefPattern>, private val emptyMeans: Boolean) {
 
-    /** [globs], reading an empty list as *none* rather than as *all*. */
-    private fun globsOrNone(patterns: List<String>): (String) -> Boolean {
-        if (patterns.isEmpty()) return { false }
-        return globs(patterns)
+        private val matchers = patterns.map { glob(it.glob) to it.writeAs }
+
+        fun matches(name: String): Boolean {
+            if (matchers.isEmpty()) return emptyMeans
+            return matchers.any { (match, _) -> match(name) }
+        }
+
+        /**
+         * The namespace [name] is written into, or `null` to leave it in the one it came from.
+         *
+         * The first pattern that matches decides, which is why [ScopedPatterns.of] puts the scoped
+         * ones first: *this input's branches as tags, everything else as it stands* has to be
+         * writable, and only a more specific pattern winning makes it so.
+         */
+        fun writeAs(name: String): RefKind? =
+            matchers.firstOrNull { (match, _) -> match(name) }?.second
     }
 
     /**
@@ -384,13 +454,13 @@ object CommitGraphReader {
     private val WHITESPACE = Regex("\\s+")
 
     /**
-     * Matches a full ref name against any of [patterns], where `*` is the only metacharacter and it
-     * spans path separators — so a pattern ending in one covers a whole prefix however deeply
-     * nested, and a bare star is every ref.
+     * Matches a full ref name against [pattern], where `*` is the only metacharacter and it spans
+     * path separators — so a pattern ending in one covers a whole prefix however deeply nested, and
+     * a bare star is every ref.
      */
-    private fun globs(patterns: List<String>): (String) -> Boolean {
-        val matchers = patterns.map { p -> Regex(p.split('*').joinToString(".*") { Regex.escape(it) }) }
-        return { name -> matchers.any { it.matches(name) } }
+    private fun glob(pattern: String): (String) -> Boolean {
+        val matcher = Regex(pattern.split('*').joinToString(".*") { Regex.escape(it) })
+        return { name -> matcher.matches(name) }
     }
 
     /** Which branch each input braids along, and the single branch the output carries. */
@@ -425,7 +495,8 @@ object CommitGraphReader {
                     "--mainline-branch '$value' names the branch '$branch', and '$before' is an " +
                         "input: a scope is ended by '::', as '$before::${branch.substring(colon + 1)}'"
                 } else {
-                    "--mainline-branch '$value' holds a ':', which git refuses anywhere in a branch name"
+                    "--mainline-branch '$value' holds a ':'; it names a branch rather than a ref, " +
+                        "and takes no destination"
                 }
             }
             require(branch.isNotEmpty()) { "--mainline-branch '$value' names no branch" }
@@ -470,11 +541,12 @@ object CommitGraphReader {
      * The input [value] is scoped to and the rest of it, or `null` and the whole of it where it
      * names none.
      *
-     * The scope is what stands before the last `::`, as in the `<repo>` grammar. An empty one is
-     * refused, the unscoped form already saying it, and so is a name that is none of [inputs].
+     * The scope is what stands before the first `::`: an input's name holds no `:`, so the first one
+     * ends it, where the `<repo>` grammar takes the last because a location may hold one. An empty
+     * one is refused, the unscoped form already saying it, and so is a name that is none of [inputs].
      */
     private fun scopeOf(option: String, value: String, inputs: Collection<String>): Pair<String?, String> {
-        val at = value.lastIndexOf(SCOPE)
+        val at = value.indexOf(SCOPE)
         if (at < 0) return null to value
         val input = value.substring(0, at)
         require(input.isNotEmpty()) {
@@ -488,4 +560,20 @@ object CommitGraphReader {
 
     /** The `::` that ends a scope — see [scopeOf]. */
     private const val SCOPE = "::"
+
+    /**
+     * Refuses a value of more than two `:`-separated [fields] after its scope, and one whose first
+     * field is an input's name: a scope written with one colon, which reads as a pattern and a
+     * destination.
+     */
+    private fun refuseFields(option: String, value: String, fields: List<String>, inputs: Collection<String>) {
+        require(fields.size <= 2) {
+            "$option '$value' has ${fields.size} ':'-separated fields after its scope; the form is " +
+                "[<input>::]<pattern>[:<destination>]"
+        }
+        require(fields.size == 1 || fields[0] !in inputs) {
+            "$option '$value' reads as the pattern '${fields[0]}' written to '${fields[1]}', and " +
+                "'${fields[0]}' is an input: a scope is ended by '::', as '${fields[0]}::${fields[1]}'"
+        }
+    }
 }

@@ -618,6 +618,22 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `a scope ends at the first double colon, so a value going on with a colon reads past it`() {
+        reference()
+        // No input's name holds a ':', so the first '::' is the scope's end: what follows here is a
+        // destination with no pattern before it, and that is the refusal, not an unknown input.
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--ref", "backend:::refs/tags/",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, result.statusCode)
+        assertTrue(result.output.contains("'backend:::refs/tags/' names no pattern"), result.output)
+    }
+
+    @Test
     fun `--label-ref attaches a ref without letting it weigh on the braid`() {
         // The property the flag exists for, on the fixture that makes the difference visible: f is
         // an ancestor of main, so naming it adds no commits either way, and f is timestamped after
@@ -828,6 +844,168 @@ class BraidPipelineIT {
         }
         assertEquals(listOf("webui/wip"), webuiBranches(whole))
         assertEquals(webuiBranches(whole), webuiBranches(narrowed))
+    }
+
+    @Test
+    fun `a destination carries a branch over as a tag`() {
+        // The archiving case: dead branches wanted for the record, none of them wanted as branches.
+        // The commits only they reach have to come along, so the pattern that selects them is the
+        // pattern that redirects them — written once rather than twice and kept in step by hand.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+            r.branch("old/spike", r.commit("as", parents = listOf(a1), at = at("09:40")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.branch("wip", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val out = tmp.resolve("archived.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "backend::refs/heads/*:refs/tags/",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // backend's side branches are tags now, under the tag prefix rather than the branch one.
+            assertEquals(
+                listOf("backend/old/spike", "backend/wip"),
+                repo.tags().map { it.name }.sorted(),
+            )
+            // A branch has no annotation, so it arrives as a lightweight tag.
+            assertTrue(repo.tags().all { it.annotation == null }, "a branch gained an annotation")
+            // The mainline is loaded whatever the patterns say, so the destination must not reach
+            // it: the output's `main` is the braid, not backend's own branch written as a tag.
+            assertEquals(
+                setOf("main", "webui/wip"),
+                repo.branches().map { it.name }.toSet(),
+            )
+        }
+        // And the commits only those branches reached are in the output, which is the whole point
+        // of redirecting the selection rather than labelling what was already there.
+        assertEquals(5, OutputRepo.read(out).commits.size)
+    }
+
+    @Test
+    fun `a destination carries a tag over as a branch, dropping the annotation`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.annotatedTag("v1.0", a1, message = "the first release\n")
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("unwrapped.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "refs/tags/*:refs/heads/",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(listOf<String>(), repo.tags().map { it.name })
+            assertEquals(setOf("main", "backend/v1.0"), repo.branches().map { it.name }.toSet())
+        }
+        // The names alone would pass with the branch pointing at the tag object itself, and the
+        // annotation not dropped at all: a branch has to name a commit.
+        if (GitCli.available) {
+            assertEquals("commit", GitCli.run(out, "cat-file", "-t", "refs/heads/backend/v1.0"))
+            GitCli.fsck(out)
+        }
+    }
+
+    @Test
+    fun `a scoped destination wins over an unscoped one covering the same ref`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.branch("wip", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val out = tmp.resolve("mixed.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "backend::refs/heads/*:refs/tags/ refs/heads/*",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(listOf("backend/wip"), repo.tags().map { it.name })
+            assertEquals(setOf("main", "webui/wip"), repo.branches().map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun `one input's branch and tag meeting in one namespace are refused as that input's`() {
+        // No prefix tells two refs of one input apart, so the refusal cannot send the reader to
+        // one: it names the input once, and the remedy is where the refs are sent.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("v1.0", r.commit("av", parents = listOf(a1), at = at("09:30")))
+            r.lightweightTag("v1.0", a1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+
+        val refused = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("met.git").toString(),
+                "--ref", "backend::refs/heads/*:refs/tags/", "--ref", "backend::refs/tags/*",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+
+        assertNotEquals(0, refused.statusCode, refused.output)
+        assertTrue(
+            refused.output.contains(
+                "two refs of 'backend' would both write 'refs/tags/backend/v1.0'; " +
+                    "give one of them another destination"
+            ),
+            refused.output,
+        )
+    }
+
+    @Test
+    fun `a destination is refused where nothing is written, and outside the two namespaces`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        fun refused(vararg extra: String) = MergeCommand().test(
+            listOf("-o", tmp.resolve("no-${extra.hashCode()}.git").toString()) + extra +
+                listOf(path("backend.git"), path("webui.git"))
+        ).also { assertNotEquals(0, it.statusCode, it.output) }.output
+
+        // The weighing axis writes no ref, so a destination there could only be ignored.
+        assertTrue(
+            refused("--interleave-ref", "refs/heads/*:refs/tags/").contains("--ref"),
+            "the refusal should say where a destination does belong",
+        )
+        // A namespace this program never writes, and a path deeper than a namespace.
+        assertTrue(refused("--ref", "refs/heads/*:refs/notes/").contains("refs/tags/"))
+        assertTrue(
+            refused("--ref", "refs/heads/*:refs/tags/archive/").contains("--tag-prefix"),
+            "the refusal should point at the flag that does set a prefix",
+        )
+        // Three fields after the scope is one too many, whatever they hold; and a scope written
+        // with one colon reads as a pattern and a destination, which is named for what it is.
+        assertTrue(refused("--ref", "backend::refs/heads/*:refs/tags/:x").contains("fields"))
+        assertTrue(refused("--ref", "backend:refs/heads/*").contains("a scope is ended by '::'"))
     }
 
     @Test

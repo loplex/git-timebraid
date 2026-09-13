@@ -30,7 +30,8 @@ Twenty-five changes alter what a command line written for 0.1.0 does:
 - `-b` takes a pattern, as `--ref refs/heads/<value>` does, rather than a branch's exact name.\
   `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
   A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.\
-  A value holding a `:` is refused.
+  A `:<destination>` after the branch means what it means in `--ref`, and a value it does not fit
+  is refused.
 
 - Every branch is now qualified as `<repo>/<branch>`, not only one two inputs share.\
   One that then sits under the braid's own branch refuses the run: input `main`'s `x`, qualified as
@@ -173,6 +174,17 @@ Twenty-five changes alter what a command line written for 0.1.0 does:
 
 ### Added
 
+- **A ref pattern may say which namespace its matches are written into.**\
+  A `:<destination>` after the pattern: `--ref 'legacy::refs/heads/*:refs/tags/'`.\
+  That reads `legacy`'s branches and writes them as tags, which is how forty dead branches are kept
+  for the record without being kept as branches — and without dropping the commits only they reach.\
+  It works the other way too, and flattens an annotated tag on the way, a branch having nowhere to
+  put an annotation.\
+  The destination is a namespace and nothing deeper; the prefix under it is still `--tag-prefix` or
+  `--branch-prefix`.\
+  Available on `--ref` and `--label-ref`, the two that write refs; refused on `--interleave-ref`,
+  which writes none.
+
 - **`--branch-prefix TEMPLATE`** — the qualifier on every recreated branch.\
   `{repo}` is substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
   An empty value asks for the plain names, and refuses two inputs meeting on one.
@@ -193,8 +205,7 @@ Twenty-five changes alter what a command line written for 0.1.0 does:
   `--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'`.\
   Without a scope a pattern speaks for every input, so nothing already written changes.\
   The empty case stays per input: one that no pattern names keeps that option's default.\
-  The scope is ended by `::`, as a `<repo>`'s location is; git refuses a `:` in a ref name, so the
-  separator can never be part of a pattern.\
+  The scope is ended by its first `::`, since an input's name holds no `:`.\
   An `<input>::` naming something that is not an input is refused rather than matching nothing,
   and so is an empty one.
 

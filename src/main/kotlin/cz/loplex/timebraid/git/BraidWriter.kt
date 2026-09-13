@@ -304,6 +304,11 @@ class BraidWriter(
      * kept its own name depended on what else the run selected: narrowing one input with `--ref`
      * could leave another as that name's only holder and rename *its* branch. A run that emptied the
      * prefix asks for the plain names and gets them; two inputs meeting there is [claim].
+     *
+     * Which of the two prefixes a ref sees follows from where it is written rather than from where
+     * it came: a pattern may carry a destination, and a branch written into `refs/tags/` is a tag of
+     * the output whatever it was at home. The counts in [WriteSummary] follow the same rule, since
+     * what a reader of the output can see is its kind there.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -326,18 +331,28 @@ class BraidWriter(
             for (branch in input.branches) {
                 // Its own, not the output's: two inputs may braid along differently named branches,
                 // and each is the one already spoken for by the braid rather than a branch to write.
+                //
+                // Before the destination rather than after it, because the mainline is loaded
+                // whatever the patterns say: a pattern reaching it reaches a ref the run never asked
+                // to carry over, and carrying that over as a tag is no more wanted than as a branch.
                 if (branch.name == input.mainlineBranch) continue
-                val name = Constants.R_HEADS +
-                    options.branchPrefix.replace("{repo}", repo) + branch.name
-                claim(claimed, name, repo, "--branch-prefix")
+                val name = named(branch.writeAs, repo, branch.name)
+                claim(claimed, name, repo, prefixFlag(branch.writeAs))
+                // A branch has no annotation to lose, so where it is written as a tag it becomes a
+                // lightweight one — which is what a ref name kept for the record wants to be.
                 refs[name] = idOf(branch.commit)
-                branches++
+                if (branch.writeAs == RefKind.TAG) tags++ else branches++
             }
             for (tag in input.tags) {
-                val name = options.tagPrefix.replace("{repo}", repo) + tag.name
-                claim(claimed, Constants.R_TAGS + name, repo, "--tag-prefix")
-                refs[Constants.R_TAGS + name] = tagTarget(name, tag)
-                tags++
+                val name = named(tag.writeAs, repo, tag.name)
+                claim(claimed, name, repo, prefixFlag(tag.writeAs))
+                refs[name] = when (tag.writeAs) {
+                    RefKind.TAG -> tagTarget(name.removePrefix(Constants.R_TAGS), tag)
+                    // A branch points at a commit and nothing else, so a tag written as one is the
+                    // commit it peeled to. An annotation has nowhere to go and is dropped with it.
+                    RefKind.BRANCH -> idOf(tag.commit)
+                }
+                if (tag.writeAs == RefKind.TAG) tags++ else branches++
             }
         }
 
@@ -347,15 +362,33 @@ class BraidWriter(
         return Refs(refs, branches, tags, remoteRefs)
     }
 
+    /** The full output name of [repo]'s ref [name], under the prefix its output kind carries. */
+    private fun named(kind: RefKind, repo: String, name: String): String {
+        val prefix = when (kind) {
+            RefKind.BRANCH -> options.branchPrefix
+            RefKind.TAG -> options.tagPrefix
+        }
+        return kind.namespace + prefix.replace("{repo}", repo) + name
+    }
+
+    /** The option setting the prefix [kind] carries, for a message that has to suggest a remedy. */
+    private fun prefixFlag(kind: RefKind): String = when (kind) {
+        RefKind.BRANCH -> "--branch-prefix"
+        RefKind.TAG -> "--tag-prefix"
+    }
+
     /**
      * Records that [repo] wants [name], refusing a name already taken.
      *
-     * Reachable where a prefix stops telling two inputs apart, such as an emptied one or one
-     * holding no `{repo}`, since the default qualifies every ref with the name of the input it came
-     * from. The braid's own branch takes no prefix, so an input can meet it under any prefix: under
-     * the default, input `release`'s branch `x` meets a mainline called `release/x`.
-     * Refused rather than resolved: the two refs can point at different commits, so silently
-     * keeping either would publish one ref's history under a name the other's reader would look up.
+     * Reached three ways. A prefix that has stopped telling two inputs apart, such as an emptied
+     * one or one holding no `{repo}`: the default qualifies every ref with the name of its input,
+     * and so keeps them apart. The braid's own branch, which takes no prefix, so an input can meet
+     * it under any prefix: under the default, input `release`'s branch `x` meets a mainline called
+     * `release/x`. And one input sending two refs of one name into one namespace, a branch `v1.0`
+     * written as a tag beside its tag `v1.0`, which no prefix tells apart.
+     * The braid's own mainline claims its name first, so the side already holding one may be it.
+     * Refused rather than resolved: the two refs can point at different commits, so silently keeping
+     * either would publish one ref's history under a name the other's reader would look up.
      */
     private fun claim(claimed: MutableMap<String, String>, name: String, repo: String, prefixOption: String) {
         val first = claimed.put(name, repo) ?: return
@@ -366,6 +399,9 @@ class BraidWriter(
                 "'$first' and '$repo' would both write '$name'; " +
                     "give $prefixOption a template, or the input a name, that moves its refs off the " +
                     "braid's, or narrow the run"
+            } else if (first == repo) {
+                "two refs of '$repo' would both write '$name'; " +
+                    "give one of them another destination, or narrow the run"
             } else {
                 "'$first' and '$repo' would both write '$name'; " +
                     "give $prefixOption a template that keeps {repo} apart from the name, as {repo}/ " +
@@ -397,8 +433,9 @@ class BraidWriter(
      * originals with no mirror.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
-     * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its
-     * message — is recreated in full by [tagTarget] under the output's own prefixed tag name.
+     * What an annotated tag holds beyond its target — its tagger, its message — is recreated in
+     * full by [tagTarget] where the tag is written under `refs/tags/`. A tag a destination writes
+     * as a branch loses it, and this mirror, pointing at the commit, keeps none of it.
      *
      * The mirror covers every ref the run carried over, the selection and the labels alike, so
      * `-b` narrows it the same way it narrows the output. A label was not read and so was not

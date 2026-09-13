@@ -150,8 +150,10 @@ private class HistoryOptions : OptionGroup(
                 "(repeatable)." + BR +
                 "Patterns are matched against full ref names, and may be prefixed <input>:: " +
                 "to narrow one input." + BR +
+                "A :<destination> after the pattern writes the matches elsewhere: " +
+                "<pattern>:refs/tags/ carries branches over as tags." + BR +
                 "One quoted argument may hold several, separated by spaces." + BR +
-                "Default: every ref."
+                "Default: every ref, each in the namespace it came from."
         )
 
     val labelRefs by option("--label-ref").multiple()
@@ -161,7 +163,8 @@ private class HistoryOptions : OptionGroup(
                 "Reads nothing extra and never delays a merge, so adding one cannot change a " +
                 "commit." + BR +
                 "A match whose target was not loaded is skipped, not an error." + BR +
-                "Takes an <input>:: prefix; one quoted argument may hold several." + BR +
+                "Takes an <input>:: prefix and a :<destination>, as --ref does." + BR +
+                "One quoted argument may hold several." + BR +
                 "Default: none."
         )
 

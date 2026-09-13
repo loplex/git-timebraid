@@ -360,6 +360,39 @@ branch was meant to keep out.
   the two are separate flags; [which refs are carried
   over](how-it-works.md#which-refs-are-carried-over) works out how.
 
+### Carrying a branch over as a tag
+
+A ref pattern may end in a destination, after a single `:`, and it says where the matches land:
+
+```bash
+--ref 'legacy::refs/heads/*:refs/tags/'
+```
+
+`legacy`'s branches become **tags** of the output — `refs/tags/legacy/wip` and so on — while its
+mainline stays the braid's branch and every other input is untouched. That is the archiving case: a
+repository with forty dead branches, all of them wanted for the record, none of them wanted as
+branches, and the commits only they reach wanted along with them.
+
+The redirection rides on the pattern that selects the refs rather than on a flag of its own, which is
+what keeps the two from drifting: the glob is written once. Git spells the same idea as a two-sided
+refspec, `+refs/heads/*:refs/remotes/origin/*`, where the left half says what is read and the right
+half what it is called.
+
+- The destination is a **namespace**: `refs/tags/` or `refs/heads/`, and nothing deeper. The prefix
+  under it stays `--tag-prefix` or `--branch-prefix`, whichever the destination's kind carries.
+- It works the other way too — `--ref 'refs/tags/release/*:refs/heads/'` makes branches of a release
+  series. A branch points at a commit and nothing else, so an annotated tag loses its annotation on
+  the way; that is a deliberate flattening rather than a quiet one.
+- A branch has no annotation to lose, so a branch carried over as a tag is a **lightweight** tag.
+- It is available on `--ref` and `--label-ref` — the two that write refs. `--interleave-ref` decides
+  what may weigh on the braid and writes nothing, so a destination there is refused rather than
+  accepted and ignored.
+- The mainline is never redirected. It is loaded whatever the patterns say, so a pattern reaching it
+  reaches a ref the run never asked to carry over.
+- Where two patterns match one ref, **a scoped pattern beats an unscoped one**, which is what makes
+  *this input's branches as tags, everything else as it stands* writable. Between two of the same
+  scope the one written first decides, however specific the other is.
+
 ### Saying it for one input only
 
 Every ref pattern takes an optional `<input>::` scope, naming which input it speaks for. Without one
@@ -377,6 +410,17 @@ anywhere in a ref name, so a `::` is never part of the pattern. An `<input>::` n
 that is not an input is refused, so a typo is not a pattern that quietly matches nothing. An empty
 scope, `::refs/heads/main`, is refused too, the unscoped form already saying it, and so is a scope
 written with one colon, `backend:refs/heads/main`, naming the form that works.
+
+A value is therefore `[<input>::]<pattern>[:<destination>]`: after the scope, a single `:` begins
+a [destination](#carrying-a-branch-over-as-a-tag). Neither a pattern nor an input's name can hold a
+colon of its own, so in a well-formed value the two separators cannot be confused.
+
+| written                           | input    | pattern            | destination  |
+|-----------------------------------|----------|--------------------|--------------|
+| `refs/heads/*`                    | every    | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*`           | backend  | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*:refs/tags/`| backend  | `refs/heads/*`     | `refs/tags/` |
+| `refs/heads/*:refs/tags/`         | every    | `refs/heads/*`     | `refs/tags/` |
 
 **One quoted argument may hold several values, separated by spaces**, which is the same rule read
 again: a space cannot occur in a ref name either, so the split can never cut a pattern in half. These
@@ -628,14 +672,17 @@ Which history is read, and how it interleaves:
                                  alike (repeatable).
                                  Patterns are matched against full ref names, and may be prefixed
                                  <input>:: to narrow one input.
+                                 A :<destination> after the pattern writes the matches elsewhere:
+                                 <pattern>:refs/tags/ carries branches over as tags.
                                  One quoted argument may hold several, separated by spaces.
-                                 Default: every ref.
+                                 Default: every ref, each in the namespace it came from.
   --label-ref=<text>             Also recreate the refs matching this glob whose target the run
                                  already holds (repeatable).
                                  Reads nothing extra and never delays a merge, so adding one cannot
                                  change a commit.
                                  A match whose target was not loaded is skipped, not an error.
-                                 Takes an <input>:: prefix; one quoted argument may hold several.
+                                 Takes an <input>:: prefix and a :<destination>, as --ref does.
+                                 One quoted argument may hold several.
                                  Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).

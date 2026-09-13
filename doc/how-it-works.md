@@ -302,11 +302,11 @@ already admitted, so widening the interleave cannot widen what is read.
 That last clause is also why there is a third flag. One selection answers three questions, and they
 do not carry the same risk:
 
-| Question                      | Decided by                                                | What changes when it changes        |
-|-------------------------------|-----------------------------------------------------------|-------------------------------------|
-| What is read into the graph   | `--ref`, and the mainline whatever it says                | how many commits the output holds   |
-| What may move the braid       | `--interleave-ref`, matched against what `--ref` admitted | the braid's commits, and their shas |
-| What gets a ref in the output | `--ref` and `--label-ref`                                 | nothing but the ref names           |
+| Question                                              | Decided by                                                | What changes when it changes        |
+|-------------------------------------------------------|-----------------------------------------------------------|-------------------------------------|
+| What is read into the graph                           | `--ref`, and the mainline whatever it says                | how many commits the output holds   |
+| What may move the braid                               | `--interleave-ref`, matched against what `--ref` admitted | the braid's commits, and their shas |
+| What gets a ref in the output, and in which namespace | `--ref` and `--label-ref`, with their destination         | nothing but the ref names           |
 
 Naming is free, and a caller should be able to ask for it generously. Weighing is a scheduling
 decision, and should be deliberate and small. Because `--interleave-ref` can only match what `--ref`
@@ -321,9 +321,12 @@ something that can be stated and tested, rather than a coincidence of two globs 
 **adding any `--label-ref` to a run cannot change a single commit the run writes.**
 
 Git draws the same distinction with a two-sided refspec — `+refs/heads/*:refs/remotes/origin/*`,
-where the left half says what is fetched and the right half what it is called. This tool has only the
-left half, the right being implied by the prefix rules above; `--label-ref` is how the right half is
-asked for alone.
+where the left half says what is fetched and the right half what it is called. `--label-ref` is how
+the right half is asked for alone. The right half's *namespace* is asked for the same way git spells
+it, after a `:` on the pattern: `--ref 'legacy::refs/heads/*:refs/tags/'` reads `legacy`'s branches
+and writes them as tags, which is how a dead branch is kept for the record without keeping it as a
+branch or dropping the commits only it reaches. Everything under that namespace is still the prefix
+rules above.
 
 [Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
 and lists what each output holds — including the commit that disappears entirely under `-b main`,
