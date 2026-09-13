@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Twenty-six changes alter what a command line written for 0.1.0 does:
+Twenty-seven changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory,
@@ -107,6 +107,9 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
 
 - `--mainline-branch` naming a revision rather than a branch, as `main~1` or `main^` does, is refused.\
   0.1.0 braided along that commit on a dry run, and the run itself failed after creating the output.
+
+- A ref pattern that can match nothing under `refs/heads/` or `refs/tags/` is refused.\
+  `--interleave-ref wip` matched nothing in 0.1.0; it is now an error, and so is any short name.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
