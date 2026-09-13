@@ -198,8 +198,63 @@ object CommitGraphReader {
      * exactly — there is no name for which the two select differently, and nothing to escape. Nor
      * can it contain a space, which is what lets one argument carry several of them: see [words],
      * through which `-b` passes as every option taking a ref pattern does.
+     *
+     * The rest of the ref-pattern grammar belongs around the branch name rather than inside it, so
+     * only the pattern is prefixed and the scope, the subtracting `^` and a destination are held
+     * back: `backend::^wip` becomes `backend::^refs/heads/wip`. Neither a `:` nor a `^` can occur in
+     * a ref name, so nothing a branch could legitimately be called is mistaken for one of them.
+     *
+     * What is malformed as a `-b` value is refused here, naming `-b` and the text as written: its
+     * fields, and its scope and destination by the rules a `--ref` is held to ([scopeOf],
+     * [destinationOf]). Left to the pattern parser the same refusal would name `--ref` and the
+     * desugared value, neither of which the user typed.
+     *
+     * @param inputs the names an `<input>::` scope may take.
      */
-    fun branchPattern(name: String): String = Constants.R_HEADS + name
+    fun branchPattern(value: String, inputs: Collection<String>): String {
+        val (input, written) = scopeOf("-b", value, inputs)
+        val negated = written.startsWith('^')
+        val fields = (if (negated) written.substring(1) else written).split(':')
+        refuseFields("-b", value, fields, inputs, negated, "<branch>")
+        val name = fields[0]
+        require(name.isNotEmpty()) { if (negated) "-b '$value' subtracts no branch" else "-b '$value' names no branch" }
+        require(!name.contains('^')) {
+            "-b '$value' holds a '^' inside the branch name; git refuses one anywhere in a ref " +
+                "name, so it can only be the leading mark that makes a pattern subtract"
+        }
+        val heads = Constants.R_HEADS + name
+        val destination = fields.getOrNull(1)?.let { destinationOf("-b", value, it, negated) }
+        destination?.let { checkDestination("-b", value, heads, RefPattern(heads, it)) }
+        return (if (input == null) "" else input + SCOPE) + (if (negated) "^" else "") + heads +
+            (if (destination == null) "" else ":$destination")
+    }
+
+    /**
+     * The [destination] a refspec gave, refused on a pattern that subtracts, since nothing lands from
+     * it, on an option that takes none, and when it is empty; whether it can be carried out is
+     * [checkDestination]'s to say.
+     *
+     * @param allowed whether [option] takes a destination at all.
+     */
+    private fun destinationOf(
+        option: String,
+        value: String,
+        destination: String,
+        negated: Boolean,
+        allowed: Boolean = true,
+    ): String {
+        require(!negated) {
+            "$option '$value' gives a destination to a pattern that subtracts; nothing " +
+                "lands from it, so there is nothing to name"
+        }
+        require(allowed) {
+            "$option '$value' gives a destination, and $option decides what a run " +
+                "reads rather than what it writes; a destination belongs on -b, --ref " +
+                "or --label-ref"
+        }
+        require(destination.isNotEmpty()) { "$option '$value' names no destination" }
+        return destination
+    }
 
     /**
      * @param refs glob patterns matched against full ref names — `refs/heads/main` for one branch,
@@ -634,7 +689,7 @@ object CommitGraphReader {
                 // a ref name, so one here can only be the mark.
                 val negated = written.startsWith('^')
                 val fields = (if (negated) written.substring(1) else written).split(':')
-                refuseFields(option, value, fields, inputs, negated)
+                refuseFields(option, value, fields, inputs, negated, "<pattern>")
                 val glob = fields[0]
                 require(glob.isNotEmpty()) {
                     if (negated) "$option '$value' subtracts no pattern" else "$option '$value' names no pattern"
@@ -649,19 +704,8 @@ object CommitGraphReader {
                         "nothing for it to allow. Leave it out"
                 }
 
-                val destination = fields.getOrNull(1)?.let { destination ->
-                    require(!negated) {
-                        "$option '$value' gives a destination to a pattern that subtracts; nothing " +
-                            "lands from it, so there is nothing to name"
-                    }
-                    require(destinations) {
-                        "$option '$value' gives a destination, and $option decides what a run " +
-                            "reads rather than what it writes; a destination belongs on --ref or " +
-                            "--label-ref"
-                    }
-                    require(destination.isNotEmpty()) { "$option '$value' names no destination" }
-                    destination
-                }
+                val destination =
+                    fields.getOrNull(1)?.let { destinationOf(option, value, it, negated, allowed = destinations) }
                 val pattern = RefPattern(glob, destination, negated)
                 checkDestination(option, value, glob, pattern)
                 // After the destination, because whether a pattern may read a namespace the output
@@ -1037,9 +1081,11 @@ object CommitGraphReader {
                 "$option '$value' begins with '^', where the input goes, and a mainline is a branch to " +
                     "braid along, not a pattern a '^' could subtract from"
             } else {
+                // -b names a branch, so the pattern it is offered is a branch's name too: typed back
+                // into -b, a full name would subtract a branch called refs/heads/..., which is none.
+                val pattern = if (option == "-b") "wip/*" else "refs/heads/wip/*"
                 "$option '$value' begins with '^', where the input goes. The mark belongs in front of " +
-                    "the pattern: 'backend::^refs/heads/wip/*' subtracts in one input, " +
-                    "'^refs/heads/wip/*' in every one"
+                    "the pattern: 'backend::^$pattern' subtracts in one input, '^$pattern' in every one"
             }
         }
         require(input in inputs) {
@@ -1056,6 +1102,7 @@ object CommitGraphReader {
      * input's name: a scope written with one colon, which reads as a pattern and a destination.
      *
      * @param negated whether a `^` stood in front of [fields], which the form offered keeps, once.
+     * @param form what the first field is called in the form a refusal quotes.
      */
     private fun refuseFields(
         option: String,
@@ -1063,10 +1110,11 @@ object CommitGraphReader {
         fields: List<String>,
         inputs: Collection<String>,
         negated: Boolean,
+        form: String,
     ) {
         require(fields.size <= 2) {
             "$option '$value' has ${fields.size} ':'-separated fields after its scope; the form is " +
-                "[<input>::][^]<pattern>[:<destination>]"
+                "[<input>::][^]$form[:<destination>]"
         }
         require(fields.size == 1 || fields[0] !in inputs) {
             val mark = if (negated && !fields[1].startsWith('^')) "^" else ""

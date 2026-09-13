@@ -413,7 +413,9 @@ read as input repositories.
 ### Choosing which refs are carried over
 
 `-b` and `--ref` are one selection rather than two: `-b main` *is* `--ref refs/heads/main`, and
-naming any ref at all, other than with a `^`, leaves out every ref not named.
+naming any ref at all, other than with a `^`, leaves out every ref not named. The rest of the
+pattern grammar goes around the short name rather than inside it, so `-b backend::^wip` is
+`--ref backend::^refs/heads/wip`.
 
 So a run narrowed to a branch carries no tags unless it says so — write both halves out to keep
 them:
@@ -500,7 +502,8 @@ overrides exactly the part of the name it writes out** — nothing, the namespac
   which it empties once the braid is written.
 - Where two patterns match one ref, **a scoped pattern beats an unscoped one**, which is what makes
   *this input's branches as tags, everything else as it stands* writable. Between two of the same
-  scope the one written first decides, however specific the other is.
+  scope the one written first decides, however specific the other is, and a `-b` counts as written
+  before every `--ref`.
 - The mainline is never redirected. It is loaded whatever the patterns say, so a pattern reaching it
   reaches a ref the run never asked to carry over.
 
@@ -846,9 +849,12 @@ Which history is read, and how it interleaves:
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
                                  Default: committer.
-  -b, --branch=<text>            Carry over only these branches, by short name (repeatable).
-                                 Shorthand for --ref refs/heads/<name>, so naming one leaves out
-                                 every ref not named, tags included.
+  -b, --branch=<text>            Carry over these branches, by short name, or with ^ leave them out
+                                 (repeatable).
+                                 Shorthand for --ref refs/heads/<name>, so naming one without a ^
+                                 leaves out every ref not named, tags included.
+                                 Takes an <input>:: prefix, a ^ in front of the branch and a
+                                 :<destination>, as --ref does.
                                  One quoted argument may hold several, separated by spaces.
   --ref=<text>                   Carry over the refs matching this glob, branches and tags alike, or
                                  with ^ leave them out (repeatable).

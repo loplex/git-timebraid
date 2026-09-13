@@ -138,9 +138,12 @@ private class HistoryOptions : OptionGroup(
 
     val branches by option("-b", "--branch").multiple()
         .help(
-            "Carry over only these branches, by short name (repeatable)." + BR +
-                "Shorthand for --ref refs/heads/<name>, so naming one leaves out every ref not " +
-                "named, tags included." + BR +
+            "Carry over these branches, by short name, or with ^ leave them out " +
+                "(repeatable)." + BR +
+                "Shorthand for --ref refs/heads/<name>, so naming one without a ^ leaves out " +
+                "every ref not named, tags included." + BR +
+                "Takes an <input>:: prefix, a ^ in front of the branch and a :<destination>, " +
+                "as --ref does." + BR +
                 "One quoted argument may hold several, separated by spaces."
         )
 
@@ -438,7 +441,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             keepRemotes = outputContent.keepRemotes,
             orderBy = history.orderBy,
             mainlineBranch = history.mainlineBranch,
-            refs = branchPatterns(history.branches) + history.refs,
+            refs = branchPatterns(history.branches, merged.map { it.name }) + history.refs,
             interleaveRefs = history.interleaveRefs,
             labelRefs = history.labelRefs,
             notes = outputContent.notes,
@@ -922,16 +925,16 @@ private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageE
 }
 
 /**
- * `-b` values as the `--ref` patterns they are shorthand for.
+ * `-b` values as the `--ref` patterns they are shorthand for, a scope checked against [inputs].
  *
  * The reader refuses a malformed value with an [IllegalArgumentException], the way it does for
  * every other caller. It becomes a [UsageError] here because the request is built before `run`'s
  * own catch, so an unwrapped one would reach the user as a stack trace rather than as the usage
  * error every other mistyped argument gets.
  */
-private fun branchPatterns(values: List<String>): List<String> =
+private fun branchPatterns(values: List<String>, inputs: List<String>): List<String> =
     try {
-        CommitGraphReader.words(values, "-b").map(CommitGraphReader::branchPattern)
+        CommitGraphReader.words(values, "-b").map { CommitGraphReader.branchPattern(it, inputs) }
     } catch (e: IllegalArgumentException) {
         throw UsageError(e.message ?: "a -b value could not be read")
     }

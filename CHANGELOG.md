@@ -30,9 +30,8 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
 - `-b` takes a pattern, as `--ref refs/heads/<value>` does, rather than a branch's exact name.\
   `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
   A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.\
-  A `:<destination>` after the branch means what it means in `--ref`, and a value it does not fit
-  is refused.\
-  A `^` in the branch is refused.
+  An `<input>::` scope, a `^` that subtracts and a `:<destination>` around the branch mean what
+  they mean in a ref pattern, and a value they do not fit is refused.
 
 - Every branch is now qualified as `<repo>/<branch>`, not only one two inputs share.\
   One that then sits under the braid's own branch refuses the run: input `main`'s `x`, qualified as
@@ -215,8 +214,8 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
   and deletes everything under it once the braid is written.\
   That is how forty dead branches are kept for the record without being kept as branches — and
   without dropping the commits only they reach.\
-  Available on `--ref` and `--label-ref`, the two that write refs; refused on `--interleave-ref`,
-  which writes none.\
+  Available on `-b`, `--ref` and `--label-ref`, the three that write refs; refused on
+  `--interleave-ref`, which writes none.\
   Unlike git's fetch, a destination may be a namespace and may hold `{repo}`, a pattern with stars
   may go without a destination, which git's fetch allows only in a negative refspec, or name one
   ref as its destination, and there is no `+`, no empty pattern or destination and no short name.
@@ -297,6 +296,12 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
   A bare star opts in every tag as well, and a tag on a mainline reaches what it had merged.\
   It subtracts the ref, not the commits behind it — they stay in scope if another opted-in ref
   reaches them.
+
+- **`-b` takes the rest of the ref-pattern grammar around its branch name.**\
+  An `<input>::` scope, a `^` in front of the branch and a `:<destination>`:
+  `-b backend::^wip` is `--ref backend::^refs/heads/wip`.\
+  Only the branch is put under `refs/heads/`, and neither mark can occur in a ref name, so no
+  branch is ever read as one.
 
 - **`--label-ref PATTERN`** — also recreate the refs matching this glob whose target the run
   already holds (repeatable).\
