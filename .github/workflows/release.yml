@@ -20,8 +20,10 @@ name: Release
 #        git tag -a v1.2.3 -m 'git-timebraid 1.2.3'
 #        git push origin v1.2.3
 #
-# Afterwards, open the next version on the branch: set the pom to 1.3.0-SNAPSHOT and commit, or the
-# tag after this one has nothing to agree with.
+# What that leaves is a draft. Publishing it is also what opens the next version: post-release.yml
+# raises the pom to 1.2.4-SNAPSHOT on every branch the tag sits on, so the tag after this one has
+# something to agree with. Nothing moves before then, which is what leaves a deleted draft's version
+# free to be cut again.
 #
 # What comes out is a *draft* release holding one portable archive, one archive per platform, the
 # standalone jar, and a SHA256SUMS file. Nothing is published to anyone until a human opens that
@@ -68,7 +70,7 @@ jobs:
     name: changelog section
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the changelog has a dated section for this tag
         if: github.ref_type == 'tag'
@@ -86,9 +88,9 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -113,7 +115,7 @@ jobs:
         shell: bash
         run: .github/scripts/smoke-distribution.sh target/git-timebraid-${{ steps.version.outputs.version }}.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: portable
           path: |
@@ -148,9 +150,9 @@ jobs:
           - { os: macos-latest,     label: macos-aarch64 }
           - { os: windows-latest,   label: windows-x64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -175,7 +177,7 @@ jobs:
       # the only thing this job has to contribute. Naming the platform rather than globbing for
       # it also checks the matrix against the pom: `if-no-files-found: error` fires if the six
       # os/arch profiles ever name a runner something other than what this matrix calls it.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundled-${{ matrix.label }}
           path: |
@@ -191,9 +193,13 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      # v8 stopped unzipping unconditionally: it reads the Content-Type and leaves a
+      # non-zipped download alone. The upload side archives by default, so everything the
+      # jobs above stored arrives zipped and is unpacked here as it always was -- what the
+      # step below globs for are the archives themselves, not a nest of zips.
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -212,8 +218,8 @@ jobs:
       # so they can be read and edited without picking them out of a YAML string.
       # The body is the static install text plus the changelog's own section for this tag, so the
       # entry is written once and read where it is asked for. Relative links in it are rewritten
-      # against the tag by the script: they have to be relative in the repository, and absolute on
-      # a page that is not inside the tree.
+      # against the tag by the script: they have to be relative in the repository, where
+      # check-links.py resolves them, and absolute on a page that is not inside the tree.
       - name: Create the draft release
         shell: bash
         env:

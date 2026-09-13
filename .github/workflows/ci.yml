@@ -24,10 +24,10 @@ jobs:
             jlink_compress: "zip-6"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -38,6 +38,18 @@ jobs:
       # on the GitHub-hosted runners; this just records the version.
       - name: Show git version
         run: git --version
+
+      # Not a nicety ahead of the compiler: this catches what the compiler does not. Kotlin nests
+      # block comments, so `/` followed by `*` in a KDoc -- how a ref glob is written -- opens one
+      # that swallows what follows. Any `*/` below it closes that comment again, and where what
+      # remains parses, the file compiles with a hole in it and nothing is reported. A @Test can
+      # stop running while the build stays green. Where it does fail, it fails as `Unclosed comment`
+      # at the last line and a syntax error far above the glob, so this says the line either way.
+      #
+      # Linux only: it reads the tracked sources, which do not differ per platform.
+      - name: Check no block comment opens another
+        if: runner.os == 'Linux'
+        run: .github/scripts/check-comments.sh
 
       - name: mvn verify
         run: mvn -B -ntp verify
@@ -64,10 +76,53 @@ jobs:
 
       - name: Upload test reports on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-${{ matrix.os }}-jdk${{ matrix.java }}
           path: |
             target/surefire-reports/
             target/failsafe-reports/
           if-no-files-found: ignore
+
+  # A renamed section leaves the links that pointed into it aimed at an anchor which no longer
+  # exists, and the rendered page gives no sign of that -- the link just lands at the top of the
+  # file. An overlong code block goes just as quietly, from the other side: GitHub scrolls a block
+  # rather than wrapping it, so the end of the line sits behind a scrollbar. `mvn verify` cannot
+  # see either one: it tests behaviour. This reads the documents themselves.
+  #
+  # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
+  # job wants nothing but a checkout, and it finishes in under a second.
+  docs:
+    name: doc and KDoc links resolve, blocks fit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check every relative link and anchor resolves
+        run: .github/scripts/check-links.py
+
+      # Width is its own script and its own step, because it is its own rule: a link that goes
+      # nowhere and a block too wide to read fail for unrelated reasons, and a step covering both
+      # says neither when it goes red.
+      - name: Check every code block fits the width it is shown at
+        run: .github/scripts/check-blocks.py
+
+      # One spelling of the punctuation dash, where the spelling is a choice: a comment reaches no
+      # console, so nothing forces the ASCII form there.
+      - name: Check the punctuation dash is written one way
+        run: .github/scripts/check-dashes.py
+
+      # The question check-links.py asks of the documentation, asked of the sources. A KDoc
+      # `[Symbol]` is a link, and the Kotlin compiler does not read it, so one whose target was
+      # deleted goes on compiling and goes on looking authoritative. Java has had
+      # `javadoc -Xdoclint` for this since JDK 8 and Kotlin has no equivalent in the compiler.
+      - name: Check every KDoc link resolves
+        run: .github/scripts/check-kdoc-links.py
+
+      # Kotlin binds a KDoc to the declaration after it, so two in a row document one thing and the
+      # first documents nothing. A documented function inserted between an existing KDoc and its
+      # declaration makes exactly that, and compiles; an undocumented one takes the KDoc for itself,
+      # which this does not see.
+      - name: Check no doc comment stands on another
+        run: .github/scripts/check-doc-comments.py

@@ -62,8 +62,8 @@ differ in the paths).
 The same CLI, with every ref opted into the interleave:
 
 ```
-mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
-    --order-by committer --interleave-ref * \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph \
+    --no-bare --order-by committer --interleave-ref * \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
 
