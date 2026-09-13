@@ -443,6 +443,7 @@ class MergeCommandOptionsTest {
         for (pair in listOf(
             listOf("--progress", "--no-progress"),
             listOf("--quiet", "--progress"),
+            listOf("--ascii", "--no-ascii"),
         )) {
             val refused = MergeCommand().test(
                 listOf("-o", tmp.resolve("x-${pair.joinToString("")}.git").toString()) + pair + backend

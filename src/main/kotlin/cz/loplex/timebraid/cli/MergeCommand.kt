@@ -243,6 +243,21 @@ private class ReportingOptions : OptionGroup(
             "Draw no progress even when stderr is a terminal." + BR +
                 "Default: drawn when stderr is a terminal, and not otherwise."
         )
+
+    // The same two-flag shape, and for the same reason: the default is neither, a run working out
+    // for itself what its console can encode. These say what it may draw with when that is wrong —
+    // in either direction, since the check can misjudge a console both ways.
+    val ascii by option("--ascii").flag()
+        .help(
+            "Draw progress with ASCII characters only." + BR +
+                "For a console that shows the bar as question marks."
+        )
+
+    val noAscii by option("--no-ascii").flag()
+        .help(
+            "Draw progress with the full character set." + BR +
+                "Default: whichever of the two the console can encode."
+        )
 }
 
 /**
@@ -319,6 +334,9 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         if (reporting.progress && reporting.noProgress) {
             throw UsageError("--progress and --no-progress cannot be combined")
         }
+        if (reporting.ascii && reporting.noAscii) {
+            throw UsageError("--ascii and --no-ascii cannot be combined")
+        }
         if (reporting.quiet && reporting.progress) {
             // --quiet is about saying nothing, and a bar is not nothing.
             throw UsageError("--quiet and --progress cannot be combined")
@@ -373,17 +391,23 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             ),
             dryRun = reporting.dryRun,
         )
+        // What the drawing may be spelled in: read off stderr, or said outright by --ascii or
+        // --no-ascii. The terminal and the spinners have to agree, so it is worked out once.
+        val charset = Glyphs.charsetFor(reporting.ascii, reporting.noAscii)
         val progress = Progress(
             level = Progress.level(reporting.quiet, reporting.verbose),
             sink = { echo(it, err = true) },
             terminal = when {
                 reporting.noProgress -> null
-                else -> Progress.stderrTerminal(currentContext.terminal, force = reporting.progress)
+                else -> Progress.stderrTerminal(
+                    currentContext.terminal, force = reporting.progress, charset = charset
+                )
             },
             // Mordant's width, which is the real terminal's when there is one, COLUMNS when that is
             // set, and its own fallback otherwise — so a heading is ruled to the same width the
             // help is laid out to.
             width = currentContext.terminal.size.width,
+            charset = charset,
         )
 
         val result = try {

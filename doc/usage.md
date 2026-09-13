@@ -415,6 +415,13 @@ Separately, because the answers differ. A cp932 console, which is the default on
 carries the character the bar is drawn with and has no braille at all, so one answer for both would
 either strand the spinner or give up a bar that would have drawn.
 
+Two options override that, for a console the check reads wrong in either direction:
+
+| option       | effect                                       |
+|--------------|----------------------------------------------|
+| `--ascii`    | draw with ASCII whatever the console reports |
+| `--no-ascii` | draw with the full set whatever it reports   |
+
 Colour is not part of this and does not change: a console short of characters is not short of
 colour.
 
@@ -539,6 +546,10 @@ Inspecting a run:
                      For watching a log of a run that is taking too long.
   --no-progress      Draw no progress even when stderr is a terminal.
                      Default: drawn when stderr is a terminal, and not otherwise.
+  --ascii            Draw progress with ASCII characters only.
+                     For a console that shows the bar as question marks.
+  --no-ascii         Draw progress with the full character set.
+                     Default: whichever of the two the console can encode.
 
 Options:
   --version   Show the version and exit

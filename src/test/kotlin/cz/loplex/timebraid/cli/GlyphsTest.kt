@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets.US_ASCII
 import java.nio.charset.StandardCharsets.UTF_8
 
 /**
@@ -114,6 +115,70 @@ class GlyphsTest {
             charset.newEncoder().canEncode(spinnerFrames(charset)),
             "this run would draw a spinner $charset cannot encode",
         )
+    }
+
+    /**
+     * The two options do not add a second way of choosing: they name the charset the same decision
+     * is then made against, so a forced run and an automatic one go down one path.
+     */
+    @Test
+    fun `asking outright is asking about a different console, not taking a different route`() {
+        val forcedAscii = Glyphs.charsetFor(forceAscii = true, forceUnicode = false)
+        // Asked of ASCII itself, not of the charset --ascii handed back: a theme is chosen to suit
+        // whatever charset it is given, so that question answers yes for any of them.
+        assertTrue(
+            US_ASCII.newEncoder().canEncode(barGlyphs(Glyphs.themeFor(forcedAscii))),
+            "--ascii drew something outside ASCII",
+        )
+        assertEquals(
+            "-/\\|", spinnerFrames(forcedAscii).toSortedSet().joinToString(""),
+            "--ascii drew a spinner outside ASCII",
+        )
+
+        val forcedUnicode = Glyphs.charsetFor(forceAscii = false, forceUnicode = true)
+        // The console it asks about, which is the whole of what the flag does: the bar and the
+        // spinner below would come out the same for any charset that carries their glyphs.
+        assertEquals(UTF_8, forcedUnicode, "--no-ascii asked about some other console")
+        assertSame(
+            Theme.Default, Glyphs.themeFor(forcedUnicode),
+            "--no-ascii settled for less than mordant's own bar",
+        )
+        assertTrue(
+            spinnerFrames(forcedUnicode).all { it in BRAILLE_BLOCK },
+            "--no-ascii settled for less than mordant's own spinner",
+        )
+
+        assertSame(
+            Glyphs.stderrCharset, Glyphs.charsetFor(forceAscii = false, forceUnicode = false),
+            "with neither given, the console is what decides",
+        )
+    }
+
+    /**
+     * The same, on a console that is not UTF-8. Asked of this run's own console, the flags cannot be
+     * told from it wherever stderr is UTF-8 already, as it is on the machines this suite runs on.
+     */
+    @Test
+    fun `on a console that is not UTF-8, each flag still names its own charset`() {
+        val cp437 = Charset.forName("cp437")
+        assertEquals(UTF_8, Glyphs.charsetFor(forceAscii = false, forceUnicode = true, console = cp437))
+        assertEquals(US_ASCII, Glyphs.charsetFor(forceAscii = true, forceUnicode = false, console = cp437))
+        assertEquals(cp437, Glyphs.charsetFor(forceAscii = false, forceUnicode = false, console = cp437))
+    }
+
+    @Test
+    fun `the console's charset is read from the first property that names one`() {
+        val properties = mapOf("stderr.encoding" to "no-such-charset", "sun.stderr.encoding" to "cp852")
+        assertEquals(Charset.forName("cp852"), Glyphs.consoleCharset { properties[it] })
+        assertEquals(Charset.forName("cp437"), Glyphs.consoleCharset { if (it == "native.encoding") "cp437" else null })
+        assertEquals(Charset.defaultCharset(), Glyphs.consoleCharset { null })
+        // All three usable at once, as on a Windows console whose code page is not the system's:
+        // the first wins, and without it the second.
+        val all = mapOf(
+            "stderr.encoding" to "cp852", "sun.stderr.encoding" to "cp437", "native.encoding" to "windows-1252",
+        )
+        assertEquals(Charset.forName("cp852"), Glyphs.consoleCharset { all[it] })
+        assertEquals(Charset.forName("cp437"), Glyphs.consoleCharset { if (it == "stderr.encoding") null else all[it] })
     }
 
     /** What a bar is drawn with, read back from the theme the same way the decision reads it. */

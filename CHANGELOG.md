@@ -205,6 +205,7 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   The bar and the spinner are drawn in what the console can encode, each asked separately: a charset
   that carries one of them and not the other keeps the one it can draw, and the other falls back to
   ASCII.\
+  `--ascii` and `--no-ascii` override that check in either direction.\
   Ctrl-C gives the cursor back that the animation hid. A signal unwinds no `finally`, so this is a
   shutdown hook of this program's own, which stops the threads still painting before it writes.\
   `doc/usage.md` says what a run prints, stream by stream.

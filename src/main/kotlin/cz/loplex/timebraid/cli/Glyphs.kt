@@ -4,6 +4,7 @@ import com.github.ajalt.mordant.rendering.Theme
 import com.github.ajalt.mordant.rendering.plus
 import com.github.ajalt.mordant.widgets.Spinner
 import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 
 /**
  * What the progress animation may be drawn with, asked of the charset it is going to be encoded in.
@@ -47,12 +48,37 @@ internal object Glyphs {
      * the last resort rather than the first guess: since JDK 18 it reads UTF-8 whatever the console
      * is encoded in, which is the wrong answer to exactly the question being asked here.
      */
-    val stderrCharset: Charset by lazy {
+    val stderrCharset: Charset by lazy { consoleCharset(System::getProperty) }
+
+    /**
+     * [stderrCharset] as read through [property], which a test can stand in for: the system
+     * properties are the JVM's, and a suite running on a UTF-8 console cannot change them.
+     */
+    internal fun consoleCharset(property: (String) -> String?): Charset =
         sequenceOf("stderr.encoding", "sun.stderr.encoding", "native.encoding")
-            .mapNotNull { System.getProperty(it) }
+            .mapNotNull { property(it) }
             .mapNotNull { runCatching { Charset.forName(it) }.getOrNull() }
             .firstOrNull() ?: Charset.defaultCharset()
-    }
+
+    /**
+     * Which charset the drawing is decided against, given what the caller asked for.
+     *
+     * The two flags do not switch a mode on: they answer the one question this file asks, which is
+     * what the console can take, and the way to say "nothing but ASCII" or "anything at all" is to
+     * name a charset that it is true of. So a forced run goes down the same path an automatic one
+     * does, and there is no second way of choosing a theme to keep in step with the first.
+     *
+     * [forceAscii] wins if both are somehow given; the command line refuses that pair before it gets
+     * here.
+     *
+     * @param console what the console itself reports, [stderrCharset] unless a test names another.
+     */
+    fun charsetFor(forceAscii: Boolean, forceUnicode: Boolean, console: Charset = stderrCharset): Charset =
+        when {
+            forceAscii -> StandardCharsets.US_ASCII
+            forceUnicode -> StandardCharsets.UTF_8
+            else -> console
+        }
 
     /** The theme to draw a bar with, on output encoded in [charset]. */
     fun themeFor(charset: Charset): Theme =
