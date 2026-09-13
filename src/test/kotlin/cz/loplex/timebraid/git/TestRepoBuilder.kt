@@ -230,7 +230,8 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         return inserter.insert(tree)
     }
 
-    private fun point(ref: String, target: ObjectId) {
+    /** Points any full ref name at [target] — how a fixture grows a namespace of its own. */
+    fun point(ref: String, target: ObjectId) {
         repository.updateRef(ref).apply {
             // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) — same asymmetry as
             // above: assigning through the property does not compile.

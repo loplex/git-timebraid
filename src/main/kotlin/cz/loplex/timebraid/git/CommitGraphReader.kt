@@ -68,8 +68,23 @@ class SourceInputs(
      * carries a single branch, [BraidInputs.mainlineBranch], whatever these say.
      */
     val mainlineBranch: String,
-    val branches: List<BraidRef>,
-    val tags: List<BraidTag>,
+    /**
+     * Where [mainlineBranch] pointed in the input, as the input's own sha.
+     *
+     * Carried separately from [refs] because the mainline is read whatever the selection says,
+     * so a run narrowed away from it holds its commits with nothing in [refs] naming them.
+     */
+    val mainlineTip: ObjectId,
+    /**
+     * Every ref this input contributes to the output, in the order they were read: its branches,
+     * its tags, and whatever a pattern named beyond those two namespaces.
+     *
+     * One list rather than one per kind, because a destination unties an output ref from the kind
+     * it had at home — a branch may arrive as a tag and a Gerrit change as either — and a split by
+     * the input's kind would say nothing about what the output holds while a split by the output's
+     * would lose what the patterns are matched against.
+     */
+    val refs: List<BraidOutRef>,
     /** Notes refs carried over, empty unless the run asked for them. */
     val notes: List<BraidNotes> = emptyList(),
     /**
@@ -108,46 +123,59 @@ class BraidNotes(
     val message: String,
 )
 
-/** The two ref namespaces this program reads from, and the two it writes into. */
+/** The two ref namespaces this program enumerates by default, and names a rule for. */
 enum class RefKind(val namespace: String) {
     BRANCH(Constants.R_HEADS),
     TAG(Constants.R_TAGS);
 
     companion object {
-        /** The kind a destination names, or `null` when [namespace] is neither of the two. */
+        /** The kind a namespace names, or `null` when it is neither of the two. */
         fun of(namespace: String): RefKind? =
             entries.firstOrNull { it.namespace == namespace || it.namespace == "$namespace/" }
     }
 }
 
 /**
- * A branch resolved to the commit it points at.
+ * One ref carried over: where it came from, what it points at, and what it is called in the output.
  *
- * [labelOnly] marks one attached by `--label-ref` rather than selected by `--ref`: it named a commit
- * the graph already held instead of bringing one in, and it is not eligible to weigh on the braid.
+ * The output name is held in two parts because the run may have written either, neither or both of
+ * them. [namespace] and [name] are always concatenated to make it; [prefixed] says whether the
+ * naming rule for [namespace] — `--branch-prefix`, `--tag-prefix` — goes between the two.
  *
- * [writeAs] is the namespace the output writes it into, which the pattern that matched it may set —
- * a branch carried over as a tag is how a dead branch is archived without dropping the commits only
- * it reaches. It changes nothing about the reading: [name] stays the input's own, and so does the
- * namespace every pattern is matched against.
+ * That is the whole of how a destination and a prefix get along. A run that gives no destination
+ * leaves both to the prefix rule; one that names a namespace takes that half; one that spells out a
+ * pattern takes all of it and the prefix stays out. Nothing here has to know which of the three
+ * happened.
  */
-class BraidRef(
-    val name: String,
+class BraidOutRef(
+    /**
+     * What this ref is called in the input, in full.
+     *
+     * Every pattern is matched against this — the selection, the labels and the interleave alike —
+     * because it is the only name that exists on both sides of a rename, and the only one a caller
+     * can see before the run.
+     */
+    val fullName: String,
     val commit: Commit,
+    /** Present when the input ref was an annotated tag object, and only then. */
+    val annotation: TagAnnotation? = null,
+    /**
+     * Whether this ref was attached by `--label-ref` rather than selected by `--ref`: it named a
+     * commit the graph already held instead of bringing one in, and it is not eligible to weigh on
+     * the braid.
+     */
     val labelOnly: Boolean = false,
-    val writeAs: RefKind = RefKind.BRANCH,
-)
-
-/** A tag resolved to the commit it peels to, keeping its annotation if it had one. */
-class BraidTag(
+    /** Namespace the output writes it into, `refs/heads/` and the like, with its trailing slash. */
+    val namespace: String,
+    /** Name below [namespace]. */
     val name: String,
-    val commit: Commit,
-    val annotation: TagAnnotation?,
-    /** As [BraidRef.labelOnly]. */
-    val labelOnly: Boolean = false,
-    /** As [BraidRef.writeAs]. */
-    val writeAs: RefKind = RefKind.TAG,
-)
+    /** Whether the prefix belonging to [namespace] goes between the two. */
+    val prefixed: Boolean = true,
+) {
+    /** Whether this ref is the one the braid already speaks for, and must not be written twice. */
+    fun isMainlineOf(input: SourceInputs): Boolean =
+        fullName == Constants.R_HEADS + input.mainlineBranch
+}
 
 /**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
@@ -175,18 +203,20 @@ object CommitGraphReader {
 
     /**
      * @param refs glob patterns matched against full ref names — `refs/heads/main` for one branch,
-     *   `refs/tags/v1.*` for a release series, a star alone for every ref — selecting which of each
-     *   input's branches and tags are loaded and later recreated. Empty selects them all, which is
-     *   the default. Branches and tags are selected by one set of patterns rather than one set
-     *   each, so a run says what it wants to carry over once and gets exactly that: naming only
-     *   branches leaves the tags behind, which is the whole point of being able to narrow.
+     *   `refs/tags/v1.*` for a release series, a star alone for every branch and tag — selecting
+     *   which of each input's refs are loaded and later recreated. Empty selects every branch and
+     *   tag, which is the default. Branches and tags are selected by one set of patterns rather
+     *   than one set each, so a run says what it wants to carry over once and gets exactly that:
+     *   naming only branches leaves the tags behind, which is the whole point of being able to
+     *   narrow.
      *
      *   The resolved mainline is loaded whatever the patterns say, since the braid is built along
      *   it, and the output's mainline branch is written from the braid's tip rather than from this
      *   selection ([BraidWriter] does that unconditionally).
      * @param interleaveRefs glob patterns matched against full ref names — `refs/tags/v1.*` for a
-     *   release series, a star alone for every ref — applied in every input repository, or in the
-     *   one an `<input>::` scope names. A matched ref's ancestry is allowed to delay a braid
+     *   release series, a star alone for every branch and tag, a ref of another namespace only by a
+     *   pattern naming that namespace — applied in every input repository, or in the one an
+     *   `<input>::` scope names. A matched ref's ancestry is allowed to delay a braid
      *   commit; see `BraidInterleave` for what that trades away. Matched against what [refs]
      *   selected, so widening the interleave cannot widen what is loaded.
      * @param labelRefs glob patterns matched against full ref names, recreating every matched ref
@@ -253,20 +283,26 @@ object CommitGraphReader {
             val mainlineTip = repo.resolveBranch(mainline)
                 ?: error("repository '${repo.name}' has no branch '$mainline'")
 
-            val selectedBranches = repo.branches().filter { selected.matches(Constants.R_HEADS + it.name) }
-            val selectedTags = repo.tags().filter { selected.matches(Constants.R_TAGS + it.name) }
+            // Namespaces beyond the two known ones are read only where a pattern names one, so a
+            // bare star and a star under `refs/` still mean every branch and every tag: a Gerrit
+            // change or a clone's own branch is reached by asking for it.
+            val foreign = foreignRefs(repo, scopedRefs.of(repo.name) + scopedLabels.of(repo.name))
 
+            // Every ref this input offers, under the namespace it was found in, so that one loop
+            // decides what is read and one decides what it is called.
+            val offered =
+                repo.branches().map { SourceRef(Constants.R_HEADS, it.name, it.target) } +
+                    repo.tags().map { SourceRef(Constants.R_TAGS, it.name, it.target, it.annotation) } +
+                    foreign
+
+            val takenBySelection = offered.filter { selected.matches(it.fullName) }
             // Labels are what the selection did not already take. A ref matched by both is selected,
             // which is the wider meaning of the two: it is read from as well as recreated. The
             // mainline is no label either: it is read whatever is selected, and the braid's own
             // branch stands for it, so the writer skips it and a count of it would be of nothing.
-            val labelledBranches = repo.branches().filter {
-                val name = Constants.R_HEADS + it.name
-                it.name != mainline && !selected.matches(name) && labelled.matches(name)
-            }
-            val labelledTags = repo.tags().filter {
-                val name = Constants.R_TAGS + it.name
-                !selected.matches(name) && labelled.matches(name)
+            val takenByLabel = offered.filter {
+                it.fullName != Constants.R_HEADS + mainline &&
+                    !selected.matches(it.fullName) && labelled.matches(it.fullName)
             }
 
             // The refs the graph is read from, and the objects they point at. Both are needed and
@@ -276,13 +312,9 @@ object CommitGraphReader {
             val tips = LinkedHashSet<ObjectId>()
             readRefs += Constants.R_HEADS + mainline
             tips += mainlineTip
-            for (branch in selectedBranches) {
-                readRefs += Constants.R_HEADS + branch.name
-                tips += branch.target
-            }
-            for (tag in selectedTags) {
-                readRefs += Constants.R_TAGS + tag.name
-                tips += tag.target
+            for (ref in takenBySelection) {
+                readRefs += ref.fullName
+                tips += ref.target
             }
 
             for (sourceCommit in repo.readReachable(tips)) {
@@ -305,22 +337,14 @@ object CommitGraphReader {
             // A label reaches the same line by the ordinary route rather than the exceptional one.
             // Nothing above put its target in, so it is there only if something else's ancestry
             // carried it, and the miss is counted instead of being a fact about the input.
-            val labelBranchRefs = labelledBranches.mapNotNull { branch ->
-                val name = Constants.R_HEADS + branch.name
-                builder.find(source, branch.target.name)?.let {
-                    BraidRef(branch.name, it, labelOnly = true, writeAs = labelled.writeAs(name) ?: RefKind.BRANCH)
-                }
+            val selectedRefs = takenBySelection.mapNotNull {
+                carried(it, selected.taking(it.fullName), builder, source, repo.name, labelOnly = false)
             }
-            val labelTagRefs = labelledTags.mapNotNull { tag ->
-                val name = Constants.R_TAGS + tag.name
-                builder.find(source, tag.target.name)?.let {
-                    BraidTag(tag.name, it, tag.annotation, labelOnly = true, writeAs = labelled.writeAs(name) ?: RefKind.TAG)
-                }
+            val labelledRefs = takenByLabel.mapNotNull {
+                carried(it, labelled.taking(it.fullName), builder, source, repo.name, labelOnly = true)
             }
-            labelsAttached += labelBranchRefs.size + labelTagRefs.size
-            labelsSkipped +=
-                (labelledBranches.size - labelBranchRefs.size) +
-                (labelledTags.size - labelTagRefs.size)
+            labelsAttached += labelledRefs.size
+            labelsSkipped += takenByLabel.size - labelledRefs.size
 
             // After the commits, because a note is keyed by the object it annotates and the graph is
             // the only thing that can say whether this run wrote that object at all.
@@ -337,18 +361,8 @@ object CommitGraphReader {
             inputs += SourceInputs(
                 source = source,
                 mainlineBranch = mainline,
-                branches = selectedBranches.mapNotNull { branch ->
-                    val name = Constants.R_HEADS + branch.name
-                    builder.find(source, branch.target.name)?.let {
-                        BraidRef(branch.name, it, writeAs = selected.writeAs(name) ?: RefKind.BRANCH)
-                    }
-                } + labelBranchRefs,
-                tags = selectedTags.mapNotNull { tag ->
-                    val name = Constants.R_TAGS + tag.name
-                    builder.find(source, tag.target.name)?.let {
-                        BraidTag(tag.name, it, tag.annotation, writeAs = selected.writeAs(name) ?: RefKind.TAG)
-                    }
-                } + labelTagRefs,
+                mainlineTip = mainlineTip,
+                refs = selectedRefs + labelledRefs,
                 notes = sourceNotes.filter { it.entries.isNotEmpty() },
                 noteRefs = sourceNotes.map { Constants.R_NOTES + it.name },
                 readRefs = readRefs.toList(),
@@ -375,12 +389,111 @@ object CommitGraphReader {
     }
 
     /**
+     * Every ref of every namespace [patterns] names beyond `refs/heads/` and `refs/tags/`.
+     *
+     * Driven by the patterns rather than by a listing of everything, which is what keeps the empty
+     * case where it was: a run that names no foreign namespace reads none, so a bare star and a
+     * star under `refs/` still mean every branch and every tag, and nothing a forge or a clone left
+     * lying about.
+     *
+     * The two known namespaces are excluded whatever a pattern's head enumerated, since a branch is
+     * already read as a branch; without that, a pattern whose head cuts back to plain `refs/` would
+     * offer every branch a second time, under the rules meant for what the program does not know.
+     */
+    private fun foreignRefs(
+        repo: SourceRepository,
+        patterns: List<RefPattern>,
+    ): List<SourceRef> {
+        val namespaces = patterns
+            .filterNot { pattern -> RefKind.entries.any { reaches(pattern.glob, it.namespace) } }
+            .mapNotNull { foreignNamespace(it.glob) }
+            .toSortedSet()
+        if (namespaces.isEmpty()) return emptyList()
+
+        val seen = LinkedHashMap<String, SourceRef>()
+        for (namespace in namespaces) {
+            for (ref in repo.refsUnder(namespace)) {
+                val full = namespace + ref.name
+                if (RefKind.entries.any { full.startsWith(it.namespace) }) continue
+                seen.getOrPut(full) { SourceRef(namespace, ref.name, ref.target, ref.annotation) }
+            }
+        }
+        return seen.values.toList()
+    }
+
+    /**
+     * One ref of an input as it stands there, before anything decides what it is called after.
+     *
+     * [namespace] is the one it was enumerated under, so [name] is what a prefix would go in front
+     * of and the two still join back into the name every pattern is matched against.
+     */
+    private class SourceRef(
+        val namespace: String,
+        val name: String,
+        val target: ObjectId,
+        val annotation: TagAnnotation? = null,
+    ) {
+        val fullName: String get() = namespace + name
+    }
+
+    /**
+     * What [ref] becomes in the output under [pattern], or `null` when its target was never read.
+     *
+     * The three destination forms land here as the two halves of a name plus one boolean. A
+     * namespace destination swaps the namespace and leaves the rest to that namespace's prefix; a
+     * spelled-out destination fills both halves and turns the prefix off; no destination at all
+     * keeps the ref exactly where it was.
+     */
+    private fun carried(
+        ref: SourceRef,
+        pattern: RefPattern?,
+        builder: CommitGraphBuilder,
+        source: Source,
+        repo: String,
+        labelOnly: Boolean,
+    ): BraidOutRef? {
+        val commit = builder.find(source, ref.target.name) ?: return null
+        val spelled = pattern?.resolve(ref.fullName, repo)
+        return when {
+            spelled != null -> BraidOutRef(
+                fullName = ref.fullName,
+                commit = commit,
+                annotation = ref.annotation,
+                labelOnly = labelOnly,
+                // Split at the last separator so the two halves still join back, and so a name under
+                // refs/heads or refs/tags is still counted as the branch or the tag it became.
+                namespace = spelled.substringBeforeLast('/') + "/",
+                name = spelled.substringAfterLast('/'),
+                prefixed = false,
+            )
+            pattern?.toNamespace == true -> BraidOutRef(
+                fullName = ref.fullName,
+                commit = commit,
+                annotation = ref.annotation,
+                labelOnly = labelOnly,
+                namespace = pattern.destination!!,
+                name = ref.name,
+            )
+            else -> BraidOutRef(
+                fullName = ref.fullName,
+                commit = commit,
+                annotation = ref.annotation,
+                labelOnly = labelOnly,
+                namespace = ref.namespace,
+                name = ref.name,
+            )
+        }
+    }
+
+    /**
      * The refs the patterns match, as the commits they name, deduplicated.
      *
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
      * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
-     * and a bare star is every ref the run selected — which puts the whole graph they reach in scope.
+     * and a bare star is every branch and every tag the run selected — which puts the whole graph
+     * they reach in scope. A ref of another namespace is taken only by a pattern that names that
+     * namespace, as the selection takes one.
      * A label is none of those, whatever the pattern says: see the loop.
      */
     private fun interleaveTips(patterns: ScopedPatterns, inputs: List<SourceInputs>): List<Commit> {
@@ -389,38 +502,74 @@ object CommitGraphReader {
             val matches = Selection(patterns.of(input.source.name), emptyMeans = false)
             // A label is skipped whatever the pattern says. That is the whole of the separation:
             // the interleave matches what a run chose to read, and a label chose nothing.
-            for (branch in input.branches) {
-                if (branch.labelOnly) continue
-                if (matches.matches("${Constants.R_HEADS}${branch.name}")) tips += branch.commit
-            }
-            for (tag in input.tags) {
-                if (tag.labelOnly) continue
-                if (matches.matches("${Constants.R_TAGS}${tag.name}")) tips += tag.commit
+            for (ref in input.refs) {
+                if (ref.labelOnly) continue
+                if (matches.matches(ref.fullName)) tips += ref.commit
             }
         }
         return tips.toList()
     }
 
-    /** One glob, and the namespace the refs it matches are written into when it says. */
-    private class RefPattern(val glob: String, val writeAs: RefKind?)
+    /**
+     * One glob, and the right half of the refspec it may carry.
+     *
+     * [destination] is `null` where the pattern only selects. Where it is given it says how much of
+     * the output name the run is writing itself: a namespace (`refs/tags/`), leaving the rest to
+     * that namespace's prefix; or a name holding a `*`, which is substituted with whatever the
+     * glob's own `*` matched and leaves no room for a prefix at all; or a plain name, for the one
+     * ref a pattern without a star can reach.
+     */
+    private class RefPattern(val glob: String, val destination: String?) {
+
+        /** Whether the destination is a namespace to hand back to the prefix rules. */
+        val toNamespace: Boolean =
+            destination != null && !destination.contains('*') && destination.endsWith("/")
+
+        /**
+         * Where a ref this pattern matched is written, or `null` to leave it where it came from.
+         *
+         * [name] is the ref's full name in the input, which is what the glob matched, and [repo] is
+         * the input's own name, for a `{repo}` in the destination. Only the spelled-out forms are
+         * resolved here; a namespace destination is [toNamespace] and the writer's business.
+         */
+        fun resolve(name: String, repo: String): String? {
+            if (destination == null || toNamespace) return null
+            val spelled = destination.replace("{repo}", repo)
+            if (!spelled.contains('*')) return spelled
+            return spelled.replace("*", captured(name))
+        }
+
+        /** What this pattern's own star matched in [name], which the destination's star receives. */
+        private fun captured(name: String): String {
+            val head = glob.substringBefore('*')
+            val tail = glob.substringAfter('*')
+            return name.substring(head.length, name.length - tail.length)
+        }
+    }
 
     /**
      * A pattern, the input it speaks for, and where its matches land, written
-     * `[<input>::]<pattern>[:<destination>]`: `backend::refs/heads/main` narrows to one input, while
-     * a pattern with no `::` speaks for every one of them.
+     * `[<input>::]<refspec>`: `backend::refs/heads/main` narrows to one input, while a pattern with
+     * no `::` speaks for every one of them.
+     *
+     * **What follows the scope is git's refspec**, `<pattern>[:<destination>]`, so a value valid as
+     * a git refspec means the same here: `refs/heads/main:refs/tags/main` reads the branch and
+     * writes it as a tag. The differences are few and each on purpose: a destination may be a
+     * namespace (`refs/tags/`) handed to that namespace's prefix, and may hold `{repo}`; a pattern
+     * with stars may go without a destination, which `git fetch` allows only in a negative refspec,
+     * or name one ref as its destination; and there is no `+`, no empty pattern or destination, and
+     * no short name, every pattern matching full ref names.
      *
      * **The scope is ended by `::`**, the separator the `<repo>` grammar puts between a location and
-     * its suffix, and **a single `:` begins the destination**, the separator git itself puts between
-     * the two halves of a refspec, where the left half says what is read and the right half what it
-     * is called. Both are decidable rather than a convention this asks to be trusted. Git refuses a
-     * colon anywhere in a ref name, and [cz.loplex.timebraid.cli.MergeCommand] refuses one in an
-     * input's name, so a colon in one of these values can only ever be a separator.
+     * its suffix. The separator is decidable rather than a convention: a refspec holds at most one
+     * `:`, so never a `::`.
      *
      * **The empty case stays per input, and keeps the meaning it had.** No pattern for an input is
-     * that option's empty case for that input — every ref for [Selection], none for the interleave
-     * and the labels. So `--ref backend::refs/heads/main` narrows backend and leaves the other inputs
-     * carrying everything, which is the generalisation of *naming any ref leaves out every ref not
-     * named* from the run to the input. An unscoped pattern narrows every input exactly as before.
+     * that option's empty case for that input — every branch and tag for [Selection], none for the
+     * interleave and the labels. So `--ref backend::refs/heads/main` narrows backend and leaves the
+     * other inputs carrying everything, which is the generalisation of *naming any ref leaves out
+     * every ref not named* from the run to the input. An unscoped pattern narrows every input
+     * exactly as before.
      *
      * @param destinations whether a destination is meaningful at all. It is for the two options that
      *   write refs; for the one that decides what may weigh on the braid it would name a namespace
@@ -442,25 +591,26 @@ object CommitGraphReader {
                 refuseFields(option, value, fields, inputs)
                 val glob = fields[0]
                 require(glob.isNotEmpty()) { "$option '$value' names no pattern" }
-                require(RefKind.entries.any { reaches(glob, it.namespace) }) {
-                    outsideKnownNamespaces(option, value, glob)
+                require(!glob.startsWith('+')) {
+                    "$option '$value' begins its refspec with '+', which git reads as allowing an " +
+                        "update that is no fast-forward; a run writes every ref afresh, so there is " +
+                        "nothing for it to allow. Leave it out"
                 }
 
-                val writeAs = fields.getOrNull(1)?.let { destination ->
+                val destination = fields.getOrNull(1)?.let { destination ->
                     require(destinations) {
                         "$option '$value' gives a destination, and $option decides what a run " +
                             "reads rather than what it writes; a destination belongs on --ref or " +
                             "--label-ref"
                     }
                     require(destination.isNotEmpty()) { "$option '$value' names no destination" }
-                    RefKind.of(destination) ?: throw IllegalArgumentException(
-                        "$option '$value' writes to '$destination'; a destination is " +
-                            "${Constants.R_HEADS} or ${Constants.R_TAGS}, the namespace and " +
-                            "nothing deeper -- the prefix under it is --branch-prefix or " +
-                            "--tag-prefix"
-                    )
+                    destination
                 }
-                val pattern = RefPattern(glob, writeAs)
+                val pattern = RefPattern(glob, destination)
+                checkDestination(option, value, glob, pattern)
+                // After the destination, because whether a pattern may read a namespace the output
+                // has no name rule for depends on whether it said what the matches are called.
+                checkReachable(option, value, glob, writes = destinations, named = destination != null)
                 if (input == null) unscoped += pattern else byInput.getOrPut(input) { ArrayList() } += pattern
             }
         }
@@ -478,29 +628,47 @@ object CommitGraphReader {
     /**
      * What a set of patterns says about a ref: whether it is taken, and where it is written.
      *
-     * [emptyMeans] is the whole difference between the options. No pattern means *every ref* for the
-     * selection, so narrowing a run is opt-in and a plain invocation still loads everything; the
-     * interleave and the labels read their own empty list the other way, a ref that delays a merge
-     * or gets a name it did not earn being the exception rather than the rule.
+     * [emptyMeans] is the whole difference between the options. No pattern means *every branch and
+     * tag* for the selection, so narrowing a run is opt-in and a plain invocation still loads
+     * everything; the interleave and the labels read their own empty list the other way, a ref that
+     * delays a merge or gets a name it did not earn being the exception rather than the rule.
      */
     private class Selection(patterns: List<RefPattern>, private val emptyMeans: Boolean) {
 
-        private val matchers = patterns.map { glob(it.glob) to it.writeAs }
+        private val matchers = patterns.map { glob(it.glob) to it }
 
         fun matches(name: String): Boolean {
-            if (matchers.isEmpty()) return emptyMeans
-            return matchers.any { (match, _) -> match(name) }
+            // A ref outside refs/heads/ and refs/tags/ is on offer only because some pattern named
+            // its namespace, and only a pattern that would itself have named it may take it. The
+            // condition is [foreignRefs]'s own, applied to the taking rather than to the
+            // enumerating: without it a bare star, or `refs/*`, takes what another option's
+            // pattern opened — which is how a --label-ref comes to decide what --ref reads.
+            val known = RefKind.entries.any { name.startsWith(it.namespace) }
+            if (matchers.isEmpty()) return emptyMeans && known
+            return matchers.any { (match, pattern) -> match(name) && (known || names(pattern, name)) }
         }
 
+        /** Whether [pattern] is one that would have put a ref named [name] on offer at all. */
+        private fun names(pattern: RefPattern, name: String): Boolean =
+            RefKind.entries.none { reaches(pattern.glob, it.namespace) } &&
+                foreignNamespace(pattern.glob)?.let { name.startsWith(it) } == true
+
         /**
-         * The namespace [name] is written into, or `null` to leave it in the one it came from.
+         * The pattern that took [name], or `null` where none did.
          *
-         * The first pattern that matches decides, which is why [ScopedPatterns.of] puts the scoped
-         * ones first: *this input's branches as tags, everything else as it stands* has to be
-         * writable, and only a more specific pattern winning makes it so.
+         * The first match decides, which is why [ScopedPatterns.of] puts the scoped patterns first:
+         * *this input's branches as tags, everything else as it stands* has to be writable, and only
+         * a more specific pattern winning makes it so.
+         *
+         * A pattern that named [name]'s own namespace comes before that, whatever its position: a
+         * ref outside refs/heads/ and refs/tags/ is on offer only because such a pattern asked for
+         * it, and it is the one carrying the destination such a ref has to be given. Letting a bare
+         * star win instead leaves the ref with no rule for its name, decided by the order two
+         * values happen to be written in.
          */
-        fun writeAs(name: String): RefKind? =
-            matchers.firstOrNull { (match, _) -> match(name) }?.second
+        fun taking(name: String): RefPattern? =
+            matchers.firstOrNull { (match, pattern) -> match(name) && names(pattern, name) }?.second
+                ?: matchers.firstOrNull { (match, _) -> match(name) }?.second
     }
 
     /**
@@ -543,20 +711,123 @@ object CommitGraphReader {
     }
 
     /**
-     * Why a pattern aimed outside the two namespaces is refused rather than left to match nothing.
+     * Refuses a destination that cannot be carried out.
+     *
+     * A star in the destination is a substitution, so there has to be exactly one thing to
+     * substitute: the glob must hold exactly one star of its own. A destination without a star names
+     * a namespace or one ref outright, and neither asks anything of the glob.
+     *
+     * A namespace destination has to be one of the two the program names a prefix for. Anywhere else
+     * it would be a namespace and a missing naming rule, which is what the star form is for.
+     */
+    private fun checkDestination(option: String, value: String, glob: String, pattern: RefPattern) {
+        val destination = pattern.destination ?: return
+        // The same refusal the read side gives a pattern under refs/notes/, for the same reason:
+        // what would land there is a commit, and a notes ref names a tree keyed by object shas.
+        // Checked before the branches below, because the namespace branch's refusal suggests
+        // '<destination>*', which under refs/notes/ the star branch would otherwise accept.
+        require(!destination.startsWith(Constants.R_NOTES)) {
+            "$option '$value' writes into ${Constants.R_NOTES}, which is not where a commit goes: " +
+                "a notes ref points at a tree keyed by shas. Notes are carried by --notes, which " +
+                "rekeys them onto the commits this run writes"
+        }
+        if (destination.contains('*')) {
+            require(destination.count { it == '*' } == 1) {
+                "$option '$value' has more than one star in its destination; one substitutes what " +
+                    "the pattern matched, and a second would have nothing of its own to stand for"
+            }
+            require(glob.count { it == '*' } == 1) {
+                "$option '$value' substitutes a star into its destination, so the pattern needs " +
+                    "exactly one of its own to say what is substituted"
+            }
+            require(destination.startsWith(Constants.R_REFS)) {
+                "$option '$value' writes '$destination', which is not a ref name: every one " +
+                    "begins ${Constants.R_REFS}"
+            }
+            return
+        }
+        if (pattern.toNamespace) {
+            requireNotNull(RefKind.of(destination)) {
+                "$option '$value' hands '$destination' back to a prefix rule, and there is none " +
+                    "for it -- ${Constants.R_HEADS} and ${Constants.R_TAGS} have --branch-prefix " +
+                    "and --tag-prefix. Spell the name out instead, with a star: '$destination*'"
+            }
+            return
+        }
+        require(destination.startsWith(Constants.R_REFS)) {
+            "$option '$value' writes '$destination', which is not a ref name: every one begins " +
+                "${Constants.R_REFS}"
+        }
+    }
+
+    /**
+     * Refuses a pattern that could never reach a ref, and one whose matches would have no name.
      *
      * A well-formed selection matching nothing is indistinguishable, from the command line, from an
-     * input that simply does not have what was asked for — so a pattern under `refs/notes/` used to
-     * be as quiet as `--ref 'refs/tags/v9.*'` against a repository with no v9. One of those is a fact
+     * input that simply does not have what was asked for — so a pattern under `refs/notes/` was as
+     * quiet as `--ref 'refs/tags/v9.*'` against a repository with no v9. One of those is a fact
      * about the input and one is a fact about this program, and only the second can be said here.
+     *
+     * Outside `refs/heads/` and `refs/tags/` the question is not whether a ref *can* be read — a
+     * Gerrit change and a forge's pull ref name commits like any other — but what it would be
+     * called afterwards. Nothing qualifies a namespace the program has never heard of, so a pattern
+     * that reads one has to say where its matches land, and the destination field is that answer.
+     *
+     * @param writes whether this option decides what is read and written, as opposed to what may
+     *   weigh on the braid. Only the first kind needs a destination: the interleave matches refs
+     *   some other pattern already brought in, so a foreign namespace there is already named.
      */
-    private fun outsideKnownNamespaces(option: String, value: String, glob: String): String {
-        val remedy =
-            if (glob.startsWith(Constants.R_NOTES)) " -- notes are carried by --notes, which rekeys " +
-                "them onto the commits this run writes, rather than selected as history"
-            else ""
-        return "$option '$value' can match no ref: '$glob' is outside ${Constants.R_HEADS} and " +
-            "${Constants.R_TAGS}, the only namespaces this program reads$remedy"
+    private fun checkReachable(
+        option: String,
+        value: String,
+        glob: String,
+        writes: Boolean,
+        named: Boolean,
+    ) {
+        require(!glob.startsWith(Constants.R_NOTES)) {
+            "$option '$value' names ${Constants.R_NOTES}, which is not history: a notes ref points " +
+                "at a tree keyed by shas rather than at a commit anyone braids. Notes are carried " +
+                "by --notes, which rekeys them onto the commits this run writes"
+        }
+        if (RefKind.entries.any { reaches(glob, it.namespace) }) return
+
+        val namespace = requireNotNull(foreignNamespace(glob)) {
+            "$option '$value' can match no ref: every ref name begins ${Constants.R_REFS}, and " +
+                "'$glob' cannot"
+        }
+        require(!writes || named) {
+            // A destination is the refspec's right half, so it goes at the end, the scope kept.
+            val refused = "$option '$value' reads '$namespace', which the output has no naming " +
+                "rule for -- --branch-prefix and --tag-prefix speak for ${Constants.R_HEADS} and " +
+                "${Constants.R_TAGS} alone."
+            // The destination offered has to be one checkDestination takes, and a star there needs
+            // exactly one in the glob: so a glob with none is offered its name spelled out, and one
+            // with several is offered nothing, no one destination being able to stand for it.
+            when (val stars = glob.count { it == '*' }) {
+                1 -> "$refused Say what its matches are called: '$value:$namespace{repo}/*'"
+                0 -> "$refused Say what it is called: " +
+                    "'$value:$namespace{repo}/${glob.removePrefix(namespace)}'"
+                else -> "$refused A destination substitutes one star, and this has $stars: split " +
+                    "it into patterns of one star each, and give each its destination"
+            }
+        }
+    }
+
+    /**
+     * The namespace a pattern outside the two known ones reads from, or `null` if it can reach no
+     * ref at all.
+     *
+     * The literal head cut back to its last `/`, which is the deepest prefix that is certainly a
+     * namespace rather than half a ref name: `refs/changes/` for a Gerrit pattern, `refs/pull/` for
+     * one reaching into a pull ref, and plain `refs/` for a pattern naming a single ref such as the
+     * stash. Enumerating that prefix and letting the glob filter it is exact either way; a shorter
+     * prefix only costs a wider listing.
+     */
+    private fun foreignNamespace(glob: String): String? {
+        val head = glob.substringBefore('*')
+        if (!head.contains('/')) return null
+        val namespace = head.substringBeforeLast('/') + "/"
+        return if (namespace.startsWith(Constants.R_REFS)) namespace else null
     }
 
     /**
@@ -668,9 +939,8 @@ object CommitGraphReader {
     private const val SCOPE = "::"
 
     /**
-     * Refuses a value of more than two `:`-separated [fields] after its scope, and one whose first
-     * field is an input's name: a scope written with one colon, which reads as a pattern and a
-     * destination.
+     * Refuses a refspec of more than two `:`-separated [fields], and one whose first field is an
+     * input's name: a scope written with one colon, which reads as a pattern and a destination.
      */
     private fun refuseFields(option: String, value: String, fields: List<String>, inputs: Collection<String>) {
         require(fields.size <= 2) {

@@ -285,19 +285,19 @@ merely unnamed.
   to branches and tags alike (`--ref`, repeatable). A short name cannot say whether `v1.0` is a
   branch or a tag, so the patterns are matched against the full name and a `*` spans path
   separators.
-- No selection means **every** ref. `-b`/`--branch` is shorthand for one pattern,
+- No selection means **every branch and tag**. `-b`/`--branch` is shorthand for one pattern,
   `--ref refs/heads/<name>`; since a branch name cannot contain a `*`, the short form desugars
   exactly — and it therefore selects that branch *and no tags*.
 - The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
 - Every ref is recreated under a prefix, `{repo}/` by default — `--tag-prefix` for a tag,
   `--branch-prefix` for a branch — so two inputs that both hold `v1.0` do not collide. It applies
-  unconditionally, which is what makes an output ref name follow from the input it came from and
-  from nothing else the run did; emptying it asks for the plain names, and two inputs meeting there
-  is refused rather than resolved.
+  wherever a pattern has not spelled its destination out, which is what makes an output ref name
+  follow from the input it came from and from nothing else the run did; emptying it asks for the
+  plain names, and two inputs meeting there is refused rather than resolved.
 
 `--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
-is every ref, no interleave pattern is none of them. It is also matched against what the selection
-already admitted, so widening the interleave cannot widen what is read.
+is every branch and tag, no interleave pattern is none of them. It is also matched against what the
+selection already admitted, so widening the interleave cannot widen what is read.
 
 That last clause is also why there is a third flag. One selection answers three questions, and they
 do not carry the same risk:
@@ -322,11 +322,17 @@ something that can be stated and tested, rather than a coincidence of two globs 
 
 Git draws the same distinction with a two-sided refspec — `+refs/heads/*:refs/remotes/origin/*`,
 where the left half says what is fetched and the right half what it is called. `--label-ref` is how
-the right half is asked for alone. The right half's *namespace* is asked for the same way git spells
-it, after a `:` on the pattern: `--ref 'legacy::refs/heads/*:refs/tags/'` reads `legacy`'s branches
-and writes them as tags, which is how a dead branch is kept for the record without keeping it as a
-branch or dropping the commits only it reaches. Everything under that namespace is still the prefix
-rules above.
+the right half is asked for alone, and a pattern's destination *is* that right half:
+`--ref 'legacy::refs/heads/*:refs/tags/'` reads `legacy`'s branches and writes them as tags, which
+is how a dead branch is kept for the record without keeping it as a branch or dropping the commits
+only it reaches.
+
+The prefix rules above are the default naming, and a destination overrides exactly the part of the
+name it spells out — nothing, the namespace, or the whole of it. A destination holding a `*` takes
+the last of those: the star is substituted with what the pattern's own star matched, so
+`refs/changes/*:refs/changes/{repo}/*` keeps a namespace this program has no rule for and qualifies
+it, and no prefix goes near the result. That is also why a pattern reading such a namespace must
+carry a destination: there would otherwise be nothing to name the result with.
 
 [Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
 and lists what each output holds — including the commit that disappears entirely under `-b main`,

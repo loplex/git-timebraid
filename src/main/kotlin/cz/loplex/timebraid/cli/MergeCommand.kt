@@ -150,10 +150,14 @@ private class HistoryOptions : OptionGroup(
                 "(repeatable)." + BR +
                 "Patterns are matched against full ref names, and may be prefixed <input>:: " +
                 "to narrow one input." + BR +
-                "A :<destination> after the pattern writes the matches elsewhere: " +
-                "<pattern>:refs/tags/ carries branches over as tags." + BR +
+                "A :<destination> after the pattern is a refspec's right half, naming where the matches land." +
+                BR +
+                "refs/tags/ hands them to --tag-prefix; a destination holding a star spells the " +
+                "name out, substituting what the pattern matched." + BR +
+                "Beyond refs/heads/ and refs/tags/ a namespace is read only when named, and then " +
+                "the destination is required." + BR +
                 "One quoted argument may hold several, separated by spaces." + BR +
-                "Default: every ref, each in the namespace it came from."
+                "Default: every branch and tag, each in the namespace it came from."
         )
 
     val labelRefs by option("--label-ref").multiple()
@@ -742,11 +746,12 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             val remotes =
                 if (summary.remoteRefs > 0) ", ${summary.remoteRefs} remote-tracking" else ""
             val notes = if (summary.notes > 0) ", ${summary.notes} notes refs" else ""
+            val foreign = if (summary.foreign > 0) ", ${summary.foreign} other" else ""
             // What was left out is said here as well as in its phase, because -q prints this alone.
             val labels = result.braid.labelsSkipped.let { if (it > 0) ", $it labels skipped" else "" }
             val notesLeft = result.braid.notesSkipped.let { if (it > 0) ", $it notes skipped" else "" }
             echo(
-                "refs: ${summary.branches} branches, ${summary.tags} tags$notes$remotes$labels$notesLeft, " +
+                "refs: ${summary.branches} branches, ${summary.tags} tags$foreign$notes$remotes$labels$notesLeft, " +
                     "HEAD -> ${summary.head}",
                 err = true,
             )

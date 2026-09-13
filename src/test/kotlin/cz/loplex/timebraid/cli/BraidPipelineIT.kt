@@ -168,25 +168,108 @@ class BraidPipelineIT {
     }
 
     @Test
-    fun `--keep-remotes mirrors a mainline -b never took`() {
+    fun `a destination meeting a --keep-remotes mirror is refused naming both, not written over`() {
+        reference()
+        // backend's feature is spelled out as refs/remotes/backend/feature, which is also where the
+        // mirror puts backend's original feature: the braid's commit and the original cannot share
+        // the name, and neither may quietly win it.
+        val clash = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("clash.git").toString(),
+                "--keep-remotes",
+                "--ref", "refs/heads/*:refs/remotes/{repo}/*",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, clash.statusCode, clash.output)
+        assertTrue(
+            clash.output.contains(
+                "'backend' and the --keep-remotes mirror of 'backend' would both write " +
+                    "'refs/remotes/backend/feature'"
+            ),
+            clash.output,
+        )
+
+        // The mainline's mirror is written whether the selection took it or not, and it is no
+        // exception: a destination spelled out as that name meets it all the same.
+        val mainline = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("mainline.git").toString(),
+                "--keep-remotes",
+                "--ref", "backend::refs/heads/feature:refs/remotes/backend/main",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, mainline.statusCode, mainline.output)
+        assertTrue(
+            mainline.output.contains(
+                "'backend' and the --keep-remotes mirror of 'backend' would both write " +
+                    "'refs/remotes/backend/main'"
+            ),
+            mainline.output,
+        )
+
+        // Outside every input's mirrors, the same selection is written as asked.
+        val out = tmp.resolve("aside.git")
+        braid(
+            "-o", out.toString(),
+            "--keep-remotes",
+            "--ref", "refs/heads/*:refs/remotes/{repo}-braid/*",
+            path("backend.git"), path("webui.git"),
+        )
+        GitCli.requireGit()
+        assertNotEquals(
+            GitCli.run(out, "rev-parse", "refs/remotes/backend/feature"),
+            GitCli.run(out, "rev-parse", "refs/remotes/backend-braid/feature"),
+            "the destination should hold the braid's commit and the mirror the original",
+        )
+    }
+
+    @Test
+    fun `a destination among an input's --keep-remotes mirrors is refused, and taken without them`() {
+        reference()
+        // refs/remotes/backend/x meets no mirror, but the remote's refspec covers the namespace,
+        // so the first `git fetch --prune backend` would delete it as a branch backend lacks.
+        val inputs = listOf(
+            "--ref", "backend::refs/heads/feature:refs/remotes/backend/x",
+            path("backend.git"), path("webui.git"),
+        )
+        val refused = MergeCommand().test(listOf("-o", tmp.resolve("among.git").toString(), "--keep-remotes") + inputs)
+        assertNotEquals(0, refused.statusCode, refused.output)
+        assertTrue(
+            refused.output.contains(
+                "'backend' would write 'refs/remotes/backend/x' among the --keep-remotes mirrors of 'backend'"
+            ),
+            refused.output,
+        )
+
+        // Without the mirrors there is no remote to prune it, and the destination is the user's.
+        val out = tmp.resolve("unmirrored.git")
+        braid(*(listOf("-o", out.toString()) + inputs).toTypedArray())
+        GitCli.requireGit()
+        GitCli.run(out, "rev-parse", "--verify", "refs/remotes/backend/x")
+    }
+
+    @Test
+    fun `--keep-remotes mirrors a mainline the selection never took`() {
         val ids = reference()
         val out = tmp.resolve("narrowed.git")
 
-        // Only backend's feature is selected, so neither mainline is among the refs carried over,
-        // and no tag is either. Both mainlines are read regardless — that is what the braid is built
-        // from — so their commits are in the output, and without a mirrored ref they would be there
-        // unreachable.
+        // Only the tags are selected, so neither mainline is among the refs the patterns carried
+        // over. Both are read regardless — that is what the braid is built from — so their
+        // commits are in the output, and without a mirrored ref they would be there unreachable.
         braid(
-            "-o", out.toString(), "--keep-remotes", "-b", "feature",
+            "-o", out.toString(), "--keep-remotes", "--ref", "refs/tags/*",
             path("backend.git"), path("webui.git"),
         )
 
         GitCli.requireGit()
         assertEquals(
             listOf(
-                "refs/remotes/backend/feature",
                 "refs/remotes/backend/main",
+                "refs/remotes/backend/tags/v1.0",
                 "refs/remotes/webui/main",
+                "refs/remotes/webui/tags/v2.0",
             ),
             GitCli.run(out, "for-each-ref", "--format=%(refname)", "refs/remotes").lines().sorted(),
         )
@@ -520,12 +603,13 @@ class BraidPipelineIT {
 
         SourceRepository.open(out).use { repo ->
             // backend was narrowed to its mainline, so its wip is gone. webui named no pattern, so
-            // its empty case is still every ref and its wip survives — the per-input reading of
-            // "naming any ref leaves out every ref not named".
+            // its empty case is still every branch and tag and its wip survives — the per-input
+            // reading of "naming any ref leaves out every ref not named".
             //
             // webui's wip is called what it would have been called had backend never been narrowed:
-            // the qualifier goes on unconditionally, so what the selection does is decide which refs
-            // exist and not what the surviving ones are named.
+            // the qualifier goes on wherever a pattern has not spelled its destination out, so what
+            // the selection does here is decide which refs exist and not what the surviving ones are
+            // named.
             assertEquals(setOf("main", "webui/wip"), repo.branches().map { it.name }.toSet())
         }
     }
@@ -866,27 +950,28 @@ class BraidPipelineIT {
         }
         val out = tmp.resolve("archived.git")
 
-        braid(
+        val run = braid(
             "-o", out.toString(),
             "--ref", "backend::refs/heads/*:refs/tags/",
+            "--ref", "webui::refs/heads/*:refs/tags/archive-*",
             path("backend.git"), path("webui.git"),
         )
 
         SourceRepository.open(out).use { repo ->
-            // backend's side branches are tags now, under the tag prefix rather than the branch one.
+            // backend's side branches are tags now, under the tag prefix rather than the branch one;
+            // webui's, spelled out, carry no prefix at all.
             assertEquals(
-                listOf("backend/old/spike", "backend/wip"),
+                listOf("archive-wip", "backend/old/spike", "backend/wip"),
                 repo.tags().map { it.name }.sorted(),
             )
             // A branch has no annotation, so it arrives as a lightweight tag.
             assertTrue(repo.tags().all { it.annotation == null }, "a branch gained an annotation")
             // The mainline is loaded whatever the patterns say, so the destination must not reach
             // it: the output's `main` is the braid, not backend's own branch written as a tag.
-            assertEquals(
-                setOf("main", "webui/wip"),
-                repo.branches().map { it.name }.toSet(),
-            )
+            assertEquals(setOf("main"), repo.branches().map { it.name }.toSet())
         }
+        // Counted as what they became, not as what they were at home.
+        assertTrue(run.output.contains("refs: 1 branches, 3 tags, HEAD -> "), run.output)
         // And the commits only those branches reached are in the output, which is the whole point
         // of redirecting the selection rather than labelling what was already there.
         assertEquals(5, OutputRepo.read(out).commits.size)
@@ -998,8 +1083,13 @@ class BraidPipelineIT {
             refused("--interleave-ref", "refs/heads/*:refs/tags/").contains("--ref"),
             "the refusal should say where a destination does belong",
         )
-        // A namespace this program never writes, and a path deeper than a namespace.
-        assertTrue(refused("--ref", "refs/heads/*:refs/notes/").contains("refs/tags/"))
+        // A namespace no prefix rule speaks for, and a path deeper than a namespace.
+        assertTrue(refused("--ref", "refs/heads/*:refs/archive/").contains("refs/tags/"))
+        // refs/notes/ is refused ahead of that, and for its own reason: a commit does not go
+        // there whatever the spelling, which is why all three forms say the same thing.
+        for (d in listOf("refs/notes/", "refs/notes/*", "refs/notes/mine")) {
+            assertTrue(refused("--ref", "refs/heads/*:$d").contains("--notes"), d)
+        }
         assertTrue(
             refused("--ref", "refs/heads/*:refs/tags/archive/").contains("--tag-prefix"),
             "the refusal should point at the flag that does set a prefix",
@@ -1008,6 +1098,8 @@ class BraidPipelineIT {
         // with one colon reads as a pattern and a destination, which is named for what it is.
         assertTrue(refused("--ref", "backend::refs/heads/*:refs/tags/:x").contains("fields"))
         assertTrue(refused("--ref", "backend:refs/heads/*").contains("a scope is ended by '::'"))
+        assertTrue(refused("--ref", "::refs/heads/*").contains("names no input before its '::'"))
+        assertTrue(refused("--ref", "+refs/heads/*:refs/tags/").contains("begins its refspec with '+'"))
     }
 
     @Test
@@ -1174,7 +1266,7 @@ class BraidPipelineIT {
     }
 
     @Test
-    fun `a pattern aimed outside the two namespaces is refused, not left to match nothing`() {
+    fun `a pattern that can match no ref, or one aimed at the notes, is refused, not left to match nothing`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
             r.branch("main", a1)
@@ -1195,15 +1287,293 @@ class BraidPipelineIT {
         val notes = refused("--ref", "refs/notes/*")
         assertTrue(notes.contains("--notes"), notes)
         // A short name is the same mistake made by hand.
-        assertTrue(refused("--ref", "main").contains("refs/heads/"))
-        // It holds on every ref option, including the two that do not select.
-        assertTrue(refused("--interleave-ref", "refs/replace/*").contains("refs/tags/"))
-        assertTrue(refused("--label-ref", "refs/stash").contains("refs/tags/"))
+        assertTrue(refused("--ref", "main").contains("begins refs/"))
+        // It holds on every ref option.
+        assertTrue(refused("--interleave-ref", "wip").contains("refs/"))
+        assertTrue(refused("--label-ref", "refs/notes/x").contains("--notes"))
 
         // And nothing that could match is refused.
         for (pattern in listOf("*", "refs/*", "refs/heads/*", "refs/tags/v1.*", "refs/heads/main")) {
             assertEquals(0, run("--ref", pattern).statusCode, pattern)
         }
+    }
+
+    @Test
+    fun `a namespace the program does not know is kept, named by the destination`() {
+        val ids = HashMap<String, ObjectId>()
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            // A commit no branch and no tag reaches: only the foreign ref leads to it, so its
+            // presence in the output is proof the ref was read rather than merely renamed.
+            val change = r.commit("change 34", parents = listOf(a1), at = at("09:30"))
+            r.point("refs/changes/12/34/1", change)
+            ids += mapOf("a1" to a1, "change" to change)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.point("refs/changes/12/34/1", r.commit("their 34", parents = listOf(b1), at = at("10:30")))
+        }
+        val out = tmp.resolve("changes.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "refs/changes/*:refs/changes/{repo}/*", "--ref", "refs/heads/*",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // The namespace survives, and {repo} in the destination qualifies it — which is the
+            // whole point: both inputs number their changes from one, and unqualified they collide.
+            assertEquals(
+                listOf("backend/12/34/1", "webui/12/34/1"),
+                repo.refsUnder("refs/changes/").map { it.name }.sorted(),
+            )
+            // Not turned into branches or tags on the way.
+            assertEquals(setOf("main"), repo.branches().map { it.name }.toSet())
+            assertEquals(listOf<String>(), repo.tags().map { it.name })
+        }
+        val written = OutputRepo.read(out)
+        assertTrue(
+            written.byOriginalSha.containsKey(ids.getValue("change").name),
+            "the commit only the foreign ref reached is missing",
+        )
+    }
+
+    @Test
+    fun `an ordinary clone's own branches are reachable through refs-remotes`() {
+        // The gap: git clone keeps every branch but the checked-out one under
+        // refs/remotes/origin/, so a clone given as an input used to contribute one branch.
+        TestRepoBuilder.create(tmp.resolve("upstream.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        val clone = tmp.resolve("clone")
+        GitCli.run(tmp, "clone", "--quiet", tmp.resolve("upstream.git").toString(), clone.toString())
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("cloned.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "clone::refs/remotes/origin/*:refs/heads/{repo}/*", "--ref", "refs/heads/*",
+            clone.toString(), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // origin/wip arrives as an ordinary branch under the input's name; origin/HEAD is a
+            // symbolic ref and is not written a second time under a name of its own.
+            assertEquals(
+                setOf("main", "clone/main", "clone/wip"),
+                repo.branches().map { it.name }.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun `a foreign ref may still be sent to a known namespace by its destination`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.point("refs/changes/12/34/1", r.commit("change", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("archived-changes.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "backend::refs/changes/*:refs/tags/", "--ref", "refs/heads/*",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // Under --tag-prefix, which a tag destination hands the name to.
+            assertEquals(listOf("backend/12/34/1"), repo.tags().map { it.name })
+            assertEquals(listOf<String>(), repo.refsUnder("refs/changes/").map { it.name })
+        }
+    }
+
+    @Test
+    fun `a label on a foreign namespace does not make the run read it`() {
+        // The guarantee --label-ref exists for: adding one cannot change a commit the run writes.
+        // A label is what puts a namespace outside refs/heads/ and refs/tags/ on offer at all, so
+        // a selection that did not name that namespace must not take from it — whether the
+        // selection is empty, a star, or refs/*.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.point("refs/changes/12/34/1", r.commit("change", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val label = "refs/changes/*:refs/changes/{repo}/*"
+        val plain = tmp.resolve("plain.git")
+        braid("-o", plain.toString(), path("backend.git"), path("webui.git"))
+        val written = OutputRepo.read(plain).byOriginalSha.keys
+
+        val selections = listOf(emptyList(), listOf("--ref", "*"), listOf("--ref", "refs/*"))
+        for ((i, selection) in selections.withIndex()) {
+            val out = tmp.resolve("labelled-$i.git")
+            braid(
+                *(listOf("-o", out.toString()) + selection + listOf("--label-ref", label) +
+                    listOf(path("backend.git"), path("webui.git"))).toTypedArray()
+            )
+            assertEquals(written, OutputRepo.read(out).byOriginalSha.keys, "selection $selection")
+        }
+    }
+
+    @Test
+    fun `which pattern took a foreign ref does not depend on the order they were written`() {
+        // Two --ref values, one naming refs/changes/ with a destination and one a bare star. The
+        // star matches the change ref too, and taking it there would leave it with no rule for its
+        // name — which used to make the run succeed or fail on the order alone.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.point("refs/changes/12/34/1", r.commit("change", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val named = "refs/changes/*:refs/changes/{repo}/*"
+        fun refsOf(dir: String, first: String, second: String): List<String> {
+            val out = tmp.resolve(dir)
+            braid("-o", out.toString(), "--ref", first, "--ref", second, path("backend.git"), path("webui.git"))
+            return SourceRepository.open(out).use { repo -> repo.refsUnder("refs/changes/").map { it.name } }
+        }
+        assertEquals(refsOf("star-first.git", "*", named), refsOf("named-first.git", named, "*"))
+    }
+
+    @Test
+    fun `a star still means every branch and tag, and reads no foreign namespace`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.lightweightTag("v1.0", a1)
+            r.point("refs/changes/12/34/1", r.commit("change", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("stars.git")
+
+        // The --label-ref is what makes this test able to fail: it is what puts refs/changes/ on
+        // offer at all, so without it the star has nothing foreign to take and the assertion below
+        // would hold whatever the star meant.
+        braid(
+            "-o", out.toString(), "--ref", "*",
+            "--label-ref", "refs/changes/*:refs/changes/{repo}/*",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(listOf("backend/v1.0"), repo.tags().map { it.name })
+            // A star means every branch and tag, not everything on offer: the label opened
+            // refs/changes/, and a pattern that did not name it does not get to read it.
+            assertEquals(listOf<String>(), repo.refsUnder("refs/changes/").map { it.name })
+        }
+    }
+
+    @Test
+    fun `a star in the destination substitutes what the pattern matched, wherever it stands`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.point("refs/legacy/alpha", r.commit("x", parents = listOf(a1), at = at("09:20")))
+            r.point("refs/legacy/beta/gamma", r.commit("y", parents = listOf(a1), at = at("09:30")))
+            r.point("refs/old/delta-old", r.commit("z", parents = listOf(a1), at = at("09:40")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("substituted.git")
+
+        val run = braid(
+            "-o", out.toString(),
+            "--ref", "backend::refs/legacy/*:refs/archived_*", "--ref", "refs/heads/*",
+            "--ref", "backend::refs/old/*-old:refs/retired_*_x",
+            path("backend.git"), path("webui.git"),
+        )
+        // Counted by the namespace each ref is written to, which for these is neither.
+        assertTrue(run.output.contains("refs: 1 branches, 0 tags, 3 other, HEAD -> "), run.output)
+
+        SourceRepository.open(out).use { repo ->
+            // The star need not be a whole path segment, and what it captured may hold a slash,
+            // as in a git refspec.
+            assertEquals(
+                listOf("alpha", "beta/gamma"),
+                repo.refsUnder("refs/archived_").map { it.name }.sorted(),
+            )
+            // What follows the pattern's star is matched and left out of what it captured, and what
+            // follows the destination's star stays where it stands.
+            assertEquals(listOf("delta_x"), repo.refsUnder("refs/retired_").map { it.name })
+            // Spelled out means spelled out: no prefix went anywhere near these.
+            assertEquals(setOf("main"), repo.branches().map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun `a destination that cannot be carried out is refused`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        fun refused(vararg extra: String) = MergeCommand().test(
+            listOf("-o", tmp.resolve("no-${extra.hashCode()}.git").toString()) + extra +
+                listOf(path("backend.git"), path("webui.git"))
+        ).also { assertNotEquals(0, it.statusCode, it.output) }.output
+
+        // A star in the destination needs exactly one on the other side to stand for.
+        assertTrue(refused("--ref", "refs/heads/*/*:refs/tags/x-*").contains("exactly one"))
+        assertTrue(refused("--ref", "refs/heads/*:refs/tags/*-*").contains("more than one star"))
+        // A namespace handed back to a prefix rule that does not exist.
+        val noRule = refused("--ref", "refs/changes/*:refs/archive/")
+        assertTrue(noRule.contains("--branch-prefix"), noRule)
+        assertTrue(noRule.contains("refs/archive/*"), noRule)
+        // And a foreign namespace read without saying what its matches are called.
+        val unnamed = refused("--ref", "refs/changes/*")
+        assertTrue(unnamed.contains("no naming rule"), unnamed)
+        // Its remedy keeps the pattern as it was spelled, a scope included, and puts the destination
+        // at the end; the unscoped one is then followed, and the parser takes it.
+        for (spelled in listOf("refs/changes/*", "backend::refs/changes/*")) {
+            val remedy = refused("--ref", spelled)
+            assertTrue(remedy.contains("'$spelled:refs/changes/{repo}/*'"), remedy)
+        }
+        val followed = MergeCommand().test(
+            listOf("-o", tmp.resolve("remedy.git").toString()) +
+                listOf("--ref", "refs/changes/*:refs/changes/{repo}/*") +
+                listOf(path("backend.git"), path("webui.git"))
+        )
+        assertEquals(0, followed.statusCode, followed.output)
+        // A pattern naming one ref has no star to substitute, so the remedy spells the name out,
+        // and the parser takes that too.
+        val stash = refused("--ref", "refs/stash")
+        assertTrue(stash.contains("'refs/stash:refs/{repo}/stash'"), stash)
+        val named = MergeCommand().test(
+            listOf("-o", tmp.resolve("stash.git").toString()) +
+                listOf("--ref", "refs/stash:refs/{repo}/stash") +
+                listOf(path("backend.git"), path("webui.git"))
+        )
+        assertEquals(0, named.statusCode, named.output)
+        // Two stars have no one destination at all, so none is offered.
+        val twoStars = refused("--ref", "refs/changes/*/*")
+        assertTrue(twoStars.contains("split it into patterns of one star each"), twoStars)
+        assertFalse(twoStars.contains("Say what"), twoStars)
+        // The run's own corner of the ref space, which it empties once the braid is written. The
+        // mainline is never redirected, so it takes a branch beside it to land there.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { r ->
+            r.branch("feat", r.commit("f1", at = at("09:30")))
+        }
+        val parked = refused("--ref", "refs/heads/*:refs/timebraid-fetch/kept/*")
+        assertTrue(parked.contains("under refs/timebraid-fetch/, where this run parks"), parked)
     }
 
     @Test

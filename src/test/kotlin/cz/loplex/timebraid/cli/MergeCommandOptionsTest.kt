@@ -356,7 +356,7 @@ class MergeCommandOptionsTest {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(
             result.output.contains(
-                "the branch 'tags/v1.0' and the tag 'v1.0' of 'backend' would both be mirrored as " +
+                "'refs/heads/tags/v1.0' and 'refs/tags/v1.0' of 'backend' would both be mirrored as " +
                     "'refs/remotes/backend/tags/v1.0'"
             ),
             result.output,

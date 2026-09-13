@@ -21,7 +21,7 @@ import java.nio.file.Path
  * One input repository — one *strand* of the braid — opened for reading only.
  *
  * The class exists to keep every JGit type on this side of the boundary: it hands back plain data
- * ([GitRef], [TagRef], [SourceCommit], [TreeEntry]) and the planner never sees an [ObjectId], a
+ * ([GitRef], [PeeledRef], [SourceCommit], [TreeEntry]) and the planner never sees an [ObjectId], a
  * [RevWalk] or a [Repository]. Nothing here writes, and nothing here moves objects: the output pulls
  * them across itself, by fetching from [location] (see [TargetRepository.fetchFrom]).
  */
@@ -58,13 +58,32 @@ class SourceRepository private constructor(
      * it has no place on a history graph.
      *
      * An annotated tag also carries its [TagAnnotation], so the writer can recreate it as an
-     * annotated tag rather than silently flattening the tagger and the tag message away.
+     * annotated tag rather than silently flattening the tagger and the tag message away. A symbolic
+     * ref here is read as a tag at what it points at, as 0.1.0 read it: a name someone gave a
+     * commit.
      */
-    fun tags(): List<TagRef> {
+    fun tags(): List<PeeledRef> = refsUnder(Constants.R_TAGS)
+
+    /**
+     * Refs under [namespace], sorted, each named relative to it and peeled to the commit it
+     * ultimately points at. A ref that does not resolve to a commit is dropped — it has no place on
+     * a history graph.
+     *
+     * [tags] is this over `refs/tags/`, and it is the same operation over a namespace the program
+     * knows nothing about: a Gerrit `refs/changes/`, a forge's `refs/pull/`, the branches an
+     * ordinary clone keeps in `refs/remotes/origin/`. What those have in common is the only thing
+     * that matters here — they name commits.
+     *
+     * A symbolic ref is skipped outside `refs/tags/`. It is a pointer at another ref rather than a
+     * thing of its own, so carrying it over would write the same commit twice, once under a name
+     * like `refs/remotes/origin/HEAD` that means nothing away from the repository it came from.
+     */
+    fun refsUnder(namespace: String): List<PeeledRef> {
         RevWalk(repository).use { walk ->
             walk.isRetainBody = true
-            return repository.refDatabase.getRefsByPrefix(Constants.R_TAGS)
+            return repository.refDatabase.getRefsByPrefix(namespace)
                 .sortedBy { it.name }
+                .filterNot { it.isSymbolic && namespace != Constants.R_TAGS }
                 .mapNotNull { ref ->
                     val pointee = walk.parseAny(ref.objectId)
                     val peeled = walk.peel(pointee)
@@ -72,7 +91,7 @@ class SourceRepository private constructor(
                     val annotation = (pointee as? RevTag)?.let {
                         TagAnnotation(it.taggerIdent, it.fullMessage)
                     }
-                    TagRef(ref.name.removePrefix(Constants.R_TAGS), peeled.id, annotation)
+                    PeeledRef(ref.name.removePrefix(namespace), peeled.id, annotation)
                 }
         }
     }
@@ -349,8 +368,8 @@ class NoteRef(
 /** A named reference resolved to the object it points at. */
 class GitRef(val name: String, val target: ObjectId)
 
-/** A tag resolved to the commit it peels to, with its annotation when it has one. */
-class TagRef(val name: String, val target: ObjectId, val annotation: TagAnnotation?)
+/** A ref resolved to the commit it peels to, with its annotation where it has one. */
+class PeeledRef(val name: String, val target: ObjectId, val annotation: TagAnnotation?)
 
 /** The parts of an annotated tag object that survive retargeting. */
 class TagAnnotation(val tagger: PersonIdent?, val message: String)

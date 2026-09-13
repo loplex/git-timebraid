@@ -211,8 +211,8 @@ Neither is something braiding introduces, and both are worked through under
 
 - Reading the inputs — a local path in place, a URL through a clone — and planning the interleaving.
 - Writing the output, bare or with a working tree.
-- Recreating the branches and tags a run carries over, each under its input's prefix — every ref
-  by default, narrowed with `--ref`.
+- Recreating the branches and tags a run carries over, each under its input's prefix — every
+  branch and tag by default, narrowed with `--ref`.
 - The provenance trailer on every commit message.
 - Keeping the inputs as remotes, their commits still reachable.
 - Progress on stderr.

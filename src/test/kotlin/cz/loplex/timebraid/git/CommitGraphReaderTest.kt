@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.lib.Constants
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -120,10 +121,15 @@ class CommitGraphReaderTest {
             fun read(vararg patterns: String) =
                 CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
 
-            fun branchesOf(inputs: BraidInputs) = inputs.sources[0].branches.map { it.name }.sorted()
-            fun tagsOf(inputs: BraidInputs) = inputs.sources[0].tags.map { it.name }.sorted()
+            // By the namespace each ref lands in, which is what the output actually holds.
+            fun under(inputs: BraidInputs, namespace: String) = inputs.sources[0].refs
+                .filter { it.namespace == namespace }
+                .map { it.name }
+                .sorted()
+            fun branchesOf(inputs: BraidInputs) = under(inputs, Constants.R_HEADS)
+            fun tagsOf(inputs: BraidInputs) = under(inputs, Constants.R_TAGS)
 
-            // No pattern is every ref, which is what a plain run does.
+            // No pattern is every branch and tag, which is what a plain run does.
             val everything = read()
             assertEquals(4, everything.graph.size)
             assertEquals(listOf("experiment", "main"), branchesOf(everything))
@@ -214,8 +220,8 @@ class CommitGraphReaderTest {
             // program can name where an empty result cannot be told from an input that has no such
             // ref.
             val short = assertThrows<IllegalArgumentException> { idsFor("feature/x/y") }
-            assertTrue(short.message!!.contains("refs/heads/"), short.message)
-            // A bare star is every ref.
+            assertTrue(short.message!!.contains("refs/"), short.message)
+            // A bare star is every branch and every tag.
             assertEquals(setOf(f.name, tagged.name), idsFor("*"))
             // No pattern means the default scope, and nothing to resolve.
             assertEquals(emptySet<String>(), idsFor())

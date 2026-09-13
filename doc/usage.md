@@ -317,8 +317,8 @@ called `release/x`. That is refused the same way, naming the braid.
 
 ### Commit notes
 
-Notes live outside the two namespaces a selection speaks about, and they are not carried over unless
-a run asks:
+Notes are not something a selection can name, a pattern under `refs/notes/` being refused, and they
+are not carried over unless a run asks:
 
 ```bash
 --notes
@@ -344,6 +344,42 @@ trailer records where a commit came from, the rekeying moves what was said about
 `--ref` does not reach here. A pattern aimed at `refs/notes/` is **refused**, naming this flag: a
 note contributes no commit and reaches no ancestry, so it cannot be part of the selection that
 decides what is read.
+
+### Writing a ref pattern
+
+A ref pattern is `[<input>::]<refspec>`: an optional scope, ended by `::`, the separator a
+[`<repo>`](#writing-an-input) puts between its location and its suffix, and after it git's refspec.
+The first `::` is the separator, since an input's name holds no `:`. What the scope does is under
+[saying it for one input only](#saying-it-for-one-input-only).
+
+| written                           | input    | pattern            | destination  |
+|-----------------------------------|----------|--------------------|--------------|
+| `refs/heads/*`                    | every    | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*`           | backend  | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*:refs/tags/`| backend  | `refs/heads/*`     | `refs/tags/` |
+| `refs/heads/*:refs/tags/`         | every    | `refs/heads/*`     | `refs/tags/` |
+
+**A value git takes as a refspec means the same here.** The differences are few, and each is on
+purpose: a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may
+hold `{repo}`; a pattern with stars may go without a destination, which `git fetch` allows only in a
+negative refspec, or name one ref as its destination; and there is no `+`, no empty pattern or
+destination, and no short name — a pattern matches full ref names. git resolves a single short name,
+tags before branches, and never a short pattern; `-b` is the short form here, and says which of the
+two it means.
+
+What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
+
+**One quoted argument may hold several values, separated by spaces**: a space cannot occur in a ref
+name, as a `:` cannot, so the split can never cut a pattern in half. These two are the same run:
+
+```bash
+--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
+--ref 'backend::refs/heads/main webui::refs/heads/release/*'
+```
+
+It holds for `-b`, `--label-ref`, `--interleave-ref` and `--mainline-branch` alike.
+What does *not* work is leaving the quotes off: an option takes one argument, and the rest would be
+read as input repositories.
 
 ### Choosing which refs are carried over
 
@@ -395,38 +431,88 @@ branch was meant to keep out.
   the two are separate flags; [which refs are carried
   over](how-it-works.md#which-refs-are-carried-over) works out how.
 
-### Carrying a branch over as a tag
+### Saying where a ref lands
 
-A ref pattern may end in a destination, after a single `:`, and it says where the matches land:
+A ref pattern is a git **refspec**, and its right half is the destination — what git writes after
+the `:` in `refs/heads/*:refs/remotes/origin/*`, where the left half says what is read and the right
+half what it is called:
+
+```bash
+--ref 'legacy::refs/heads/*:refs/tags/'
+--ref 'backend::refs/changes/*:refs/changes/{repo}/*'
+--ref 'clone::refs/remotes/origin/*:refs/heads/{repo}/*'
+```
+
+The prefix rules (`--branch-prefix`, `--tag-prefix`) are the default naming. **A destination
+overrides exactly the part of the name it writes out** — nothing, the namespace, or all of it:
+
+| destination           | `refs/heads/wip` from `backend` becomes | who named it                               |
+|-----------------------|-----------------------------------------|--------------------------------------------|
+| *(none)*              | `refs/heads/backend/wip`                | the prefix rule                            |
+| `refs/tags/`          | `refs/tags/backend/wip`                 | you the namespace, `--tag-prefix` the rest |
+| `refs/tags/archive-*` | `refs/tags/archive-wip`                 | you, and no prefix applies                 |
+
+- A `*` in the destination is **substituted** with whatever the pattern's own `*` matched, so the
+  pattern needs exactly one. It need not be a whole path segment:
+  `refs/legacy/*:refs/archived_*` turns `refs/legacy/alpha` into `refs/archived_alpha`. As in a
+  git refspec, what the `*` matched may hold a slash, and carries it into the destination.
+- A destination **ending in `/` with no `*`** is a namespace, handed back to that namespace's prefix
+  rule. Only `refs/heads/` and `refs/tags/` have one, so only those two can be written that way.
+- `{repo}` is substituted, which is what makes an unscoped pattern safe: a destination naming a ref
+  outright, with neither `{repo}` nor a `*`, gives every input's match the same name, and the run
+  would be refused for the collision.
+- Where you spell the name out, **unique names are yours to arrange**. The collision check still
+  refuses two inputs meeting on one ref, naming both, and under `--keep-remotes` it refuses any
+  destination under an input's `refs/remotes/<name>/`, where the mirrors are, meeting one or not.
+  It refuses any under `refs/timebraid-fetch/` as well, where the run parks the refs it fetches and
+  which it empties once the braid is written.
+- Where two patterns match one ref, **a scoped pattern beats an unscoped one**, which is what makes
+  *this input's branches as tags, everything else as it stands* writable. Between two of the same
+  scope the one written first decides, however specific the other is.
+- The mainline is never redirected. It is loaded whatever the patterns say, so a pattern reaching it
+  reaches a ref the run never asked to carry over.
+
+That is how a dead branch is archived — kept for the record, not kept as a branch, and without
+dropping the commits only it reaches:
 
 ```bash
 --ref 'legacy::refs/heads/*:refs/tags/'
 ```
 
-`legacy`'s branches become **tags** of the output — `refs/tags/legacy/wip` and so on — while its
-mainline stays the braid's branch and every other input is untouched. That is the archiving case: a
-repository with forty dead branches, all of them wanted for the record, none of them wanted as
-branches, and the commits only they reach wanted along with them.
+A branch has no annotation, so it arrives as a **lightweight** tag. Going the other way, an
+annotated tag written into `refs/heads/` loses its annotation: a branch points at a commit and
+nothing else.
 
-The redirection rides on the pattern that selects the refs rather than on a flag of its own, which is
-what keeps the two from drifting: the glob is written once. Git spells the same idea as a two-sided
-refspec, `+refs/heads/*:refs/remotes/origin/*`, where the left half says what is read and the right
-half what it is called.
+### Namespaces beyond branches and tags
 
-- The destination is a **namespace**: `refs/tags/` or `refs/heads/`, and nothing deeper. The prefix
-  under it stays `--tag-prefix` or `--branch-prefix`, whichever the destination's kind carries.
-- It works the other way too — `--ref 'refs/tags/release/*:refs/heads/'` makes branches of a release
-  series. A branch points at a commit and nothing else, so an annotated tag loses its annotation on
-  the way; that is a deliberate flattening rather than a quiet one.
-- A branch has no annotation to lose, so a branch carried over as a tag is a **lightweight** tag.
-- It is available on `--ref` and `--label-ref` — the two that write refs. `--interleave-ref` decides
-  what may weigh on the braid and writes nothing, so a destination there is refused rather than
-  accepted and ignored.
-- The mainline is never redirected. It is loaded whatever the patterns say, so a pattern reaching it
-  reaches a ref the run never asked to carry over.
-- Where two patterns match one ref, **a scoped pattern beats an unscoped one**, which is what makes
-  *this input's branches as tags, everything else as it stands* writable. Between two of the same
-  scope the one written first decides, however specific the other is.
+`refs/heads/` and `refs/tags/` are read by default. Any other namespace — a Gerrit `refs/changes/`,
+a forge's `refs/pull/`, the branches an ordinary clone keeps under `refs/remotes/origin/` — is read
+**when a pattern names it**, and then the destination is required:
+
+```bash
+--ref 'refs/changes/*:refs/changes/{repo}/*'
+```
+
+- A bare `*` and a pattern under `refs/` still mean *every branch and every tag*. Naming no foreign
+  namespace reads none, so nothing a forge or a clone left lying about arrives unasked.
+- The destination is required there because nothing else could name the result: `--branch-prefix`
+  and `--tag-prefix` speak for their own two namespaces and no third rule exists.
+- A symbolic ref is skipped. `refs/remotes/origin/HEAD` points at another ref rather than being one,
+  and carrying it over would write the same commit twice.
+- `refs/notes/` is refused whatever the destination. A notes ref points at a tree keyed by shas
+  rather than at history anyone braids — see [commit notes](#commit-notes).
+
+**An ordinary clone is the case worth knowing about.** `git clone` keeps its branches under
+`refs/remotes/origin/`, and only the checked-out one under `refs/heads/` as well, so a clone given
+as an input contributes that one branch unless you ask for the rest. Naming refs for it narrows it
+as it narrows any input, its tags included, so ask for those too:
+
+```bash
+--ref 'clone::refs/remotes/origin/*:refs/heads/{repo}/* clone::refs/tags/*'
+```
+
+The checked-out branch then arrives twice: as the input's mainline, in the braid, and as
+`refs/heads/<repo>/main` from its copy under `refs/remotes/origin/`.
 
 ### Saying it for one input only
 
@@ -439,46 +525,19 @@ it speaks for all of them, so nothing written before this existed changes meanin
 --ref 'refs/tags/v*'
 ```
 
-The scope is ended by `::`, the separator a [`<repo>`](#writing-an-input) puts between its
-location and its suffix, and that is decidable rather than a convention: git refuses a colon
-anywhere in a ref name, so a `::` is never part of the pattern. An `<input>::` naming something
-that is not an input is refused, so a typo is not a pattern that quietly matches nothing. An empty
-scope, `::refs/heads/main`, is refused too, the unscoped form already saying it, and so is a scope
-written with one colon, `backend:refs/heads/main`, naming the form that works.
-
-A value is therefore `[<input>::]<pattern>[:<destination>]`: after the scope, a single `:` begins
-a [destination](#carrying-a-branch-over-as-a-tag). Neither a pattern nor an input's name can hold a
-colon of its own, so in a well-formed value the two separators cannot be confused.
-
-| written                           | input    | pattern            | destination  |
-|-----------------------------------|----------|--------------------|--------------|
-| `refs/heads/*`                    | every    | `refs/heads/*`     | its own      |
-| `backend::refs/heads/*`           | backend  | `refs/heads/*`     | its own      |
-| `backend::refs/heads/*:refs/tags/`| backend  | `refs/heads/*`     | `refs/tags/` |
-| `refs/heads/*:refs/tags/`         | every    | `refs/heads/*`     | `refs/tags/` |
-
-**One quoted argument may hold several values, separated by spaces**, which is the same rule read
-again: a space cannot occur in a ref name either, so the split can never cut a pattern in half. These
-two are the same run:
-
-```bash
---ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
---ref 'backend::refs/heads/main webui::refs/heads/release/*'
-```
-
-It holds for `-b`, `--label-ref`, `--interleave-ref` and `--mainline-branch` alike.
-What does *not* work is leaving the quotes off: an option takes one argument, and the rest would be
-read as input repositories.
+An `<input>::` naming something that is not an input is refused, so a typo is not a pattern that
+quietly matches nothing; so is an empty one, `::refs/heads/main`, the unscoped form already saying
+it.
 
 **The empty case stays per input.** An input no pattern names keeps that option's default — every
-ref for `--ref`, none for `--label-ref` and `--interleave-ref`. So patterns scoped to `backend` and
-`webui` alone narrow those two while a third input still carries everything, which is *naming any
-ref leaves out every ref not named* read one input at a time; an unscoped one, like
+branch and tag for `--ref`, none for `--label-ref` and `--interleave-ref`. So patterns scoped to
+`backend` and `webui` alone narrow those two while a third input still carries everything, which
+is *naming any ref leaves out every ref not named* read one input at a time; an unscoped one, like
 `refs/tags/v*` above, names every input.
 
-Narrowing one input leaves every other input's ref **names** alone: the qualifier goes on
-unconditionally, so a selection decides which refs exist and not what the surviving ones are called.
-That was not true before 0.2.0 — see [branches](#branches).
+Narrowing one input leaves every other input's ref **names** alone: the qualifier goes on wherever a
+pattern has not spelled a destination out, so narrowing decides which refs exist and not what the
+surviving ones are called. That was not true before 0.2.0 — see [branches](#branches).
 
 ### The inputs' original commits
 
@@ -495,6 +554,11 @@ They are in the output too, with their own shas intact, next to the rewritten on
   the originals stay one `git log` away. Notes are the exception: they are written under
   `refs/notes/`, and a notes ref names a notes commit, which is not in the braid and so has no
   original to point at.
+- Each remote is given the fetch refspec `+refs/heads/*:refs/remotes/<name>/*`, so a pruning fetch
+  — `git fetch --prune <repo>`, or any fetch under `fetch.prune` — deletes every mirror under
+  `refs/remotes/<name>/` that names no branch of the input: the tag mirrors among them, and what
+  only they reached is unreferenced again. It would delete a destination written there too, which is
+  why one is refused under `--keep-remotes`.
 - Either way the fetch covers the refs that were read, so narrowing the selection narrows what
   arrives: a commit only an unselected ref could reach is not merely unreferenced in the output,
   its objects are not there.
@@ -709,10 +773,14 @@ Which history is read, and how it interleaves:
                                  alike (repeatable).
                                  Patterns are matched against full ref names, and may be prefixed
                                  <input>:: to narrow one input.
-                                 A :<destination> after the pattern writes the matches elsewhere:
-                                 <pattern>:refs/tags/ carries branches over as tags.
+                                 A :<destination> after the pattern is a refspec's right half,
+                                 naming where the matches land.
+                                 refs/tags/ hands them to --tag-prefix; a destination holding a star
+                                 spells the name out, substituting what the pattern matched.
+                                 Beyond refs/heads/ and refs/tags/ a namespace is read only when
+                                 named, and then the destination is required.
                                  One quoted argument may hold several, separated by spaces.
-                                 Default: every ref, each in the namespace it came from.
+                                 Default: every branch and tag, each in the namespace it came from.
   --label-ref=<text>             Also recreate the refs matching this glob whose target the run
                                  already holds (repeatable).
                                  Reads nothing extra and never delays a merge, so adding one cannot

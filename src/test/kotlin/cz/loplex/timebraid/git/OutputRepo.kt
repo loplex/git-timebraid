@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 import org.junit.jupiter.api.Assertions.assertTrue
 import java.nio.file.Path
@@ -30,7 +31,15 @@ object OutputRepo {
 
     fun read(dir: Path): Contents {
         SourceRepository.open(dir).use { repo ->
-            val tips = repo.branches().map { it.target } + repo.tags().map { it.target }
+            // Every ref, not only the branches and the tags: a run may carry a namespace of its
+            // own, and a commit only such a ref reaches is still a commit the braid wrote. Notes
+            // are the exception — their commits are the output's own bookkeeping and carry no
+            // provenance trailer to read. An output written with --keep-remotes cannot be read
+            // here at all: its refs/remotes/ point at the inputs' own commits, which carry none
+            // either.
+            val tips = repo.refsUnder(Constants.R_REFS)
+                .filterNot { it.name.startsWith(Constants.R_NOTES.removePrefix(Constants.R_REFS)) }
+                .map { it.target }
             val commits = repo.readReachable(tips).map { source ->
                 val original = COMMIT.find(source.message)?.groupValues?.get(1)
                     ?: error("no provenance trailer on:\n${source.message}")

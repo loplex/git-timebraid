@@ -121,8 +121,10 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
   0.1.0 braided along that commit on a dry run, and the run itself failed after creating the
   output.
 
-- A ref pattern that can match nothing under `refs/heads/` or `refs/tags/` is refused.\
-  `--interleave-ref wip` matched nothing in 0.1.0; it is now an error, and so is any short name.
+- A ref pattern that cannot begin with `refs/` is refused, and so is one under `refs/notes/`.\
+  `--interleave-ref wip` matched nothing in 0.1.0; it is now an error, and so is any short name.\
+  `--interleave-ref 'refs/changes/*'` matched nothing too, 0.1.0 reading only branches and tags;
+  a namespace a pattern names is now read, and its refs interleave as a branch's do.
 
 ### Changed
 
@@ -184,25 +186,46 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
   `refs/notes/commits`.\
   A note on an object the run did not write is skipped, and the closing report says how many.\
   The history of a notes ref is not carried over — the output's is one commit, keeping the input's
-  author, committer and message.\
-  A ref pattern that can match nothing under `refs/heads/` or `refs/tags/` is refused rather than
-  matching nothing; one aimed at `refs/notes/` names `--notes`.
+  author, committer and message.
 
 - **`--lightweight-tags`** — recreate every annotated tag as a lightweight one.\
   The ref lands at the same commit and no tag object is written.\
   For a run that wants the ref names without the tagger, date and message of each release.\
   Default unchanged: an annotated tag stays annotated.
 
-- **A ref pattern may say which namespace its matches are written into.**\
-  A `:<destination>` after the pattern: `--ref 'legacy::refs/heads/*:refs/tags/'`.\
-  That reads `legacy`'s branches and writes them as tags, which is how forty dead branches are kept
-  for the record without being kept as branches — and without dropping the commits only they reach.\
-  It works the other way too, and flattens an annotated tag on the way, a branch having nowhere to
-  put an annotation.\
-  The destination is a namespace and nothing deeper; the prefix under it is still `--tag-prefix` or
-  `--branch-prefix`.\
+- **A ref pattern is a git refspec, and carries its right half.**\
+  `--ref 'legacy::refs/heads/*:refs/tags/'`; a value git takes as a refspec means the same here.\
+  The prefix rules are the default naming, and a destination overrides exactly the part of the name
+  it spells out — nothing, the namespace, or all of it.\
+  A destination holding a `*` substitutes what the pattern matched, so
+  `backend::refs/legacy/*:refs/archived_*` writes `refs/archived_alpha`, and no prefix goes near
+  it.\
+  `refs/tags/` and `refs/heads/` may be given as a bare namespace, handing the rest to
+  `--tag-prefix` or `--branch-prefix`.\
+  `{repo}` is substituted, which is what makes an unscoped destination safe.\
+  A destination meeting another input's ref is refused naming both, and under `--keep-remotes` so
+  is one under an input's `refs/remotes/<name>/`, where a pruning fetch would delete it.\
+  One under `refs/timebraid-fetch/` is refused as well: the run parks the refs it fetches there,
+  and deletes everything under it once the braid is written.\
+  That is how forty dead branches are kept for the record without being kept as branches — and
+  without dropping the commits only they reach.\
   Available on `--ref` and `--label-ref`, the two that write refs; refused on `--interleave-ref`,
-  which writes none.
+  which writes none.\
+  Unlike git's fetch, a destination may be a namespace and may hold `{repo}`, a pattern with stars
+  may go without a destination, which git's fetch allows only in a negative refspec, or name one
+  ref as its destination, and there is no `+`, no empty pattern or destination and no short name.
+
+- **A namespace beyond `refs/heads/` and `refs/tags/` is read when a pattern names it.**\
+  A Gerrit `refs/changes/`, a forge's `refs/pull/`, the branches an ordinary clone keeps under
+  `refs/remotes/origin/`.\
+  The destination is required there, nothing else being able to name the result.\
+  A bare `*` and a pattern under `refs/` still mean every branch and every tag, so nothing arrives
+  unasked.\
+  This is what lets an ordinary clone contribute more than the one branch it has checked out, its
+  tags named beside them since naming refs narrows the input:
+  `--ref 'clone::refs/remotes/origin/*:refs/heads/{repo}/* clone::refs/tags/*'`.\
+  A symbolic ref such as `refs/remotes/origin/HEAD` is skipped.\
+  A pattern aimed at `refs/notes/` is still refused, naming `--notes`.
 
 - **`--branch-prefix TEMPLATE`** — the qualifier on every recreated branch.\
   `{repo}` is substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
@@ -218,13 +241,14 @@ Twenty-six changes alter what a command line written for 0.1.0 does:
 
 - **`--ref PATTERN`** — carry over only the refs matching this glob (repeatable).\
   Branches and tags alike.\
-  The default is every ref, and the mainline is kept whatever the patterns say.
+  The default is every branch and tag, and the mainline is kept whatever the patterns say.
 
-- **Every ref pattern may name one input**, as `<input>::<pattern>`.\
+- **Every ref pattern may name one input**, as `<input>::<refspec>`.\
   `--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'`.\
   Without a scope a pattern speaks for every input, so nothing already written changes.\
   The empty case stays per input: one that no pattern names keeps that option's default.\
-  The scope is ended by its first `::`, since an input's name holds no `:`.\
+  The scope is ended by its first `::`, so a refspec after it keeps git's
+  meaning.\
   An `<input>::` naming something that is not an input is refused rather than matching nothing,
   and so is an empty one.
 
