@@ -4,6 +4,8 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.NoSuchOption
+import com.github.ajalt.clikt.core.PrintHelpMessage
+import com.github.ajalt.clikt.core.PrintMessage
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.core.terminal
 import com.github.ajalt.clikt.core.UsageError
@@ -17,6 +19,7 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
 import com.github.ajalt.clikt.parameters.options.multiple
+import com.github.ajalt.clikt.parameters.options.eagerOption
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
@@ -57,7 +60,7 @@ import kotlin.io.path.writeText
  * character reaches no console — which is why `MessageCharsetTest` exempts this one and nothing
  * else.
  */
-private const val BR = "\u0085"
+internal const val BR = "\u0085"
 
 /*
  * The groups below exist for `--help`, which clikt renders one section per group. A single flat
@@ -334,9 +337,29 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     override fun aliases(): Map<String, List<String>> = mapOf("--" to listOf("--", END_OF_OPTIONS))
 
     init {
-        versionOption(version()) { "git-timebraid version $it" }
+        versionOption(version(), help = "Show the version and exit.") { "git-timebraid version $it" }
 
-        context { helpFormatter = { TimebraidHelpFormatter(it) } }
+        context {
+            helpFormatter = { TimebraidHelpFormatter(it) }
+            // -h is no longer a synonym for --help but this command's own option, printing the
+            // terse list below. That is git's split — `git fetch -h` is one line per option and
+            // `git fetch --help` is the manual — and here it is also the only split that works:
+            // git intercepts --help on a subcommand before dispatching it and looks for a man
+            // page, so `git timebraid --help` never reaches this program at all. -hh is the
+            // spelling that gets the full list through that form.
+            helpOptionNames = emptySet()
+        }
+
+        eagerOption("-h", help = "Show each option's first line and exit.") {
+            throw PrintMessage(terseHelp(context))
+        }
+
+        eagerOption(
+            "--help", "-hh",
+            help = "Show every option with its defaults and exit.",
+        ) {
+            throw PrintHelpMessage(context)
+        }
 
         // The help formatter lays out to the terminal's width, which mordant asks the OS for when
         // the output is a console and otherwise settles at 79 — what a redirect, a pipe into a
@@ -382,6 +405,22 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     override fun helpEpilog(context: Context): String =
         "More on each option, and what the output holds: " +
             "https://github.com/loplex/git-timebraid/blob/main/doc/usage.md"
+
+    /**
+     * What `-h` prints: every option, its entry cut to the first line.
+     *
+     * The epilog is not the one `--help` carries. A reader of the terse list needs the full list
+     * before the page that explains it, and needs both spellings, since which of the two works
+     * depends on whether this program was reached through git.
+     */
+    private fun terseHelp(context: Context): String = TerseHelpFormatter(context).formatHelp(
+        error = null,
+        prolog = help(context),
+        epilog = "Every option with its defaults: git-timebraid --help, or git timebraid -hh." +
+            "\n\n" + helpEpilog(context),
+        parameters = allHelpParams(),
+        programName = commandName,
+    )
 
     override fun run() {
         if (reporting.quiet && reporting.verbose) {

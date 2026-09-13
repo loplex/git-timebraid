@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.cli
 
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.output.HelpFormatter.ParameterHelp
 import com.github.ajalt.clikt.output.MordantHelpFormatter
 import com.github.ajalt.mordant.rendering.Widget
@@ -38,6 +39,34 @@ open class TimebraidHelpFormatter(context: Context) : MordantHelpFormatter(conte
 }
 
 /**
+ * The same help with every entry cut to its first line: what `-h` prints.
+ *
+ * Every option is still there, which is the point — a terse list that leaves options out would
+ * make them undiscoverable, and `git fetch -h` leaves none out either. What goes is the qualifiers
+ * and the defaults under each first line, which is exactly the split the help strings are already
+ * written to: one information per line, the first saying what the option does.
+ *
+ * A group's own help keeps its first paragraph rather than its first line, because that paragraph
+ * is where `<ref-pattern>` is defined and the entries below it are unreadable without it. The
+ * prolog is cut to its first paragraph as well.
+ */
+class TerseHelpFormatter(context: Context) : TimebraidHelpFormatter(context) {
+    override fun collectHelpParts(
+        error: UsageError?,
+        prolog: String,
+        epilog: String,
+        parameters: List<ParameterHelp>,
+        programName: String,
+    ): List<Widget> = super.collectHelpParts(
+        error,
+        firstParagraph(prolog),
+        epilog,
+        parameters.map(::shortened),
+        programName,
+    )
+}
+
+/**
  * One row per flag that can be turned off, named `--[no-]x`.
  *
  * The negative of a pair is found among the section's own option names as well as among the
@@ -71,3 +100,15 @@ private fun negationOf(name: String): String? = when {
     !name.startsWith("--") || name.startsWith(NEGATIVE) -> null
     else -> NEGATIVE + name.removePrefix("--")
 }
+
+private fun shortened(parameter: ParameterHelp): ParameterHelp = when (parameter) {
+    is ParameterHelp.Option -> parameter.copy(help = firstLine(parameter.help))
+    is ParameterHelp.Argument -> parameter.copy(help = firstLine(parameter.help))
+    is ParameterHelp.Group -> parameter.copy(help = firstParagraph(parameter.help))
+    else -> parameter
+}
+
+private fun firstParagraph(text: String): String = text.substringBefore("\n\n")
+
+/** The first line of a help string, [BR] being what puts the rest on lines of their own. */
+private fun firstLine(text: String): String = firstParagraph(text).substringBefore(BR)

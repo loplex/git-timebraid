@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-seven changes alter what a command line written for 0.1.0 does:
+Twenty-eight changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -131,6 +131,11 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
   `--interleave-ref 'refs/changes/*'` matched nothing too, 0.1.0 reading only branches and tags;
   a namespace a pattern names is now read, and its refs interleave as a branch's do.
 
+- `-h` prints less than it did, and less than `--help`.\
+  Every option is still listed, with the first line of its entry; the qualifiers, the defaults, and
+  all but the first paragraph of the text above the options and above each group of them are now
+  `--help` only, or `-hh` where git handles `--help` itself.
+
 ### Changed
 
 - **`<path-or-url>=<subdir>` is now `<path-or-url>::<subdir>`.**\
@@ -183,6 +188,14 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
   nothing.\
   It now gives the transfer and each ref written as the `git` command it is the equivalent of.\
   The commit-by-commit writing stays out: it is not one command, and `--plan-out` already dumps it.
+
+- **`-h` is no longer a synonym for `--help`.**\
+  It prints every option with its entry cut to the first line — what the option does, without the
+  qualifiers and the defaults under it.\
+  The text above the options, and above each group of them, keeps its first paragraph.\
+  Nothing is left out of the list, so no flag becomes harder to find; `git fetch -h` is the same
+  split.\
+  `--help` is unchanged, and `-hh` is a second name for it.
 
 - **A flag that can be turned off is written `--[no-]bare`, not `--bare / --no-bare`.**\
   That is how git writes one, and it is a line shorter each time.

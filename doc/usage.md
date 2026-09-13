@@ -814,6 +814,12 @@ This block is `git-timebraid --help` as the program prints it, generated from th
 `.github/scripts/check-help.py --write` rather than written out here, and CI fails when it falls
 behind the tool.
 
+`-h` prints the same list with every entry cut to its first line, and the text above the options and
+above each group of them cut to its first paragraph — every option still there, the qualifiers, the
+defaults and the paragraphs after those gone. Reached through git, `git timebraid --help` is handled
+by git rather than by this program, so the two spellings that work there are `-h` and `-hh`; see
+[install.md](install.md).
+
 It is rendered at 100 columns, the width this page is written to. What you see is laid out to your
 own terminal instead, and `COLUMNS` overrides that.
 
@@ -949,8 +955,9 @@ Inspecting a run:
                      Default: whichever of the two the console can encode.
 
 Options:
-  --version   Show the version and exit
-  -h, --help  Show this message and exit
+  --version    Show the version and exit.
+  -h           Show each option's first line and exit.
+  -hh, --help  Show every option with its defaults and exit.
 
 Arguments:
   <repo>  <path-or-url>[::[<subdir>][=<name>]]
