@@ -35,6 +35,14 @@ class WriteOptions(
      * [BraidWriter.resolveRefs].
      */
     val branchPrefix: String = "{repo}/",
+    /**
+     * Whether an annotated tag is recreated as a lightweight one, dropping its tagger and message.
+     *
+     * Off, because dropping them loses text no other object holds and a merge should not do that
+     * quietly. On, it is the deliberate case: a run that wants the ref names without carrying the
+     * name, address and date of whoever cut each of forty releases.
+     */
+    val lightweightTags: Boolean = false,
     /** Whether to record the original identity of each commit in a trailer. */
     val provenance: Boolean = true,
     /**
@@ -434,8 +442,9 @@ class BraidWriter(
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
      * What an annotated tag holds beyond its target — its tagger, its message — is recreated in
-     * full by [tagTarget] where the tag is written under `refs/tags/`. A tag a destination writes
-     * as a branch loses it, and this mirror, pointing at the commit, keeps none of it.
+     * full by [tagTarget] where the tag is written under `refs/tags/`, unless `--lightweight-tags`
+     * asks for none. A tag a destination writes as a branch loses it as well, and this mirror,
+     * pointing at the commit, keeps none of it.
      *
      * The mirror covers every ref the run carried over, the selection and the labels alike, so
      * `-b` narrows it the same way it narrows the output. A label was not read and so was not
@@ -478,9 +487,13 @@ class BraidWriter(
      * person actually wrote, and dropping them would lose text no other object holds. The signature,
      * if there was one, is not carried over — it covers the commit the tag pointed at, which no
      * longer exists under that name.
+     *
+     * [WriteOptions.lightweightTags] is how a run says it wants that loss, which leaves the ref
+     * pointing straight at the commit and writes no tag object at all.
      */
     private fun tagTarget(name: String, tag: BraidTag): ObjectId {
         val commit = idOf(tag.commit)
+        if (options.lightweightTags) return commit
         val annotation = tag.annotation ?: return commit
         return target.writeAnnotatedTag(
             name = name,

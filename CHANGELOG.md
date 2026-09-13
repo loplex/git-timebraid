@@ -174,6 +174,11 @@ Twenty-five changes alter what a command line written for 0.1.0 does:
 
 ### Added
 
+- **`--lightweight-tags`** — recreate every annotated tag as a lightweight one.\
+  The ref lands at the same commit and no tag object is written.\
+  For a run that wants the ref names without the tagger, date and message of each release.\
+  Default unchanged: an annotated tag stays annotated.
+
 - **A ref pattern may say which namespace its matches are written into.**\
   A `:<destination>` after the pattern: `--ref 'legacy::refs/heads/*:refs/tags/'`.\
   That reads `legacy`'s branches and writes them as tags, which is how forty dead branches are kept

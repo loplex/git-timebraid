@@ -293,7 +293,12 @@ checkout of the whole system, is under [branches](how-it-works.md#branches).
 **All of them**, prefixed the same way (`v1.2` from `webui` becomes `webui/v1.2`). The prefix is
 `--tag-prefix`.
 
-An annotated tag stays annotated, keeping its tagger and its message.
+An annotated tag stays annotated, keeping its tagger and its message — dropping them would lose text
+no other object holds, and a merge should not do that quietly.
+
+`--lightweight-tags` asks for exactly that loss: every tag becomes a plain ref at the same commit
+and no tag object is written. It is the case where a run wants the ref names without carrying the
+name, address and date of whoever cut each of forty releases.
 
 ### Turning the prefix off
 
@@ -708,6 +713,9 @@ What the output repository holds:
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
                                   Default: "{repo}: "
+  --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
+                                  tagger, date and message.
+                                  Default: an annotated tag stays annotated.
   --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
                                   Default: on.
   --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.

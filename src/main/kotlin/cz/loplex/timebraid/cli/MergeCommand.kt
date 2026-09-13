@@ -217,6 +217,13 @@ private class OutputContentOptions : OptionGroup(
                 "Default: \"" + WriteOptions().subjectPrefix + "\""
         )
 
+    val lightweightTags by option("--lightweight-tags").flag()
+        .help(
+            "Recreate every annotated tag as a lightweight one, dropping its tagger, date " +
+                "and message." + BR +
+                "Default: an annotated tag stays annotated."
+        )
+
     val provenance by option("--provenance").flag("--no-provenance", default = true)
         .help(
             "Record each commit's original sha and parents in a trailer." + BR + "Default: on."
@@ -409,6 +416,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 subjectPrefix = outputContent.subjectPrefix,
                 tagPrefix = outputContent.tagPrefix,
                 branchPrefix = outputContent.branchPrefix,
+                lightweightTags = outputContent.lightweightTags,
                 provenance = outputContent.provenance,
                 provenanceTrailer = outputContent.provenanceTrailer,
             ),

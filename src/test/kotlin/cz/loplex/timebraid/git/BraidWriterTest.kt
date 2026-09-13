@@ -552,6 +552,34 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `an annotated tag is flattened on request, and nothing else changes`() {
+        corpus()
+        val kept = tmp.resolve("annotated.git")
+        val flattened = tmp.resolve("lightweight.git")
+        braid(kept)
+        braid(flattened, options = WriteOptions(lightweightTags = true))
+
+        SourceRepository.open(kept).use { repo ->
+            val tag = repo.tags().single { it.name == "webui/v2.0" }
+            assertEquals("the second release\n", tag.annotation?.message)
+        }
+        SourceRepository.open(flattened).use { repo ->
+            // The same tags at the same commits; only the tag objects are gone.
+            assertEquals(listOf("backend/v1.0", "webui/v2.0"), repo.tags().map { it.name }.sorted())
+            assertTrue(repo.tags().all { it.annotation == null }, "an annotation survived")
+        }
+        SourceRepository.open(kept).use { before ->
+            SourceRepository.open(flattened).use { after ->
+                assertEquals(
+                    before.tags().associate { it.name to it.target.name },
+                    after.tags().associate { it.name to it.target.name },
+                    "flattening a tag must not move it",
+                )
+            }
+        }
+    }
+
+    @Test
     fun `the provenance trailer is a template`() {
         corpus()
         val out = tmp.resolve("trailer.git")
