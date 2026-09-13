@@ -39,6 +39,18 @@ jobs:
       - name: Show git version
         run: git --version
 
+      # Not a nicety ahead of the compiler: this catches what the compiler does not. Kotlin nests
+      # block comments, so `/` followed by `*` in a KDoc -- how a ref glob is written -- opens one
+      # that swallows what follows. Any `*/` below it closes that comment again, and where what
+      # remains parses, the file compiles with a hole in it and nothing is reported. A @Test can
+      # stop running while the build stays green. Where it does fail, it fails as `Unclosed comment`
+      # at the last line and a syntax error far above the glob, so this says the line either way.
+      #
+      # Linux only: it reads the tracked sources, which do not differ per platform.
+      - name: Check no block comment opens another
+        if: runner.os == 'Linux'
+        run: .github/scripts/check-comments.sh
+
       - name: mvn verify
         run: mvn -B -ntp verify
 
