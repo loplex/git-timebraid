@@ -9,6 +9,8 @@
             lib/git-timebraid.jar
             lib/*.jar                every runtime dependency
             runtime/                 the jlink image; bin/java is what the launcher runs
+            share/man/man1/git-timebraid.1
+            share/doc/git-doc/git-timebraid.html
             doc/
             doc/legal/               the license texts and the library list NOTICE points at
             README.md CHANGELOG.md LICENSE NOTICE
