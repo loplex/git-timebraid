@@ -62,7 +62,7 @@ for page in "${pages[@]}"; do
         "$year" "$month" "$day")
 
     target=$out/$(basename "$page" .1).html
-    # Diagnostics are groff's stderr and not its status: it renders what it can and exits 0.
+    # Diagnostics, like check-roff.sh's, are groff's stderr and not its status: it renders what it can and exits 0.
     # Written to a file rather than captured, so the page keeps its last newline.
     if ! SOURCE_DATE_EPOCH=$epoch groff -man -Thtml "$page" > "$target.tmp" 2> "$err" ||
             [ -s "$err" ] || [ ! -s "$target.tmp" ]; then
