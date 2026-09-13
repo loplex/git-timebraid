@@ -529,6 +529,62 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `one quoted argument may hold several space-separated values`() {
+        // A space cannot occur in a ref name, so splitting on it can never cut a pattern or a branch
+        // name in half. That is what lets one shell word carry a list — and it has to mean exactly
+        // what repeating the option means, which is what this asserts rather than assumes.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("trunk", b1)
+            r.branch("wip", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val repeated = tmp.resolve("repeated.git")
+        val compact = tmp.resolve("compact.git")
+
+        braid(
+            "-o", repeated.toString(),
+            "--mainline-branch", "backend::main", "--mainline-branch", "webui::trunk",
+            "--ref", "backend::refs/heads/main", "--ref", "webui::refs/heads/trunk",
+            path("backend.git"), path("webui.git"),
+        )
+        braid(
+            "-o", compact.toString(),
+            "--mainline-branch", "backend::main webui::trunk",
+            "--ref", "backend::refs/heads/main webui::refs/heads/trunk",
+            path("backend.git"), path("webui.git"),
+        )
+
+        fun refsOf(dir: Path) = SourceRepository.open(dir).use { repo ->
+            repo.branches().map { it.name }.toSet()
+        }
+        assertEquals(setOf("main"), refsOf(repeated))
+        assertEquals(refsOf(repeated), refsOf(compact))
+        assertEquals(
+            OutputRepo.read(repeated).commits.map { it.id.name }.toSet(),
+            OutputRepo.read(compact).commits.map { it.id.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun `an option value holding nothing but whitespace is refused`() {
+        reference()
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--ref", "   ",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, result.statusCode)
+        assertTrue(result.output.contains("whitespace"), result.output)
+    }
+
+    @Test
     fun `a scope naming an input that does not exist is refused`() {
         reference()
         val result = MergeCommand().test(

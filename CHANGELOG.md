@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-four changes alter what a command line written for 0.1.0 does:
+Twenty-five changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -43,6 +43,10 @@ Twenty-four changes alter what a command line written for 0.1.0 does:
 - An `--interleave-ref` value holding a `:` after its scope, scoped to a name that is no input, or
   empty, is refused.\
   0.1.0 took each for a pattern, one that matched no ref.
+
+- A space in a `-b` or an `--interleave-ref` value separates two values, and a value of nothing but
+  whitespace is refused.\
+  0.1.0 took the whole value for one name or pattern, which matched nothing.
 
 - `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::.git=<name>` now, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -194,7 +198,15 @@ Twenty-four changes alter what a command line written for 0.1.0 does:
   An `<input>::` naming something that is not an input is refused rather than matching nothing,
   and so is an empty one.
 
-- **`--mainline-branch` is repeatable and takes the same scope.**\
+- **One quoted argument may hold several values, separated by spaces.**\
+  `--ref 'backend::refs/heads/main webui::refs/heads/release/*'` is the repeated option written
+  once, and the two are the same run.\
+  It covers `-b`, `--ref`, `--label-ref`, `--interleave-ref` and `--mainline-branch`.\
+  Safe because git refuses a space in a ref name, where it accepts `,`, `;` and `|`.\
+  The quotes are not optional — an option takes one argument, and the rest would be read as
+  input repositories.
+
+- **`--mainline-branch` is repeatable and takes the same `<input>::` scope.**\
   `--mainline-branch 'backend::main' --mainline-branch 'webui::master'` merges two inputs that
   never agreed on a name — which could not be expressed at all before, one branch having had to
   be present in every input.\

@@ -250,6 +250,7 @@ inputs that never standardised on one name are merged at all:
 
 ```bash
 --mainline-branch 'backend::main' --mainline-branch 'webui::master'
+--mainline-branch 'backend::main webui::master'
 ```
 
 An unscoped value is the default for every input that has no scoped one, **and** names the branch
@@ -376,6 +377,19 @@ anywhere in a ref name, so a `::` is never part of the pattern. An `<input>::` n
 that is not an input is refused, so a typo is not a pattern that quietly matches nothing. An empty
 scope, `::refs/heads/main`, is refused too, the unscoped form already saying it, and so is a scope
 written with one colon, `backend:refs/heads/main`, naming the form that works.
+
+**One quoted argument may hold several values, separated by spaces**, which is the same rule read
+again: a space cannot occur in a ref name either, so the split can never cut a pattern in half. These
+two are the same run:
+
+```bash
+--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
+--ref 'backend::refs/heads/main webui::refs/heads/release/*'
+```
+
+It holds for `-b`, `--label-ref`, `--interleave-ref` and `--mainline-branch` alike.
+What does *not* work is leaving the quotes off: an option takes one argument, and the rest would be
+read as input repositories.
 
 **The empty case stays per input.** An input no pattern names keeps that option's default — every
 ref for `--ref`, none for `--label-ref` and `--interleave-ref`. So patterns scoped to `backend` and
@@ -601,6 +615,7 @@ Which history is read, and how it interleaves:
   --mainline-branch=<text>       Branch treated as the mainline in every input (repeatable).
                                  Prefix with <input>:: to give one input its own, where two do not
                                  agree.
+                                 One quoted argument may hold several, separated by spaces.
                                  An unscoped value covers the rest and names the output's branch.
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
@@ -608,21 +623,23 @@ Which history is read, and how it interleaves:
   -b, --branch=<text>            Carry over only these branches, by short name (repeatable).
                                  Shorthand for --ref refs/heads/<name>, so naming one leaves out
                                  every ref not named, tags included.
+                                 One quoted argument may hold several, separated by spaces.
   --ref=<text>                   Carry over only the refs matching this glob, branches and tags
                                  alike (repeatable).
                                  Patterns are matched against full ref names, and may be prefixed
                                  <input>:: to narrow one input.
+                                 One quoted argument may hold several, separated by spaces.
                                  Default: every ref.
   --label-ref=<text>             Also recreate the refs matching this glob whose target the run
                                  already holds (repeatable).
                                  Reads nothing extra and never delays a merge, so adding one cannot
                                  change a commit.
                                  A match whose target was not loaded is skipped, not an error.
-                                 Takes an <input>:: prefix.
+                                 Takes an <input>:: prefix; one quoted argument may hold several.
                                  Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).
-                                 Takes an <input>:: prefix.
+                                 Takes an <input>:: prefix; one quoted argument may hold several.
                                  Default: none.
 
 What the output repository holds:

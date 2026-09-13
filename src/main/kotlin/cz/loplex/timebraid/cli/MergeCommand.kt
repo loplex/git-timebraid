@@ -125,6 +125,7 @@ private class HistoryOptions : OptionGroup(
         .help(
             "Branch treated as the mainline in every input (repeatable)." + BR +
                 "Prefix with <input>:: to give one input its own, where two do not agree." + BR +
+                "One quoted argument may hold several, separated by spaces." + BR +
                 "An unscoped value covers the rest and names the output's branch." + BR +
                 "Default: the first of " +
                 "${CommitGraphReader.MAINLINE_CANDIDATES.joinToString("/")} present in all."
@@ -139,7 +140,8 @@ private class HistoryOptions : OptionGroup(
         .help(
             "Carry over only these branches, by short name (repeatable)." + BR +
                 "Shorthand for --ref refs/heads/<name>, so naming one leaves out every ref not " +
-                "named, tags included."
+                "named, tags included." + BR +
+                "One quoted argument may hold several, separated by spaces."
         )
 
     val refs by option("--ref").multiple()
@@ -148,6 +150,7 @@ private class HistoryOptions : OptionGroup(
                 "(repeatable)." + BR +
                 "Patterns are matched against full ref names, and may be prefixed <input>:: " +
                 "to narrow one input." + BR +
+                "One quoted argument may hold several, separated by spaces." + BR +
                 "Default: every ref."
         )
 
@@ -158,14 +161,14 @@ private class HistoryOptions : OptionGroup(
                 "Reads nothing extra and never delays a merge, so adding one cannot change a " +
                 "commit." + BR +
                 "A match whose target was not loaded is skipped, not an error." + BR +
-                "Takes an <input>:: prefix." + BR +
+                "Takes an <input>:: prefix; one quoted argument may hold several." + BR +
                 "Default: none."
         )
 
     val interleaveRefs by option("--interleave-ref").multiple()
         .help(
             "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
-                BR + "Takes an <input>:: prefix." +
+                BR + "Takes an <input>:: prefix; one quoted argument may hold several." +
                 BR + "Default: none."
         )
 }
@@ -394,7 +397,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             keepRemotes = outputContent.keepRemotes,
             orderBy = history.orderBy,
             mainlineBranch = history.mainlineBranch,
-            refs = history.branches.map(CommitGraphReader::branchPattern) + history.refs,
+            refs = branchPatterns(history.branches) + history.refs,
             interleaveRefs = history.interleaveRefs,
             labelRefs = history.labelRefs,
             splice = placement.splice,
@@ -868,6 +871,21 @@ private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageE
     val said = "'$name' is not a usable name (in '$raw')"
     return UsageError(if (fromSuffix) said + REMEDY else said)
 }
+
+/**
+ * `-b` values as the `--ref` patterns they are shorthand for.
+ *
+ * The reader refuses a malformed value with an [IllegalArgumentException], the way it does for
+ * every other caller. It becomes a [UsageError] here because the request is built before `run`'s
+ * own catch, so an unwrapped one would reach the user as a stack trace rather than as the usage
+ * error every other mistyped argument gets.
+ */
+private fun branchPatterns(values: List<String>): List<String> =
+    try {
+        CommitGraphReader.words(values, "-b").map(CommitGraphReader::branchPattern)
+    } catch (e: IllegalArgumentException) {
+        throw UsageError(e.message ?: "a -b value could not be read")
+    }
 
 /**
  * A name git would not accept inside a ref.

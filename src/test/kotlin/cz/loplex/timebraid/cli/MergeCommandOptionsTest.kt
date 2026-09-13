@@ -316,6 +316,28 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `one -b argument carries several branch names`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            repo.branch("main", a1)
+            repo.branch("feature", repo.commit("a2", parents = listOf(a1), at = Instant.parse("2021-01-01T11:00:00Z")))
+            repo.branch("wip", repo.commit("a3", parents = listOf(a1), at = Instant.parse("2021-01-01T12:00:00Z")))
+        }
+        val out = tmp.resolve("two-of-three.git")
+
+        // One quoted argument may hold several patterns on every option taking one, and -b is
+        // shorthand for one of them. The third branch is what shows the run still narrows.
+        run("-o", out.toString(), "-b", "main feature", tmp.resolve("backend.git").toString())
+
+        // `feature` arrives under the branch prefix and the mainline does not, which is the rule
+        // everywhere else; what this pins is that both names were read out of the one argument.
+        assertEquals(
+            listOf("backend/feature", "main"),
+            SourceRepository.open(out).use { repo -> repo.branches().map { it.name }.sorted() },
+        )
+    }
+
+    @Test
     fun `a branch and a tag of one input meeting on one mirror name are refused`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))

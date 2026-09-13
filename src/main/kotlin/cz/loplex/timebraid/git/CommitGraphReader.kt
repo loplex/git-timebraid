@@ -104,7 +104,9 @@ object CommitGraphReader {
      * The `refs` pattern that `-b/--branch` is shorthand for.
      *
      * A git branch name cannot contain a star, so the short form desugars into the general one
-     * exactly — there is no name for which the two select differently, and nothing to escape.
+     * exactly — there is no name for which the two select differently, and nothing to escape. Nor
+     * can it contain a space, which is what lets one argument carry several of them: see [words],
+     * through which `-b` passes as every option taking a ref pattern does.
      */
     fun branchPattern(name: String): String = Constants.R_HEADS + name
 
@@ -321,7 +323,7 @@ object CommitGraphReader {
         private val byInput = HashMap<String, MutableList<String>>()
 
         init {
-            for (value in raw) {
+            for (value in words(raw, option)) {
                 val (input, pattern) = scopeOf(option, value, inputs)
                 // No ref name holds a ':', so one here is a mistake; where an input's name stands
                 // before it, it is a scope written with one colon, and is named as that.
@@ -364,6 +366,24 @@ object CommitGraphReader {
     }
 
     /**
+     * Every value of [values], each split on whitespace, so one shell word may carry a whole list:
+     * `--mainline-branch 'A::main B::trunk'`, `-b 'main develop'`.
+     *
+     * Splitting is safe for the same reason the `::` scope is: git refuses a space anywhere in a
+     * ref name, as it refuses a colon, while it accepts `,`, `;` and `|` — so whitespace can never
+     * cut a pattern or a branch name in half, and none of the obvious separators could have been
+     * used instead. Repeating the option still works and means the same thing.
+     */
+    internal fun words(values: List<String>, option: String): List<String> =
+        values.flatMap { value ->
+            val parts = value.split(WHITESPACE).filter { it.isNotEmpty() }
+            require(parts.isNotEmpty()) { "$option was given a value holding nothing but whitespace" }
+            parts
+        }
+
+    private val WHITESPACE = Regex("\\s+")
+
+    /**
      * Matches a full ref name against any of [patterns], where `*` is the only metacharacter and it
      * spans path separators — so a pattern ending in one covers a whole prefix however deeply
      * nested, and a bare star is every ref.
@@ -396,7 +416,7 @@ object CommitGraphReader {
         val names = repositories.map { it.name }
         var common: String? = null
         val scoped = LinkedHashMap<String, String>()
-        for (value in requested) {
+        for (value in words(requested, "--mainline-branch")) {
             val (input, branch) = scopeOf("--mainline-branch", value, names)
             val colon = branch.indexOf(':')
             require(colon < 0) {
