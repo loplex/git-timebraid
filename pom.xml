@@ -192,6 +192,40 @@
             </plugin>
 
             <!--
+                Test reports carry over otherwise: surefire and failsafe write one file per class
+                and delete none, so a report outlives the class that wrote it. A renamed, deleted or
+                throwaway test leaves its last run behind in a local target/, and anything counting
+                the directory there counts it too, an IDE or a script reading the reports. CI starts
+                from a fresh checkout and cannot meet one, though it uploads both directories.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>clear-test-reports</id>
+                        <!-- The last phase before `test`, and before `integration-test` with it. -->
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/surefire-reports</directory>
+                                </fileset>
+                                <fileset>
+                                    <directory>${project.build.directory}/failsafe-reports</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
                 Unit tests: the pure planner and the narrow git wrappers, milliseconds each.
                 Everything named *IT is an end-to-end fixture and runs in `integration-test`.
             -->
