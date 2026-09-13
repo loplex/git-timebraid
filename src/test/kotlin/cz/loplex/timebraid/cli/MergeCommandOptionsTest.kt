@@ -328,8 +328,8 @@ class MergeCommandOptionsTest {
         }
         val out = tmp.resolve("two-of-three.git")
 
-        // One quoted argument may hold several patterns on every option taking one,
-        // and -b is shorthand for one of them.
+        // The group -b sits in says one quoted argument may hold several patterns;
+        // it holds for -b as it does for the options around it.
         // The third branch is what shows the run still narrows.
         run("-o", out.toString(), "-b", "main feature", tmp.resolve("backend.git").toString())
 
@@ -355,8 +355,8 @@ class MergeCommandOptionsTest {
         }
         val out = tmp.resolve("scoped.git")
 
-        // -b stands among the options whose grammar is [<input>::][^]<refspec>, and takes it too:
-        // the scope goes around the branch rather than into it, `refs/heads/` going on after the `::`.
+        // -b is the first entry of the section whose grammar is [<input>::][^]<refspec>,
+        // and the scope goes around the branch rather than into it: `refs/heads/` goes on after the `::`.
         run(
             "-o", out.toString(), "-b", "backend::main",
             tmp.resolve("backend.git").toString(),
