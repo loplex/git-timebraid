@@ -60,8 +60,9 @@
             share/doc/git-doc is where git's own pages sit under its prefix.
 
             Rendered by .github/scripts/render-man-html.sh before the build, not by it, so a build
-            that did not run the script packages none. Carried by every archive, the ones that never
-            read it included, for the reason above.
+            that did not run the script packages none, and smoke-distribution.sh refuses that
+            archive. Carried by every archive, the ones that never read it included, for the reason
+            above.
         -->
         <fileSet>
             <directory>${project.build.directory}/man-html</directory>

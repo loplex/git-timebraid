@@ -11,7 +11,7 @@
 # It is rendered here rather than in the Maven build, and committed nowhere: groff is a system tool
 # Maven cannot fetch, so a `mvn package` that rendered the page would fail on every machine without
 # it. The jobs that build an archive to ship or to smoke-test run this before they package; a build
-# that skips it packages no HTML.
+# that skips it packages no HTML, and smoke-distribution.sh refuses the archive.
 #
 # groff stamps a CreationDate into the output, which would make every render differ from the last.
 # SOURCE_DATE_EPOCH is set to the date in the page's `.TH` line -- that of its last nontrivial

@@ -138,6 +138,26 @@ jobs:
         shell: bash
         run: .github/scripts/smoke-distribution.sh
 
+      # What install.md tells a Git for Windows user to do, done to the runner's own git: the page
+      # copied into git's HTML path, and asked for as a user would, with the archive's bin/ on PATH
+      # -- without it git takes `timebraid` for no command at all and looks for no page. The browser
+      # is replaced by echo, which prints the page git hands it.
+      - name: Check git timebraid --help finds the HTML page
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          tar xzf target/git-timebraid-*-windows-x64.tar.gz -C "$work"
+          home=$(cd "$work"/*/ && pwd)
+          git config --show-origin help.format || echo "help.format is not set"
+          cp "$home/share/doc/git-doc/git-timebraid.html" "$(git --html-path)/"
+          opened=$(PATH="$home/bin:$PATH" git -c web.browser=show -c browser.show.cmd=echo timebraid --help)
+          echo "$opened"
+          case "$opened" in
+              *git-timebraid.html*) ;;
+              *) echo "git timebraid --help opened something other than git-timebraid.html" >&2; exit 1 ;;
+          esac
+
   # Two places quote the tool's own output to a reader as something they can reproduce: the worked
   # examples, and the option list in doc/usage.md. `mvn verify` proves the behaviour; it says
   # nothing about whether the documents still describe that behaviour correctly, and those are
