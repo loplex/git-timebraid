@@ -3,6 +3,16 @@ package cz.loplex.timebraid.plan
 /**
  * Decides *the braid*: which commits form the output's single interleaved mainline, and in what order.
  *
+ * What the braid guarantees is written for the reader in doc/how-it-works.md, a property to a
+ * place: a chain's own order in doc/how-it-works.md#the-parent-rule, the promise that no braid edge
+ * reaches anything younger than the commit it leaves in
+ * doc/how-it-works.md#a-merge-can-carry-a-repositorys-future-and-pass-it-on, and that by default
+ * nothing off a mainline moves where two mainlines meet in
+ * doc/how-it-works.md#trading-the-guarantee-away-on-purpose, which is also where `--interleave-ref`
+ * gives up the third, and the second with it. What follows is why this implementation has those
+ * properties, rather than what they are: stating a rule in two places is how the two come to
+ * disagree.
+ *
  * The braid is the union of the input repositories' mainline first-parent chains. Their order is
  * decided by Kahn's algorithm with a priority queue — keep the commits whose parents have all been
  * emitted, always take the one with the earliest timestamp — run not over the whole graph but over a
@@ -12,30 +22,21 @@ package cz.loplex.timebraid.plan
  *
  * **With no opted-in refs — the default — the scope is the mainline chains alone**, and since those are
  * disjoint paths the pass reduces exactly to a k-way merge of one queue per repository: the ready set
- * holds each chain's current front, and the earliest of them wins. Three properties follow from that
- * shape rather than from a comparator that would have to be trusted to stay consistent:
+ * holds each chain's current front, and the earliest of them wins. The three properties the document
+ * states follow from that shape, rather than from a comparator that would have to be trusted to stay
+ * consistent:
  *
- * 1. **One repository's own chain is never reordered.** Kahn emits a parent before its child, so two
- *    commits of one chain keep their order whatever their timestamps say — which a rebase or a skewed
- *    clock makes routine. Ancestry along a mainline therefore holds by construction.
- * 2. **A cross-repository predecessor is never timestamped later than the commit it precedes.** When a
- *    commit's predecessor comes from another chain, that commit was already in the ready set when the
- *    predecessor was taken, so the predecessor won a direct comparison against it. The artificial time
- *    edge this class hands to [reparent] can consequently never point into the future.
- * 3. **No branch outside the mainlines can shift the interleave.** Nothing off a mainline chain is in
- *    scope, so a side branch merged into a mainline — however inconveniently timestamped, however
- *    insignificant — cannot move where two repositories' mainlines meet. A merge takes its braid place
- *    at its own recorded time, which under the default `--order-by committer` is exactly the moment
- *    that branch landed.
- *
- * Property 3 is a scheduling decision, not a correctness one, which is why it can be opted out of.
- * Naming a ref through `--interleave-ref` puts its ancestors in scope, so a merge that merges that ref
- * in waits for it, and the merge can then land later than its own timestamp — the trade the caller is
- * choosing. Property 2 goes with it: a merge waiting on a side branch in scope is not in the ready set
- * when its predecessor is taken, which is how it comes to follow a younger commit of another
- * repository. Naming every ref reproduces a plain pass over the whole graph whenever the selection
- * carries the mainlines, which is what this tool did before the braid and the write order were
- * separated.
+ * 1. Kahn emits a parent before its child, so two commits of one chain keep their order whatever their
+ *    timestamps say — which a rebase or a skewed clock makes routine.
+ * 2. When a commit's predecessor comes from another chain, that commit was already in the ready set
+ *    when the predecessor was taken, so the predecessor won a direct comparison against it. The
+ *    artificial time edge this class hands to [reparent] can consequently never point into the future.
+ * 3. Nothing off a mainline chain is in scope, so nothing off one can move where two repositories'
+ *    mainlines meet. It is a property of the default scope and not of the selection, which is what
+ *    makes it something `--interleave-ref` can give up rather than something that could break.
+ *    Property 2 goes with it: a merge waiting on a side branch in scope is not in the ready set
+ *    when its predecessor is taken, which is how it comes to follow a younger commit of another
+ *    repository.
  *
  * Widening the scope stays safe whatever is named: cross-repository pairs have no ancestry relation at
  * all (the inputs are independent histories), same-repository braid members are ordered by property 1,
