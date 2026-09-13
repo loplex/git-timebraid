@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-two changes alter what a command line written for 0.1.0 does:
+Twenty-four changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -29,7 +29,20 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
 
 - `-b` takes a pattern, as `--ref refs/heads/<value>` does, rather than a branch's exact name.\
   `-b main` no longer carries the tags: add `--ref 'refs/tags/*'` for the old behaviour.\
-  A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.
+  A `*` matches any run of characters, where 0.1.0 looked for a branch with a `*` in its name.\
+  A value holding a `:` is refused.
+
+- Every branch is now qualified as `<repo>/<branch>`, not only one two inputs share.\
+  One that then sits under the braid's own branch refuses the run: input `main`'s `x`, qualified as
+  `main/x`, beside the mainline `main`.\
+  `--branch-prefix ''` gives the plain names back, and refuses a collision rather than resolving it.
+
+- `--mainline-branch` given more than once without an `<input>::` scope is refused.\
+  0.1.0 took the last value given.
+
+- An `--interleave-ref` value holding a `:` after its scope, scoped to a name that is no input, or
+  empty, is refused.\
+  0.1.0 took each for a pattern, one that matched no ref.
 
 - `.git` as a destination, written `repo=.git` in 0.1.0 and `repo::.git=<name>` now, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -78,14 +91,11 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   0.1.0 kept the tag of whichever input came last; a template that keeps `{repo}` apart from the
   tag name, as `{repo}/` does, keeps both.
 
-- A branch one input alone has, under the name another input's shared branch is qualified to,
-  refuses the run.\
-  0.1.0 kept whichever of the two was written last; leave one of them out with `-b`.
-
-- A shared branch qualified onto the braid's own name refuses the run: `x` in two inputs beside a
+- A branch qualified onto the braid's own name refuses the run: backend's `x` beside a
   `--mainline-branch backend/x`.\
-  0.1.0 wrote input backend's `x` over the braid's branch, so the output's mainline could point at
-  that `x` rather than at the braid; leave that branch out with `-b`.
+  0.1.0 wrote it over the braid's branch where another input had an `x` too, so the output's
+  mainline could point at that `x` rather than at the braid; give `--branch-prefix` a template, or
+  the input a name, that moves its branches off the braid's, or narrow the run.
 
 - Commit subjects are prefixed with the input's name, not its destination.
 
@@ -130,6 +140,15 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   A destination can be nested arbitrarily deep.\
   The name is one segment, and is what identifies an input everywhere else.
 
+- **The branch qualifier applies to every branch, not only a shared one.**\
+  It used to go on only where two inputs had used the name.\
+  So what a branch was called depended on what the other inputs called theirs: adding an input
+  that had a branch of the same name renamed this one's.\
+  An output ref name now follows from the input it came from, and from nothing else the run did.\
+  `--branch-prefix ''` asks for the plain names; two inputs meeting on one is refused, naming both.\
+  `--tag-prefix ''` says the same thing for tags; before, a collision there was resolved by
+  whichever input came last.
+
 - **`-b`/`--branch` no longer carries the tags.**\
   It narrowed the branches but not the tags, which were all read.\
   A run asking for one branch still pulled in whatever the tags could reach.\
@@ -150,9 +169,9 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
 
 ### Added
 
-- **`--branch-prefix TEMPLATE`** — the qualifier on a branch two inputs both have.\
-  `{repo}` is substituted; the default `{repo}/` is what it always was.\
-  A branch only one input has keeps its own name and never sees it.
+- **`--branch-prefix TEMPLATE`** — the qualifier on every recreated branch.\
+  `{repo}` is substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
+  An empty value asks for the plain names, and refuses two inputs meeting on one.
 
 - **`--provenance-trailer TEMPLATE`** — the line `--provenance` writes.\
   `{repo}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
@@ -165,6 +184,24 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
 - **`--ref PATTERN`** — carry over only the refs matching this glob (repeatable).\
   Branches and tags alike.\
   The default is every ref, and the mainline is kept whatever the patterns say.
+
+- **Every ref pattern may name one input**, as `<input>::<pattern>`.\
+  `--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'`.\
+  Without a scope a pattern speaks for every input, so nothing already written changes.\
+  The empty case stays per input: one that no pattern names keeps that option's default.\
+  The scope is ended by `::`, as a `<repo>`'s location is; git refuses a `:` in a ref name, so the
+  separator can never be part of a pattern.\
+  An `<input>::` naming something that is not an input is refused rather than matching nothing,
+  and so is an empty one.
+
+- **`--mainline-branch` is repeatable and takes the same scope.**\
+  `--mainline-branch 'backend::main' --mainline-branch 'webui::master'` merges two inputs that
+  never agreed on a name — which could not be expressed at all before, one branch having had to
+  be present in every input.\
+  An unscoped value covers the inputs with no scoped one and names the output's branch;
+  without one the output takes the first input's.\
+  Detection is unchanged: the first of `main`/`master`/`develop` present in every input still
+  awaiting one, rather than per input.
 
 - **`--label-ref PATTERN`** — also recreate the refs matching this glob whose target the run
   already holds (repeatable).\
@@ -317,17 +354,21 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   The refusal names both inputs and the tag; a template that keeps `{repo}` apart from the tag
   name, as `{repo}/` does, keeps both.
 
-- **Two inputs' branches meeting on one name are refused, not resolved by whichever came last.**\
+- **Two inputs' branches meeting on one name are no longer resolved by whichever came last.**\
   In 0.1.0 a branch one input alone had kept its own name, which could be the one another input's
   shared branch was qualified to: `A/release` in C, beside a `release` that A and B both had.\
   The output kept the branch of the input written last, and the closing report counted both.\
-  The refusal names both inputs and the branch.
+  Every branch now carries its input's qualifier (see *Changed*), so the two stay apart. A
+  `--branch-prefix` that does not keep `{repo}` apart from the name, `''` and any without `{repo}`
+  among them, can still bring two branches onto one name, and that is refused, naming both inputs
+  and the branch.
 
 - **A shared branch qualified onto the braid's own name is refused, not written over it.**\
   In 0.1.0 a branch two inputs had was qualified as `<repo>/<branch>`, which could be the
   mainline's own name: `backend/x` for backend's `x` beside a `--mainline-branch backend/x`.\
   The branch was written over the braid's, so the output's mainline could point at backend's `x`.\
-  The refusal names the braid and the input, and says to leave that branch out with `-b`.
+  The refusal names the braid and the input, and says how to move the input's refs off the braid's
+  name, or to narrow the run.
 
 - **The archives carry the documents README.md links to.**\
   Its links into `doc/` led nowhere once an archive was unpacked.

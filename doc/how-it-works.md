@@ -260,8 +260,8 @@ Branches need no special handling, which is worth explaining because it looks li
   already carries the accumulated content of every repository.
 
 The consequence is that a branch which exists in **one** input repository still gives you a working
-checkout of the whole system. Checking out `esbuild-experiment`, a branch that only ever existed
-in `webui`:
+checkout of the whole system. Checking out `webui/esbuild-experiment`, a branch that only ever
+existed in `webui`:
 
 | Directory              | Holds                                      |
 |------------------------|--------------------------------------------|
@@ -289,9 +289,11 @@ merely unnamed.
   `--ref refs/heads/<name>`; since a branch name cannot contain a `*`, the short form desugars
   exactly — and it therefore selects that branch *and no tags*.
 - The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
-- Tags are recreated under a prefix, `{repo}/` by default (`--tag-prefix`), so two inputs that both
-  tagged `v1.0` do not collide. A branch is qualified the same way, `--branch-prefix`, but only when
-  two inputs used the name.
+- Every ref is recreated under a prefix, `{repo}/` by default — `--tag-prefix` for a tag,
+  `--branch-prefix` for a branch — so two inputs that both hold `v1.0` do not collide. It applies
+  unconditionally, which is what makes an output ref name follow from the input it came from and
+  from nothing else the run did; emptying it asks for the plain names, and two inputs meeting there
+  is refused rather than resolved.
 
 `--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
 is every ref, no interleave pattern is none of them. It is also matched against what the selection

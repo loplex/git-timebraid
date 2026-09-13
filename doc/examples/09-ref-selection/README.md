@@ -43,18 +43,19 @@ refs: 2 branches, 3 tags, HEAD -> main
 
 ```console
 $ git -C output for-each-ref --format='%(objecttype) %(refname)'
+commit refs/heads/backend/release/1.x
 commit refs/heads/main
-commit refs/heads/release/1.x
 commit refs/tags/backend/v1.0
 tag refs/tags/backend/v1.1
 commit refs/tags/webui/v2.0
 ```
 
-All five commits, both branches, all three tags. `release/1.x` keeps its own name because only one
-input used it; the two `main` branches collapse into the single braid. Tags are prefixed with the
-repository name (`--tag-prefix` defaults to `{repo}/`), which is what stops `backend`'s `v1.0` and a
-`v1.0` from anywhere else colliding. `backend/v1.1` is still `objecttype tag` — an annotated tag
-stays annotated, keeping its tagger and message.
+All five commits, both branches, all three tags. The two `main` branches collapse into the single
+braid; every other ref is prefixed with the repository name (`--branch-prefix` and `--tag-prefix`
+both default to `{repo}/`), which is what stops `backend`'s `v1.0` and a `v1.0` from anywhere else
+colliding — and what makes `backend/release/1.x` called that whatever else the run selects.
+`backend/v1.1` is still `objecttype tag` — an annotated tag stays annotated, keeping its tagger and
+message.
 
 `braid: 4` against `commits: 5` is `r1`: it is off the mainline, so it is recreated but is not part
 of the braid.
@@ -119,8 +120,8 @@ refs: 2 branches, 0 tags, HEAD -> main
 
 ```console
 $ git -C output-release-glob for-each-ref --format='%(objecttype) %(refname)'
+commit refs/heads/backend/release/1.x
 commit refs/heads/main
-commit refs/heads/release/1.x
 ```
 
 Three rules at once:
@@ -135,12 +136,12 @@ Three rules at once:
 
 ## In short
 
-| selection                        | commits | branches                | tags                |
-|----------------------------------|--------:|-------------------------|---------------------|
-| *(none)*                         |       5 | `main`, `release/1.x`   | all three           |
-| `-b main`                        |       4 | `main`                  | none                |
-| `-b main --ref 'refs/tags/*'`    |       5 | `main`                  | all three           |
-| `--ref 'refs/heads/release/*'`   |       5 | `main`, `release/1.x`   | none                |
+| selection                        | commits | branches                        | tags      |
+|----------------------------------|--------:|---------------------------------|-----------|
+| *(none)*                         |       5 | `main`, `backend/release/1.x`   | all three |
+| `-b main`                        |       4 | `main`                          | none      |
+| `-b main --ref 'refs/tags/*'`    |       5 | `main`                          | all three |
+| `--ref 'refs/heads/release/*'`   |       5 | `main`, `backend/release/1.x`   | none      |
 
 `-b main` *is* `--ref refs/heads/main`; the shorthand carries no exemption of its own.
 

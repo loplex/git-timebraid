@@ -74,12 +74,12 @@ class BraidWriterTest {
         rootRepo: String? = null,
         subdirs: Map<String, String> = emptyMap(),
         options: WriteOptions = WriteOptions(),
-        mainline: String? = null,
+        mainlineBranch: List<String> = emptyList(),
     ): WriteSummary {
         val names = listOf("backend", "webui")
         val opened = names.map { SourceRepository.open(tmp.resolve("$it.git")) }
         try {
-            val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER, mainline)
+            val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER, mainlineBranch)
             val repoOf = inputs.sources.map { it.source }.zip(opened).toMap()
             val plan = inputs.graph.braid(inputs.heads).plan(inputs.graph.sources.associateWith { if (it.name == rootRepo) null else subdirs[it.name] ?: it.name })
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
@@ -208,12 +208,12 @@ class BraidWriterTest {
 
         SourceRepository.open(out).use { repo ->
             assertEquals(
-                listOf("esbuild-experiment", "feature", "main"),
+                listOf("backend/feature", "main", "webui/esbuild-experiment"),
                 repo.branches().map { it.name },
             )
             assertEquals(new(written, "a3").id, repo.resolveBranch("main"))
-            assertEquals(new(written, "f1").id, repo.resolveBranch("feature"))
-            assertEquals(new(written, "b1").id, repo.resolveBranch("esbuild-experiment"))
+            assertEquals(new(written, "f1").id, repo.resolveBranch("backend/feature"))
+            assertEquals(new(written, "b1").id, repo.resolveBranch("webui/esbuild-experiment"))
 
             val tags = repo.tags().associateBy { it.name }
             assertEquals(setOf("backend/v1.0", "webui/v2.0"), tags.keys)
@@ -384,7 +384,7 @@ class BraidWriterTest {
     }
 
     @Test
-    fun `a branch name used by two inputs is qualified with the repository name`() {
+    fun `every branch is qualified with the repository name, shared or not`() {
         corpus()
         TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
         TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
@@ -393,58 +393,67 @@ class BraidWriterTest {
         braid(out)
 
         SourceRepository.open(out).use { repo ->
-            assertTrue(repo.branches().map { it.name }.containsAll(listOf("backend/release", "webui/release")))
+            val names = repo.branches().map { it.name }
+            assertTrue(names.containsAll(listOf("backend/release", "webui/release")), names.toString())
             assertEquals(null, repo.resolveBranch("release"))
+            // `feature` is backend's alone and is qualified all the same: what a branch is called in
+            // the output follows from the input it came from, and from nothing else the run did.
+            assertTrue(names.contains("backend/feature"), names.toString())
+            assertEquals(null, repo.resolveBranch("feature"))
         }
     }
 
     @Test
-    fun `a branch one input alone has, named like another's qualified branch, is refused, not written over`() {
+    fun `two inputs' branches meeting under a prefix without {repo} are refused, not written over`() {
         corpus()
         TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
         TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
             repo.branch("release", original.getValue("b1"))
-            repo.branch("backend/hotfix", original.getValue("b2"))
+            repo.branch("backend/release", original.getValue("b2"))
         }
 
-        // Apart, a branch only webui has keeps its own name beside the two qualified ones, even one
-        // that opens with another input's name.
+        // Apart: every branch carries its own input's name, so webui's branch named like backend's
+        // qualified one no longer meets it.
         val apart = tmp.resolve("apart.git")
         braid(apart)
         SourceRepository.open(apart).use { repo ->
             val names = repo.branches().map { it.name }
-            assertTrue(names.containsAll(listOf("backend/release", "webui/release", "backend/hotfix")), "$names")
+            assertTrue(names.containsAll(listOf("backend/release", "webui/release", "webui/backend/release")), "$names")
         }
 
-        // Meeting: webui's own backend/release is the name backend's shared release is qualified to,
-        // and neither may quietly win it.
-        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("backend/release", original.getValue("b2")) }
-        val error = assertThrows<IllegalArgumentException> { braid(tmp.resolve("collided.git")) }
+        // Meeting: a prefix without {repo} puts both inputs' release on one name, and neither may
+        // quietly win it.
+        val error = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("collided.git"), options = WriteOptions(branchPrefix = "x/"))
+        }
         val message = error.message!!
         assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
-        assertTrue(message.contains("refs/heads/backend/release"), message)
-        // The default prefix is what met it, so the refusal does not recommend that prefix.
-        assertTrue("as {repo}/ does" !in message && message.contains("-b"), message)
+        assertTrue(message.contains("refs/heads/x/release"), message)
     }
 
     @Test
-    fun `a qualified branch meeting a plain name written before it is told the same`() {
+    fun `a branch qualified onto the braid's own name is refused, not written over it`() {
         corpus()
-        // Backend comes first, so its `webui/release`, a name only backend has, is written plain
-        // before webui's shared `release` is qualified onto it.
+        // The mainline is `backend/x`, which an unscoped --mainline-branch asks of both inputs.
+        // Under `{repo}/`, backend's `x` is qualified onto the braid's own branch, and the refusal
+        // names that meeting.
         TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
-            repo.branch("release", original.getValue("a2"))
-            repo.branch("webui/release", original.getValue("a1"))
+            repo.branch("backend/x", original.getValue("a3"))
+            repo.branch("x", original.getValue("a1"))
         }
-        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("backend/x", original.getValue("b2"))
+            repo.branch("x", original.getValue("b1"))
+        }
 
-        val message = assertThrows<IllegalArgumentException> { braid(tmp.resolve("met.git")) }.message!!
-        assertTrue(message.contains("refs/heads/webui/release"), message)
-        assertTrue("as {repo}/ does" !in message && message.contains("-b"), message)
+        val message = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("met.git"), mainlineBranch = listOf("backend/x"))
+        }.message!!
+        assertTrue(message.contains("'the braid' and 'backend' would both write 'refs/heads/backend/x'"), message)
     }
 
     @Test
-    fun `the qualifier on a shared branch is a template, and only a shared branch sees it`() {
+    fun `the branch qualifier is a template, and every branch sees it`() {
         corpus()
         TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("release", original.getValue("a2")) }
         TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("release", original.getValue("b1")) }
@@ -456,8 +465,23 @@ class BraidWriterTest {
         SourceRepository.open(out).use { repo ->
             val names = repo.branches().map { it.name }
             assertTrue(names.containsAll(listOf("from-backend--release", "from-webui--release")), names.toString())
-            // The branch only one input has is not a collision, so the template never applies.
-            assertTrue(names.contains("alone"), names.toString())
+            assertTrue(names.contains("from-webui--alone"), names.toString())
+        }
+    }
+
+    @Test
+    fun `an emptied branch prefix leaves the names plain`() {
+        corpus()
+        val out = tmp.resolve("plain.git")
+        braid(out, options = WriteOptions(branchPrefix = "", tagPrefix = ""))
+
+        SourceRepository.open(out).use { repo ->
+            val names = repo.branches().map { it.name }
+            assertTrue(names.containsAll(listOf("feature", "esbuild-experiment")), names.toString())
+            assertEquals(
+                listOf("v1.0", "v2.0"),
+                repo.tags().map { it.name }.sorted(),
+            )
         }
     }
 
@@ -474,6 +498,57 @@ class BraidWriterTest {
         assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
         assertTrue(message.contains("refs/heads/release"), message)
         assertTrue(message.contains("--branch-prefix"), message)
+    }
+
+    @Test
+    fun `a side branch may not take the name the braid carries`() {
+        corpus()
+        // webui braids along `main`, so a *backend* branch called `main` is not the mainline of its
+        // own input — and with nothing qualifying it, it lands on the output's own branch.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("main", original.getValue("a3")) }
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.branch("trunk", original.getValue("a3")) }
+
+        val error = assertThrows<IllegalArgumentException> {
+            braid(
+                tmp.resolve("shadowed.git"),
+                // `main` unscoped names the output's branch and webui's; backend braids along
+                // `trunk`, which leaves its own `main` an ordinary side branch.
+                mainlineBranch = listOf("main", "backend::trunk"),
+                options = WriteOptions(branchPrefix = ""),
+            )
+        }
+        assertTrue(error.message!!.contains("refs/heads/main"), error.message)
+    }
+
+    @Test
+    fun `a branch the default prefix qualifies onto the braid's name is refused without that advice`() {
+        corpus()
+        // backend braids along `trunk`, so its `x` is an ordinary branch, and the default prefix
+        // writes it as `backend/x`: the very name webui braids along and the output's branch takes.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            repo.branch("trunk", original.getValue("a3"))
+            repo.branch("x", original.getValue("a3"))
+        }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.branch("backend/x", original.getValue("b2")) }
+
+        val error = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("spelled.git"), mainlineBranch = listOf("backend/x", "backend::trunk"))
+        }
+        val message = error.message!!
+        assertTrue(message.contains("refs/heads/backend/x") && message.contains("braid"), message)
+        // The default prefix is the one that met it, so recommending it would lead nowhere.
+        assertTrue("as {repo}/ does" !in message, message)
+
+        // Two inputs meeting under a prefix without {repo}, here on their ordinary `main`s, are
+        // still pointed at one that has it.
+        val inputs = assertThrows<IllegalArgumentException> {
+            braid(
+                tmp.resolve("met.git"),
+                mainlineBranch = listOf("backend/x", "backend::trunk"),
+                options = WriteOptions(branchPrefix = "p/"),
+            )
+        }.message!!
+        assertTrue(inputs.contains("refs/heads/p/main") && inputs.contains("as {repo}/ does"), inputs)
     }
 
     @Test
@@ -495,27 +570,6 @@ class BraidWriterTest {
                 messages.toString(),
             )
         }
-    }
-
-    @Test
-    fun `a shared branch qualified onto the braid's own name is refused, not written over it`() {
-        corpus()
-        // The mainline is `backend/x` in both inputs, and both share `x`: backend's `x` is qualified
-        // onto the braid's own branch, webui's onto `webui/x`.
-        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
-            repo.branch("backend/x", original.getValue("a3"))
-            repo.branch("x", original.getValue("a1"))
-        }
-        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
-            repo.branch("backend/x", original.getValue("b2"))
-            repo.branch("x", original.getValue("b1"))
-        }
-
-        val message = assertThrows<IllegalArgumentException> {
-            braid(tmp.resolve("met.git"), mainline = "backend/x")
-        }.message!!
-        assertTrue(message.contains("'the braid' and 'backend' would both write 'refs/heads/backend/x'"), message)
-        assertTrue(message.contains("leave that branch out with -b"), message)
     }
 
     @Test

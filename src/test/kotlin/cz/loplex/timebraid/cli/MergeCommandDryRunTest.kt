@@ -74,6 +74,28 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `--mainline-branch given twice for the same inputs is refused, scoped or not`() {
+        corpus()
+        val inputs = listOf(tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+
+        // 0.1.0 took the last of these.
+        val unscoped = MergeCommand().test(
+            listOf("--dry-run", "--mainline-branch", "main", "--mainline-branch", "master") + inputs
+        )
+        assertEquals(1, unscoped.statusCode, unscoped.output)
+        assertTrue(
+            unscoped.output.contains("--mainline-branch is given twice without naming an input: 'main' and 'master'"),
+            unscoped.output,
+        )
+
+        val scoped = MergeCommand().test(
+            listOf("--dry-run", "--mainline-branch", "backend::main", "--mainline-branch", "backend::main") + inputs
+        )
+        assertEquals(1, scoped.statusCode, scoped.output)
+        assertTrue(scoped.output.contains("--mainline-branch is given twice for input 'backend'"), scoped.output)
+    }
+
+    @Test
     fun `dry run prints a plan and writes it to the plan-out file`() {
         corpus()
         val planFile = tmp.resolve("plan.txt")
@@ -659,7 +681,7 @@ class MergeCommandDryRunTest {
 
     @Test
     fun `a name git would not accept in a ref is refused here`() {
-        // The name becomes part of a ref wherever one carries it (a tag, a shared branch, a
+        // The name becomes part of a ref wherever one carries it (a tag, a branch, a
         // --keep-remotes mirror), so this used to surface only at the write of the first such ref,
         // once the braid was written, and an input no ref carried went through.
         val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::ok=odd~name"))

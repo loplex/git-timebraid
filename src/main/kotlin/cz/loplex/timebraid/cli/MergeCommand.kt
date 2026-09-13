@@ -121,9 +121,11 @@ private class PlacementOptions : OptionGroup(
 private class HistoryOptions : OptionGroup(
     name = "Which history is read, and how it interleaves",
 ) {
-    val mainlineBranch by option("--mainline-branch")
+    val mainlineBranch by option("--mainline-branch").multiple()
         .help(
-            "Branch treated as the mainline in every input." + BR +
+            "Branch treated as the mainline in every input (repeatable)." + BR +
+                "Prefix with <input>:: to give one input its own, where two do not agree." + BR +
+                "An unscoped value covers the rest and names the output's branch." + BR +
                 "Default: the first of " +
                 "${CommitGraphReader.MAINLINE_CANDIDATES.joinToString("/")} present in all."
         )
@@ -144,7 +146,8 @@ private class HistoryOptions : OptionGroup(
         .help(
             "Carry over only the refs matching this glob, branches and tags alike " +
                 "(repeatable)." + BR +
-                "Patterns are matched against full ref names." + BR +
+                "Patterns are matched against full ref names, and may be prefixed <input>:: " +
+                "to narrow one input." + BR +
                 "Default: every ref."
         )
 
@@ -155,12 +158,14 @@ private class HistoryOptions : OptionGroup(
                 "Reads nothing extra and never delays a merge, so adding one cannot change a " +
                 "commit." + BR +
                 "A match whose target was not loaded is skipped, not an error." + BR +
+                "Takes an <input>:: prefix." + BR +
                 "Default: none."
         )
 
     val interleaveRefs by option("--interleave-ref").multiple()
         .help(
             "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
+                BR + "Takes an <input>:: prefix." +
                 BR + "Default: none."
         )
 }
@@ -186,15 +191,16 @@ private class OutputContentOptions : OptionGroup(
     val tagPrefix by option("--tag-prefix").default(WriteOptions().tagPrefix)
         .help(
             "Prefix prepended to every recreated tag." + BR +
-                "{repo} is substituted." + BR +
+                "{repo} is substituted; an empty value qualifies nothing." + BR +
+                "Two inputs then meeting on one name is refused, not resolved." + BR +
                 "Default: \"" + WriteOptions().tagPrefix + "\""
         )
 
     val branchPrefix by option("--branch-prefix").default(WriteOptions().branchPrefix)
         .help(
-            "Prefix prepended to a branch two inputs both have." + BR +
-                "A branch only one of them has keeps its own name." + BR +
-                "{repo} is substituted." + BR +
+            "Prefix prepended to every recreated branch." + BR +
+                "{repo} is substituted; an empty value qualifies nothing." + BR +
+                "Two inputs then meeting on one name is refused, not resolved." + BR +
                 "Default: \"" + WriteOptions().branchPrefix + "\""
         )
 
@@ -321,8 +327,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "when its last segment cannot be a ref name.\n\n" +
                 "<subdir> is where its content lands, and may be nested (::libs/backend)." + BR +
                 "Defaults to <name>.\n\n" +
-                "<name> is the repository's identity: the tag prefix, the provenance label, and " +
-                "what --root-repo matches." + BR +
+                "<name> is the repository's identity: the tag prefix, the branch prefix, the " +
+                "provenance label, and what --root-repo matches." + BR +
                 "Defaults to the last segment of <subdir>, or of the location." + BR +
                 "Neither may be written with a ':' or a '='.",
         )
@@ -767,9 +773,9 @@ private fun ArgumentTransformContext.afterOptions(tokens: List<String>): List<St
  * Splits `<path-or-url>[::[<subdir>][=<name>]]`.
  *
  * The subdirectory and the name answer separate questions. The subdirectory is merely where the
- * content lands. The name is the repository's identity — the tag prefix, the provenance label, the
- * qualifier on a branch two inputs share, what `--root-repo` matches — and has to be unique, which
- * is the only way two inputs whose directories happen to share a name can be merged at all.
+ * content lands. The name is the repository's identity — the tag prefix, the branch prefix, the
+ * provenance label, what `--root-repo` matches — and has to be unique, which is the only way two
+ * inputs whose directories happen to share a name can be merged at all.
  *
  * The subdirectory comes first because placing an input is what most arguments do, and the name
  * follows from it unless it is given: `::apps/webui` places and names in one token. The `=` is for
@@ -828,9 +834,9 @@ private fun parseRepoSpec(raw: String): RepoSpec {
         ?: subdir?.substringAfterLast('/')
         ?: if (remote) repoNameFromLocation(location)
         else SourceRepository.defaultName(localPath(location, raw))
-    // The name becomes the default subdirectory and, under the default templates, the tag prefix
-    // and the provenance label, so an input that yields none is rejected here rather than failing
-    // later as an unusable subdirectory.
+    // The name becomes the default subdirectory and, under the default templates, the tag prefix,
+    // the branch prefix and the provenance label, so an input that yields none is rejected here
+    // rather than failing later as an unusable subdirectory.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
     // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
     // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
@@ -936,9 +942,10 @@ private fun refuseSeparators(text: String, part: String, raw: String) {
 /**
  * Whether [name] can stand as one component of a ref name.
  *
- * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), the qualifier on a branch two inputs
- * share, and the namespace under `refs/remotes/` that `--keep-remotes` writes. A spelling git will
- * not accept in a ref is therefore not a quirk of taste but an argument that cannot be carried out.
+ * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), a branch prefix
+ * (`refs/heads/<name>/wip`), and the namespace under `refs/remotes/` that `--keep-remotes` writes. A
+ * spelling git will not accept in a ref is therefore not a quirk of taste but an argument that
+ * cannot be carried out.
  * Asked of [TargetRepository.isRefName], the rule every ref the output is given is held to.
  */
 private fun isRefComponent(name: String): Boolean =

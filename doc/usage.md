@@ -10,6 +10,8 @@
 - [Taking the layout off a directory tree](#taking-the-layout-off-a-directory-tree) — `--scan`.
 - [Dissolving a submodule into its content](#dissolving-a-submodule-into-its-content) —
   `--dissolve-submodules`.
+- [Which history is read, and how it interleaves](#which-history-is-read-and-how-it-interleaves) —
+  mainlines that do not agree.
 - [What ends up in the output](#what-ends-up-in-the-output) — what the output repository holds when
   the run finishes: its refs, its commits, and the messages on them.
 - [What a run prints](#what-a-run-prints) — the headings, the lines a bar leaves behind, and what
@@ -138,9 +140,9 @@ Placement and naming travel together, and can be separated.
 - It may be a nested path (`repo.git::libs/backend`), and inputs sharing a prefix share the
   directory for it — so `backend.git::libs/backend webui.git::apps/webui` gives the output a
   `libs/` and an `apps/`. Both are named after the last segment.
-- The name is the input's identity: the tag prefix, the provenance label, the commit subject prefix,
-  what `--root-repo` matches, and what has to be unique — it is how two inputs whose directories
-  happen to share a name are told apart.
+- The name is the input's identity: the tag prefix, the branch prefix, the provenance label, the
+  commit subject prefix, what `--root-repo` matches, and what has to be unique — it is how two
+  inputs whose directories happen to share a name are told apart.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
   placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
   what the second one is mostly for: the scan already decided where it goes.
@@ -234,6 +236,35 @@ Two things it deliberately does not do:
 Which `[submodule]` sections are dropped, and when no root `.gitmodules` is written at all, is
 worked out under [dissolving a submodule](how-it-works.md#dissolving-a-submodule).
 
+## Which history is read, and how it interleaves
+
+`--order-by` picks the timestamp the strands interleave by, the committer's unless it says the
+author's; which suits which question is under
+["that instant" is the mainline](how-it-works.md#that-instant-is-the-mainline-not-the-deployment).
+
+### Mainlines that do not agree
+
+`--mainline-branch` takes the `<input>::` scope a ref pattern takes ([saying it for one input
+only](#saying-it-for-one-input-only)), with a branch's short name rather than a glob. It is how two
+inputs that never standardised on one name are merged at all:
+
+```bash
+--mainline-branch 'backend::main' --mainline-branch 'webui::master'
+```
+
+An unscoped value is the default for every input that has no scoped one, **and** names the branch
+the output carries. With no unscoped value the output takes the branch of the first input — the
+first on the command line, or under `--scan` the first the scan found — `main` above, if `backend`
+is given first. To choose it outright, give both:
+
+```bash
+--mainline-branch trunk --mainline-branch 'backend::main' --mainline-branch 'webui::master'
+```
+
+Where nothing is named, the mainline is detected as the first of `main`/`master`/`develop` present
+in **every** input still awaiting one. It is not done per input, which would quietly pick `main` for
+one repository and `master` for another wherever both exist.
+
 ---
 
 ## What ends up in the output
@@ -243,20 +274,40 @@ worked out under [dissolving a submodule](how-it-works.md#dissolving-a-submodule
 **All of them**, recreated at the corresponding new commits (narrow with `-b` or `--ref`):
 
 - The mainline branch collapses into one: every input contributed its own to the same braid, so the
-  output has a single branch of that name, at the braid's tip.
-- Any other branch keeps its own name — unless two inputs happen to have used that name, in which
-  case both are qualified as `<repo>/<branch>`. The qualifier is `--branch-prefix`, and a branch
-  only one input has never sees it.
+  output has a single branch at the braid's tip, named by the unscoped `--mainline-branch` or else
+  after the first input's mainline ([mainlines that do not agree](#mainlines-that-do-not-agree)).
+- Any other branch is prefixed with the repository name (`wip` from `webui` becomes `webui/wip`), so
+  branches from different repositories cannot collide. The prefix is `--branch-prefix`.
+
+Prefixing every other branch is a change in 0.2.0. The qualifier used to go on a branch only where
+two inputs had used the name, which made the name depend on what the other inputs called theirs:
+adding an input that had a branch of the same name renamed this one's, out of an argument that says
+nothing about naming.
 
 Why a side branch needs no special handling, and why a branch from one input still gives you a
 checkout of the whole system, is under [branches](how-it-works.md#branches).
 
 ### Tags
 
-**All of them**, prefixed with the repository name by default (`v1.2` from `webui` becomes
-`webui/v1.2`), so tags from different repositories cannot collide. The prefix is `--tag-prefix`.
+**All of them**, prefixed the same way (`v1.2` from `webui` becomes `webui/v1.2`). The prefix is
+`--tag-prefix`.
 
 An annotated tag stays annotated, keeping its tagger and its message.
+
+### Turning the prefix off
+
+Both prefixes are templates, and emptying one asks for the plain names:
+
+```bash
+--branch-prefix '' --tag-prefix ''
+```
+
+What the prefix buys is that an output ref name follows from the input it came from and nothing
+else. Without it two inputs can meet on one name, and a run that would write two different commits
+to one ref is **refused** rather than resolved — naming both inputs and the ref they collided on.
+Even with it, an input can meet the braid's own branch, which takes no prefix: under the default,
+input `release`'s branch `x` becomes `release/x`, which is the output's branch where the mainline is
+called `release/x`. That is refused the same way, naming the braid.
 
 ### Choosing which refs are carried over
 
@@ -275,7 +326,7 @@ them:
 - Matching is against the *full* ref name because a short one cannot say whether `v1.0` is a branch
   or a tag.
 - The mainline is loaded whatever the patterns say — the braid is built along it — and the output's
-  branch of that name comes from the braid's tip.
+  mainline branch comes from the braid's tip.
 
 The selection also decides which commits are read at all, and `--interleave-ref` reads its empty
 case the other way round. Both are worked out under
@@ -307,6 +358,34 @@ branch was meant to keep out.
 - **Adding a label cannot change a single commit the run writes.** A selection can, which is why
   the two are separate flags; [which refs are carried
   over](how-it-works.md#which-refs-are-carried-over) works out how.
+
+### Saying it for one input only
+
+Every ref pattern takes an optional `<input>::` scope, naming which input it speaks for. Without one
+it speaks for all of them, so nothing written before this existed changes meaning:
+
+```bash
+--ref 'backend::refs/heads/main' \
+--ref 'webui::refs/heads/release/*' \
+--ref 'refs/tags/v*'
+```
+
+The scope is ended by `::`, the separator a [`<repo>`](#writing-an-input) puts between its
+location and its suffix, and that is decidable rather than a convention: git refuses a colon
+anywhere in a ref name, so a `::` is never part of the pattern. An `<input>::` naming something
+that is not an input is refused, so a typo is not a pattern that quietly matches nothing. An empty
+scope, `::refs/heads/main`, is refused too, the unscoped form already saying it, and so is a scope
+written with one colon, `backend:refs/heads/main`, naming the form that works.
+
+**The empty case stays per input.** An input no pattern names keeps that option's default — every
+ref for `--ref`, none for `--label-ref` and `--interleave-ref`. So patterns scoped to `backend` and
+`webui` alone narrow those two while a third input still carries everything, which is *naming any
+ref leaves out every ref not named* read one input at a time; an unscoped one, like
+`refs/tags/v*` above, names every input.
+
+Narrowing one input leaves every other input's ref **names** alone: the qualifier goes on
+unconditionally, so a selection decides which refs exist and not what the surviving ones are called.
+That was not true before 0.2.0 — see [branches](#branches).
 
 ### The inputs' original commits
 
@@ -519,7 +598,10 @@ Finding the inputs, and placing their content:
                          Its .gitmodules section is dropped with it.
 
 Which history is read, and how it interleaves:
-  --mainline-branch=<text>       Branch treated as the mainline in every input.
+  --mainline-branch=<text>       Branch treated as the mainline in every input (repeatable).
+                                 Prefix with <input>:: to give one input its own, where two do not
+                                 agree.
+                                 An unscoped value covers the rest and names the output's branch.
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
                                  Default: committer.
@@ -528,16 +610,19 @@ Which history is read, and how it interleaves:
                                  every ref not named, tags included.
   --ref=<text>                   Carry over only the refs matching this glob, branches and tags
                                  alike (repeatable).
-                                 Patterns are matched against full ref names.
+                                 Patterns are matched against full ref names, and may be prefixed
+                                 <input>:: to narrow one input.
                                  Default: every ref.
   --label-ref=<text>             Also recreate the refs matching this glob whose target the run
                                  already holds (repeatable).
                                  Reads nothing extra and never delays a merge, so adding one cannot
                                  change a commit.
                                  A match whose target was not loaded is skipped, not an error.
+                                 Takes an <input>:: prefix.
                                  Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).
+                                 Takes an <input>:: prefix.
                                  Default: none.
 
 What the output repository holds:
@@ -549,11 +634,12 @@ What the output repository holds:
                                   the original commits, and so does each input's mainline whether
                                   the selection took it or not.
   --tag-prefix=<text>             Prefix prepended to every recreated tag.
-                                  {repo} is substituted.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
-  --branch-prefix=<text>          Prefix prepended to a branch two inputs both have.
-                                  A branch only one of them has keeps its own name.
-                                  {repo} is substituted.
+  --branch-prefix=<text>          Prefix prepended to every recreated branch.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
@@ -596,8 +682,8 @@ Arguments:
           <subdir> is where its content lands, and may be nested (::libs/backend).
           Defaults to <name>.
 
-          <name> is the repository's identity: the tag prefix, the provenance label, and what
-          --root-repo matches.
+          <name> is the repository's identity: the tag prefix, the branch prefix, the provenance
+          label, and what --root-repo matches.
           Defaults to the last segment of <subdir>, or of the location.
           Neither may be written with a ':' or a '='.
 

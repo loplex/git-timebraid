@@ -93,7 +93,7 @@ class CommitGraphReaderTest {
 
         open("backend", "webui").useAll { repos ->
             val error = assertThrows<IllegalArgumentException> {
-                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = "develop")
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = listOf("develop"))
             }
             assertTrue(error.message!!.contains("webui"))
         }

@@ -385,6 +385,183 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `two inputs can braid along differently named mainlines`() {
+        // The case that had no spelling at all: one repository standardised on main, the other never
+        // renamed master, and resolveMainline needed one name present in both. The output carries a
+        // single branch whatever the inputs call theirs.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", r.commit("a2", parents = listOf(a1), at = at("11:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("master", r.commit("b2", parents = listOf(b1), at = at("12:00")))
+        }
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--mainline-branch", "webui::master",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val branches = repo.branches().map { it.name }.toSet()
+            // main, from the first input, since no unscoped value named the output's branch. Neither
+            // input's own mainline is written again beside it — each is already the braid.
+            assertEquals(setOf("main"), branches)
+        }
+        assertEquals(4, OutputRepo.read(out).commits.size)
+    }
+
+    @Test
+    fun `a side branch named like the output's mainline is qualified, not written over it`() {
+        // webui braids along master, so its own `main` is an ordinary branch under the one name the
+        // braid already holds, and the prefix every branch carries keeps the two apart.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        val (b1, b2) = TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            val b2 = r.commit("b2", parents = listOf(b1), at = at("12:00"))
+            r.branch("master", b2)
+            r.branch("main", b1)
+            b1 to b2
+        }
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--mainline-branch", "webui::master",
+            path("backend.git"), path("webui.git"),
+        )
+
+        val written = OutputRepo.read(out).byOriginalSha
+        SourceRepository.open(out).use { repo ->
+            assertEquals(setOf("main", "webui/main"), repo.branches().map { it.name }.toSet())
+            assertEquals(written.getValue(b2.name).id, repo.resolveBranch("main"))
+            assertEquals(written.getValue(b1.name).id, repo.resolveBranch("webui/main"))
+        }
+    }
+
+    @Test
+    fun `a side branch an empty --branch-prefix leaves on the output's mainline is refused`() {
+        // The same pair with nothing to qualify by: webui's `main` would come out as `main` again,
+        // the name the braid holds.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("master", r.commit("b2", parents = listOf(b1), at = at("12:00")))
+            r.branch("main", b1)
+        }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--branch-prefix", "",
+                "--mainline-branch", "webui::master",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(
+            result.output.contains("'the braid' and 'webui' would both write 'refs/heads/main'"),
+            result.output,
+        )
+    }
+
+    @Test
+    fun `an unscoped mainline names the output even where every input has a scoped one`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("master", r.commit("b1", at = at("10:00")))
+        }
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--mainline-branch", "trunk",
+            "--mainline-branch", "backend::main",
+            "--mainline-branch", "webui::master",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            assertEquals(setOf("trunk"), repo.branches().map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun `a scoped --ref narrows the input it names and leaves the others alone`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.branch("wip", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val out = tmp.resolve("merged.git")
+
+        braid(
+            "-o", out.toString(),
+            "--ref", "backend::refs/heads/main",
+            path("backend.git"), path("webui.git"),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            // backend was narrowed to its mainline, so its wip is gone. webui named no pattern, so
+            // its empty case is still every ref and its wip survives — the per-input reading of
+            // "naming any ref leaves out every ref not named".
+            //
+            // webui's wip is called what it would have been called had backend never been narrowed:
+            // the qualifier goes on unconditionally, so what the selection does is decide which refs
+            // exist and not what the surviving ones are named.
+            assertEquals(setOf("main", "webui/wip"), repo.branches().map { it.name }.toSet())
+        }
+    }
+
+    @Test
+    fun `a scope naming an input that does not exist is refused`() {
+        reference()
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--ref", "backnd::refs/heads/main",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, result.statusCode)
+        assertTrue(result.output.contains("backnd"), result.output)
+    }
+
+    @Test
+    fun `a scope left empty or ended by one colon is refused, naming the form that works`() {
+        reference()
+        fun refused(option: String, value: String) = MergeCommand().test(
+            listOf("-o", tmp.resolve("merged.git").toString(), option, value) +
+                listOf(path("backend.git"), path("webui.git"))
+        ).also { assertNotEquals(0, it.statusCode, it.output) }.output
+
+        val empty = refused("--ref", "::refs/heads/main")
+        assertTrue(empty.contains("names no input before its '::'; leave the '::' out"), empty)
+        assertTrue(refused("--mainline-branch", "::main").contains("names no input before its '::'"))
+        // No ref name holds a ':', so an input's name before a single one is a scope written short,
+        // and the refusal spells it with the '::' it lacks.
+        for ((option, value) in listOf("--ref" to "backend:refs/heads/main", "--mainline-branch" to "backend:main")) {
+            val short = refused(option, value)
+            assertTrue(short.contains("a scope is ended by '::', as '${value.replace(":", "::")}'"), short)
+        }
+    }
+
+    @Test
     fun `--label-ref attaches a ref without letting it weigh on the braid`() {
         // The property the flag exists for, on the fixture that makes the difference visible: f is
         // an ancestor of main, so naming it adds no commits either way, and f is timestamped after
@@ -420,7 +597,7 @@ class BraidPipelineIT {
 
         val written = OutputRepo.read(labelled)
         SourceRepository.open(labelled).use { repo ->
-            val feature = repo.branches().singleOrNull { it.name == "feature" }
+            val feature = repo.branches().singleOrNull { it.name == "backend/feature" }
             assertNotNull(feature, "the label was not attached")
             assertEquals(
                 written.byOriginalSha.getValue(ids.getValue("f").name).id,
@@ -430,7 +607,7 @@ class BraidPipelineIT {
         }
         SourceRepository.open(plain).use { repo ->
             assertTrue(
-                repo.branches().none { it.name == "feature" },
+                repo.branches().none { it.name == "backend/feature" },
                 "the baseline was supposed to be the run without that ref",
             )
         }
@@ -552,17 +729,85 @@ class BraidPipelineIT {
     }
 
     @Test
-    fun `a branch used by only one input comes out on its own, no configuration`() {
+    fun `a branch from one input comes out under that input's name, no configuration`() {
         reference()
         val out = tmp.resolve("merged.git")
         braid("-o", out.toString(), path("backend.git"), path("webui.git"))
 
         SourceRepository.open(out).use { repo ->
             assertEquals(
-                listOf("esbuild-experiment", "feature", "main"),
+                listOf("backend/feature", "main", "webui/esbuild-experiment"),
                 repo.branches().map { it.name },
             )
         }
+    }
+
+    @Test
+    fun `what a branch is called does not depend on what else the run selected`() {
+        // The property the unconditional qualifier buys, stated as the run that used to break it.
+        // Both inputs have a wip; narrowing one of them away used to leave the other as the only
+        // holder of that name and rename it, out of a flag that says nothing about naming.
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.branch("wip", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val whole = tmp.resolve("whole.git")
+        val narrowed = tmp.resolve("narrowed.git")
+
+        braid("-o", whole.toString(), path("backend.git"), path("webui.git"))
+        braid(
+            "-o", narrowed.toString(),
+            "--ref", "backend::refs/heads/main",
+            path("backend.git"), path("webui.git"),
+        )
+
+        fun webuiBranches(dir: Path) = SourceRepository.open(dir).use { repo ->
+            repo.branches().map { it.name }.filter { it.startsWith("webui/") }
+        }
+        assertEquals(listOf("webui/wip"), webuiBranches(whole))
+        assertEquals(webuiBranches(whole), webuiBranches(narrowed))
+    }
+
+    @Test
+    fun `an emptied prefix leaves the names plain, and a collision under it is refused`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            val a1 = r.commit("a1", at = at("09:00"))
+            r.branch("main", a1)
+            r.branch("wip", r.commit("aw", parents = listOf(a1), at = at("09:30")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            val b1 = r.commit("b1", at = at("10:00"))
+            r.branch("main", b1)
+            r.branch("release", r.commit("bw", parents = listOf(b1), at = at("10:30")))
+        }
+        val out = tmp.resolve("plain.git")
+
+        braid(
+            "-o", out.toString(), "--branch-prefix", "",
+            path("backend.git"), path("webui.git"),
+        )
+        SourceRepository.open(out).use { repo ->
+            assertEquals(setOf("main", "wip", "release"), repo.branches().map { it.name }.toSet())
+        }
+
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { r ->
+            r.branch("wip", r.commit("bw2", at = at("10:45")))
+        }
+        val refused = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("collided.git").toString(), "--branch-prefix", "",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertNotEquals(0, refused.statusCode, refused.output)
+        assertTrue(refused.output.contains("refs/heads/wip"), refused.output)
+        assertTrue(refused.output.contains("--branch-prefix"), refused.output)
     }
 
     @Test

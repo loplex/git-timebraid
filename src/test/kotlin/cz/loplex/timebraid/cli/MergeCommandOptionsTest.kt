@@ -298,13 +298,13 @@ class MergeCommandOptionsTest {
         }
 
         // Nothing named: every branch and every tag, which is what a plain run has always done.
-        assertEquals(listOf("feature", "main") to listOf("backend/v1"), refsOf("all.git"))
+        assertEquals(listOf("backend/feature", "main") to listOf("backend/v1"), refsOf("all.git"))
 
         // -b main is refs/heads/main and nothing else, so backend's tag is not carried over. This
         // is the point of the option and what it could not do while tags were loaded regardless.
         assertEquals(listOf("main") to emptyList<String>(), refsOf("narrow.git", "-b", "main"))
         assertEquals(
-            listOf("feature", "main") to emptyList<String>(),
+            listOf("backend/feature", "main") to emptyList<String>(),
             refsOf("side.git", "-b", "feature"),
         )
 

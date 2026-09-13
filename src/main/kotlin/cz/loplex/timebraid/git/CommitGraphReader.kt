@@ -18,7 +18,10 @@ class BraidInputs(
     val graph: CommitGraph,
     /** Mainline tip per input repository, in the order the repositories were given to [CommitGraphReader.read]. */
     val heads: List<Commit>,
-    /** The branch name resolved as the mainline in every repository. */
+    /**
+     * The branch the *output* carries the braid on, and its HEAD. Each input's own mainline is
+     * [SourceInputs.mainlineBranch] and need not be this or each other's.
+     */
     val mainlineBranch: String,
     /** The original commit behind every commit of [graph]. */
     val commits: Map<Commit, SourceCommit>,
@@ -49,6 +52,12 @@ class SourceInputs(
      * repository with its [Source] by position, once, and looks one up by the other afterwards.
      */
     val source: Source,
+    /**
+     * The branch resolved as *this* input's mainline. Inputs need not agree: one may braid along
+     * `main` and another along `master`, each named with a scoped `--mainline-branch`. The output
+     * carries a single branch, [BraidInputs.mainlineBranch], whatever these say.
+     */
+    val mainlineBranch: String,
     val branches: List<BraidRef>,
     val tags: List<BraidTag>,
     /**
@@ -108,13 +117,13 @@ object CommitGraphReader {
      *   branches leaves the tags behind, which is the whole point of being able to narrow.
      *
      *   The resolved mainline is loaded whatever the patterns say, since the braid is built along
-     *   it, and the output's branch of that name is written from the braid's tip rather than from
-     *   this selection ([BraidWriter] does that unconditionally).
+     *   it, and the output's mainline branch is written from the braid's tip rather than from this
+     *   selection ([BraidWriter] does that unconditionally).
      * @param interleaveRefs glob patterns matched against full ref names — `refs/tags/v1.*` for a
-     *   release series, a star alone for every ref — applied in every input repository. A matched
-     *   ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that
-     *   trades away. Matched against what [refs] selected, so widening the interleave cannot widen
-     *   what is loaded.
+     *   release series, a star alone for every ref — applied in every input repository, or in the
+     *   one an `<input>::` scope names. A matched ref's ancestry is allowed to delay a braid
+     *   commit; see `BraidInterleave` for what that trades away. Matched against what [refs]
+     *   selected, so widening the interleave cannot widen what is loaded.
      * @param labelRefs glob patterns matched against full ref names, recreating every matched ref
      *   whose target the graph *already* holds. Empty matches nothing, the flag being opt-in.
      *
@@ -132,7 +141,7 @@ object CommitGraphReader {
     fun read(
         repositories: List<SourceRepository>,
         orderBy: OrderBy,
-        mainlineBranch: String? = null,
+        mainlineBranch: List<String> = emptyList(),
         refs: List<String> = emptyList(),
         interleaveRefs: List<String> = emptyList(),
         labelRefs: List<String> = emptyList(),
@@ -142,11 +151,14 @@ object CommitGraphReader {
             "two input repositories have the same name"
         }
 
-        val mainline = resolveMainline(repositories, mainlineBranch)
-        val selected = selection(refs)
-        // Empty matches nothing here, the other way round from the selection: a label is something
-        // a run asks for, where carrying the refs over is what it does by default.
-        val labelled = if (labelRefs.isEmpty()) ({ _: String -> false }) else globs(labelRefs)
+        val names = repositories.map { it.name }
+        // Before the mainlines, so that a mistyped input name is reported as the mistyped input name
+        // rather than being masked by whatever the mainline resolution makes of the run.
+        val scopedRefs = ScopedPatterns(refs, "--ref", names)
+        val scopedLabels = ScopedPatterns(labelRefs, "--label-ref", names)
+        val scopedInterleave = ScopedPatterns(interleaveRefs, "--interleave-ref", names)
+        val mainlines = resolveMainlines(repositories, mainlineBranch)
+        val outputBranch = mainlines.output
         val builder = CommitGraphBuilder()
         val heads = ArrayList<Commit>(repositories.size)
         val original = HashMap<Commit, SourceCommit>()
@@ -157,6 +169,12 @@ object CommitGraphReader {
         for (repo in repositories) {
             val source = builder.addSource(repo.name)
 
+            val selected = selection(scopedRefs.of(repo.name))
+            // Empty matches nothing here, the other way round from the selection: a label is
+            // something a run asks for, where carrying the refs over is what it does by default.
+            val labelled = globsOrNone(scopedLabels.of(repo.name))
+
+            val mainline = mainlines.perInput.getValue(repo.name)
             val mainlineTip = repo.resolveBranch(mainline)
                 ?: error("repository '${repo.name}' has no branch '$mainline'")
 
@@ -227,6 +245,7 @@ object CommitGraphReader {
 
             inputs += SourceInputs(
                 source = source,
+                mainlineBranch = mainline,
                 branches = selectedBranches.mapNotNull { branch ->
                     builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
                 } + labelBranchRefs,
@@ -246,10 +265,10 @@ object CommitGraphReader {
         return BraidInputs(
             graph = graph,
             heads = heads,
-            mainlineBranch = mainline,
+            mainlineBranch = outputBranch,
             commits = original,
             sources = inputs,
-            interleaveTips = interleaveTips(interleaveRefs, inputs),
+            interleaveTips = interleaveTips(scopedInterleave, inputs),
             labelsAttached = labelsAttached,
             labelsSkipped = labelsSkipped,
         )
@@ -264,11 +283,10 @@ object CommitGraphReader {
      * and a bare star is every ref the run selected — which puts the whole graph they reach in scope.
      * A label is none of those, whatever the pattern says: see the loop.
      */
-    private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
-        if (patterns.isEmpty()) return emptyList()
-        val matches = globs(patterns)
+    private fun interleaveTips(patterns: ScopedPatterns, inputs: List<SourceInputs>): List<Commit> {
         val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
+            val matches = globsOrNone(patterns.of(input.source.name))
             // A label is skipped whatever the pattern says. That is the whole of the separation:
             // the interleave matches what a run chose to read, and a label chose nothing.
             for (branch in input.branches) {
@@ -284,6 +302,49 @@ object CommitGraphReader {
     }
 
     /**
+     * A pattern and the input it speaks for: `backend::refs/heads/main` narrows to one input, while
+     * a pattern with no `::` speaks for every one of them.
+     *
+     * **The scope is ended by `::`**, the separator the `<repo>` grammar puts between a location and
+     * its suffix. It is decidable rather than a convention this asks to be trusted: git refuses a
+     * colon anywhere in a ref name, so a pattern holds none, and a `::` in one of these values can
+     * only ever be the separator.
+     *
+     * **The empty case stays per input, and keeps the meaning it had.** No pattern for an input is
+     * that option's empty case for that input — every ref for [selection], none for the interleave
+     * and the labels. So `--ref backend::refs/heads/main` narrows backend and leaves the other inputs
+     * carrying everything, which is the generalisation of *naming any ref leaves out every ref not
+     * named* from the run to the input. An unscoped pattern narrows every input exactly as before.
+     */
+    private class ScopedPatterns(raw: List<String>, option: String, inputs: Collection<String>) {
+        private val unscoped = ArrayList<String>()
+        private val byInput = HashMap<String, MutableList<String>>()
+
+        init {
+            for (value in raw) {
+                val (input, pattern) = scopeOf(option, value, inputs)
+                // No ref name holds a ':', so one here is a mistake; where an input's name stands
+                // before it, it is a scope written with one colon, and is named as that.
+                val colon = pattern.indexOf(':')
+                require(colon < 0) {
+                    val before = pattern.substring(0, colon)
+                    if (before in inputs) {
+                        "$option '$value' names the pattern '$pattern', and '$before' is an input: " +
+                            "a scope is ended by '::', as '$before::${pattern.substring(colon + 1)}'"
+                    } else {
+                        "$option '$value' holds a ':', which git refuses anywhere in a ref name"
+                    }
+                }
+                require(pattern.isNotEmpty()) { "$option '$value' names no pattern" }
+                if (input == null) unscoped += pattern else byInput.getOrPut(input) { ArrayList() } += pattern
+            }
+        }
+
+        /** The patterns applying to [input]: the unscoped ones, plus those naming it. */
+        fun of(input: String): List<String> = unscoped + (byInput[input] ?: emptyList())
+    }
+
+    /**
      * Which refs a run carries over, as a predicate over full ref names.
      *
      * No pattern means every ref, so the two options that narrow a run are opt-in and a plain
@@ -293,6 +354,12 @@ object CommitGraphReader {
      */
     private fun selection(patterns: List<String>): (String) -> Boolean {
         if (patterns.isEmpty()) return { true }
+        return globs(patterns)
+    }
+
+    /** [globs], reading an empty list as *none* rather than as *all*. */
+    private fun globsOrNone(patterns: List<String>): (String) -> Boolean {
+        if (patterns.isEmpty()) return { false }
         return globs(patterns)
     }
 
@@ -306,20 +373,99 @@ object CommitGraphReader {
         return { name -> matchers.any { it.matches(name) } }
     }
 
-    private fun resolveMainline(repositories: List<SourceRepository>, requested: String?): String {
-        if (requested != null) {
-            val missing = repositories.filter { it.resolveBranch(requested) == null }
-            require(missing.isEmpty()) {
-                "branch '$requested' is missing in: ${missing.joinToString { it.name }}"
+    /** Which branch each input braids along, and the single branch the output carries. */
+    private class Mainlines(val perInput: Map<String, String>, val output: String)
+
+    /**
+     * Resolves the mainline per input.
+     *
+     * A value scoped to an input names that input's own; an unscoped one is the default for every
+     * input that has no scoped value, and is also what the output's branch is called. With no
+     * unscoped value the output takes the first input's — the inputs are given in an order the rest
+     * of the run already honours, and one of them has to name it.
+     *
+     * Detection is left where it was: the first of [MAINLINE_CANDIDATES] present in **all** of the
+     * inputs still awaiting one. Doing it per input instead would quietly pick `main` for one and
+     * `master` for another wherever both exist, which is a different run from the one that used to
+     * happen.
+     */
+    private fun resolveMainlines(
+        repositories: List<SourceRepository>,
+        requested: List<String>,
+    ): Mainlines {
+        val names = repositories.map { it.name }
+        var common: String? = null
+        val scoped = LinkedHashMap<String, String>()
+        for (value in requested) {
+            val (input, branch) = scopeOf("--mainline-branch", value, names)
+            val colon = branch.indexOf(':')
+            require(colon < 0) {
+                val before = branch.substring(0, colon)
+                if (before in names) {
+                    "--mainline-branch '$value' names the branch '$branch', and '$before' is an " +
+                        "input: a scope is ended by '::', as '$before::${branch.substring(colon + 1)}'"
+                } else {
+                    "--mainline-branch '$value' holds a ':', which git refuses anywhere in a branch name"
+                }
             }
-            return requested
+            require(branch.isNotEmpty()) { "--mainline-branch '$value' names no branch" }
+            if (input == null) {
+                require(common == null) {
+                    "--mainline-branch is given twice without naming an input: '$common' and '$value'"
+                }
+                common = branch
+            } else {
+                require(scoped.put(input, branch) == null) {
+                    "--mainline-branch is given twice for input '$input'"
+                }
+            }
         }
-        for (candidate in MAINLINE_CANDIDATES) {
-            if (repositories.all { it.resolveBranch(candidate) != null }) return candidate
+
+        val awaiting = repositories.filter { it.name !in scoped }
+        val detected = when {
+            awaiting.isEmpty() -> null
+            common != null -> {
+                val missing = awaiting.filter { it.resolveBranch(common) == null }
+                require(missing.isEmpty()) {
+                    "branch '$common' is missing in: ${missing.joinToString { it.name }}"
+                }
+                common
+            }
+            else -> MAINLINE_CANDIDATES.firstOrNull { candidate ->
+                awaiting.all { it.resolveBranch(candidate) != null }
+            } ?: error(
+                "no branch is common to every input (looked for " +
+                    "${MAINLINE_CANDIDATES.joinToString()}); pass --mainline-branch to name one, " +
+                    "or --mainline-branch <input>::<branch> where they differ"
+            )
         }
-        error(
-            "no branch is common to every input (looked for ${MAINLINE_CANDIDATES.joinToString()}); " +
-                "pass --mainline-branch to name one"
-        )
+
+        val perInput = repositories.associate { repo ->
+            repo.name to (scoped[repo.name] ?: detected ?: error("no mainline for '${repo.name}'"))
+        }
+        return Mainlines(perInput, common ?: perInput.getValue(repositories.first().name))
     }
+
+    /**
+     * The input [value] is scoped to and the rest of it, or `null` and the whole of it where it
+     * names none.
+     *
+     * The scope is what stands before the last `::`, as in the `<repo>` grammar. An empty one is
+     * refused, the unscoped form already saying it, and so is a name that is none of [inputs].
+     */
+    private fun scopeOf(option: String, value: String, inputs: Collection<String>): Pair<String?, String> {
+        val at = value.lastIndexOf(SCOPE)
+        if (at < 0) return null to value
+        val input = value.substring(0, at)
+        require(input.isNotEmpty()) {
+            "$option '$value' names no input before its '::'; leave the '::' out to speak for every input"
+        }
+        require(input in inputs) {
+            "$option '$value' is for input '$input', which is not one of: " + inputs.joinToString()
+        }
+        return input to value.substring(at + SCOPE.length)
+    }
+
+    /** The `::` that ends a scope — see [scopeOf]. */
+    private const val SCOPE = "::"
 }

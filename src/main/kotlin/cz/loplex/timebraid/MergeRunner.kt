@@ -47,20 +47,26 @@ class MergeRequest(
     val bare: Boolean,
     val keepRemotes: Boolean,
     val orderBy: OrderBy,
-    val mainlineBranch: String?,
     /**
-     * Glob patterns over full ref names selecting which of each input's branches and tags are
-     * loaded and recreated. Empty selects every ref, which is the default.
+     * Which branch each input braids along. A value may be scoped to one input as
+     * `<input>::<branch>`; an unscoped one is the default for the rest and names the output's
+     * branch. Empty leaves it to detection.
+     */
+    val mainlineBranch: List<String>,
+    /**
+     * Glob patterns over full ref names, each scoped to one input by an `<input>::` prefix or to
+     * every input without one, selecting which of each input's branches and tags are loaded and
+     * recreated. Empty selects every ref, which is the default.
      */
     val refs: List<String>,
     /**
-     * Glob patterns over full ref names whose ancestry may delay a braid commit. Empty means the
-     * default scope, the mainline chains alone.
+     * Glob patterns over full ref names, scoped as [refs] are, whose ancestry may delay a braid
+     * commit. Empty means the default scope, the mainline chains alone.
      */
     val interleaveRefs: List<String>,
     /**
-     * Glob patterns over full ref names recreated when the run already holds their target. Empty
-     * matches nothing. Reads nothing extra and never weighs on the braid — see
+     * Glob patterns over full ref names, scoped as [refs] are, recreated when the run already holds
+     * their target. Empty matches nothing. Reads nothing extra and never weighs on the braid — see
      * [CommitGraphReader.read].
      */
     val labelRefs: List<String>,
