@@ -24,7 +24,8 @@ file, which is what the compiler does with it too.
 It is not a Kotlin lexer, and two of the places where it falls short are worth knowing. A
 character literal is not read as one, so `'"'` opens a string that hides the rest of its line.
 And a block comment ends at its first `*/`, where Kotlin nests them: `/* a /* b */ c */` hands
-` c */` back as code.
+` c */` back as code. check-comments.sh refuses a nested block comment anywhere under src/, which
+is what keeps that one from mattering.
 """
 
 
