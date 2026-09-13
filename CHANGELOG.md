@@ -386,8 +386,8 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   is copied there.\
   `-h` and `-hh` reach the program under either spelling; where git has no viewer to hand the page
   to, `-hh` is still the one to use.\
-  The page is written rather than generated, so it words an option the way a manual page should
-  rather than repeating `--help`.
+  The page is written rather than generated, and `.github/scripts/check-man.py` holds it to the
+  options the program actually has, down to their spelling.
 
 ### Fixed
 

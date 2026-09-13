@@ -3,18 +3,25 @@
 .\"
 .\" Written, not generated. A manual page is allowed to word an option differently from --help, and
 .\" mostly should -- it is read by someone who wants to understand the option, not to be reminded of
-.\" it. What it may not do is describe an option the program does not have, or leave one out.
+.\" it. What it may not do is describe an option the program does not have, or leave one out, so
+.\" .github/scripts/check-man.py compares the two.
 .\"
-.\" The line after each .TP in OPTIONS is the signature, and it is written one way throughout:
-.\" names bold and hyphens escaped, the metavar italic after an unspaced `=`. So
+.\" That checker reads the line after each .TP in OPTIONS and holds it to one canonical spelling of
+.\" a signature: names bold with their hyphens escaped and joined by `, `, the metavar italic after
+.\" an unspaced `=`, and nothing else on the line. So
 .\"
 .\"     \fB\-o\fR, \fB\-\-output\fR=\fI<path>\fR
 .\"
-.\" and not the .BR/.BI spellings, which say the same thing another way. Prose below the signature
-.\" is free, and uses the macros.
+.\" and not the .BR/.BI spellings, which say the same thing in ways the checker would have to guess
+.\" at. Prose below the signature is free, and uses the macros.
 .\"
-.\" The version in .TH is the one being worked towards, as pom.xml carries it. The date is the day
-.\" this page was last changed, which is what a reader takes it for.
+.\" The version in .TH is the one being worked towards, as pom.xml carries it; the checker keeps
+.\" the two equal, and open-next-version.sh moves it when it opens the next version.
+.\"
+.\" The date is that of the page's last nontrivial change, which is what man-pages(7) means by it
+.\" and what a reader takes it for; the version bump open-next-version.sh makes is not one. Nothing
+.\" holds it: a depth-1 CI checkout cannot read when a file last changed, so the check would have to
+.\" be a full clone for one field. It is kept by hand.
 .TH GIT\-TIMEBRAID 1 "2026\-09\-13" "git\-timebraid 0.2.0" "Git Extensions"
 .
 .SH NAME

@@ -23,8 +23,10 @@
 # a fix, a feature or a break. A bump that guessed "minor" would announce a release that may never
 # happen, and would make an actual patch release start by editing the version back down -- the very
 # manual step this script exists to remove. Raising it to a minor or a major belongs to whoever
-# lands the work that earns it, next to the changelog entry that explains it. It is also what
-# maven-release-plugin does by default and what `versions:set -DnextSnapshot` computes.
+# lands the work that earns it, next to the changelog entry that explains it, and with the version
+# in the .TH line of src/main/man/git-timebraid.1, which check-man.py holds to the pom's. The patch
+# bump is also what maven-release-plugin does by default and what `versions:set -DnextSnapshot`
+# computes.
 #
 # Each branch is read and written in its own throwaway worktree, so nothing here depends on, or
 # disturbs, whatever the caller has checked out.
@@ -59,6 +61,8 @@ echo "released $version, opening $next" >&2
 # Pinned rather than the `versions:set` prefix, which resolves to whatever the plugin's newest
 # release happens to be on the day this runs. The same pin as set-release-version.sh.
 versions_plugin=org.codehaus.mojo:versions-maven-plugin:2.16.2
+
+man_page=src/main/man/git-timebraid.1
 
 # refname -> commit, for every branch of origin the tag is an ancestor of.
 #
@@ -103,9 +107,18 @@ for sha in "${!at[@]}"; do
         (
             cd "$work"
             mvn -B -ntp "$versions_plugin:set" -DnewVersion="$next" -DgenerateBackupPoms=false >&2
+            # The manual page names the version being worked towards as well, and check-man.py
+            # holds it to the pom's, so the two move in one commit or the next push fails there.
+            # Only the version: the date beside it is that of the page's last nontrivial change,
+            # per man-pages(7), and a version bump is not one.
+            sed -i "s/^\(\.TH .*\"git\\\\-timebraid \)[^\"]*\"/\1${next%-SNAPSHOT}\"/" "$man_page"
+            grep -q "git\\\\-timebraid ${next%-SNAPSHOT}\"" "$man_page" || {
+                echo "::error::could not set the .TH version in $man_page" >&2
+                exit 1
+            }
             git -c user.name='github-actions[bot]' \
                 -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                commit -q -m "build(release): raise pom.xml to $next" -- pom.xml
+                commit -q -m "build(release): raise the version to $next" -- pom.xml "$man_page"
         )
         for branch in "${branches[@]}"; do
             # No force: a branch that moved since the release was published is a real conflict, and

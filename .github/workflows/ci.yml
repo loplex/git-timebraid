@@ -181,6 +181,12 @@ jobs:
       - name: Check doc/usage.md quotes the real --help
         run: .github/scripts/check-help.py
 
+      # The manual page is written rather than generated, so what is checked is narrower: the
+      # signature line of every entry against the name column of --help. An option added, renamed
+      # or respelled fails here; a reworded description does not, which is the point of writing it.
+      - name: Check the man page documents the real options
+        run: .github/scripts/check-man.py
+
       - name: Show what drifted
         if: failure()
         run: git diff -- doc/examples
