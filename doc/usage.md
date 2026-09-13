@@ -940,7 +940,9 @@ Options:
   -h, --help  Show this message and exit
 
 Arguments:
-  <repo>  Everything before the last '::' is the location, used verbatim -- never escaped.
+  <repo>  <path-or-url>[::[<subdir>][=<name>]]
+
+          Everything before the last '::' is the location, used verbatim -- never escaped.
           Append a bare '::' when the location itself holds one, and '=<name>' too when its last
           segment cannot be a ref name.
 

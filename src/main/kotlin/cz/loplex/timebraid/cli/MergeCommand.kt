@@ -354,8 +354,13 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     private val inputs by argument("repo")
         .help(
-            "Everything before the last '::' is the location, used verbatim -- never escaped." +
-                BR + "Append a bare '::' when the location itself holds one, and '=<name>' too " +
+            // The form again, because this is where its fields are described and an entry a
+            // reader jumps to has to stand on its own. The prolog is a hundred lines up in the
+            // rendered help.
+            "<path-or-url>[::[<subdir>][=<name>]]\n\n" +
+                "Everything before the last '::' is the location, used verbatim -- never " +
+                "escaped." + BR +
+                "Append a bare '::' when the location itself holds one, and '=<name>' too " +
                 "when its last segment cannot be a ref name.\n\n" +
                 "<subdir> is where its content lands, and may be nested (::libs/backend)." + BR +
                 "Defaults to <name>.\n\n" +
