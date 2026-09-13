@@ -209,8 +209,12 @@ class CommitGraphReaderTest {
             assertEquals(setOf(f.name), idsFor("refs/heads/feature/*"))
             // Tags are refs too, and are matched under their own prefix.
             assertEquals(setOf(tagged.name), idsFor("refs/tags/v1.*"))
-            // A short name matches nothing: patterns are against the full ref name on purpose.
-            assertEquals(emptySet<String>(), idsFor("feature/x/y"))
+            // A short name is refused rather than quietly matching nothing: patterns are against the
+            // full ref name on purpose, and a pattern that could never match is a mistake this
+            // program can name where an empty result cannot be told from an input that has no such
+            // ref.
+            val short = assertThrows<IllegalArgumentException> { idsFor("feature/x/y") }
+            assertTrue(short.message!!.contains("refs/heads/"), short.message)
             // A bare star is every ref.
             assertEquals(setOf(f.name, tagged.name), idsFor("*"))
             // No pattern means the default scope, and nothing to resolve.

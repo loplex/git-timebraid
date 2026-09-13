@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-five changes alter what a command line written for 0.1.0 does:
+Twenty-six changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -120,6 +120,9 @@ Twenty-five changes alter what a command line written for 0.1.0 does:
   refused.\
   0.1.0 braided along that commit on a dry run, and the run itself failed after creating the
   output.
+
+- A ref pattern that can match nothing under `refs/heads/` or `refs/tags/` is refused.\
+  `--interleave-ref wip` matched nothing in 0.1.0; it is now an error, and so is any short name.
 
 ### Changed
 

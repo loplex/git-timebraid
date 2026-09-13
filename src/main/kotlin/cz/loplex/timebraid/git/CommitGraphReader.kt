@@ -377,6 +377,9 @@ object CommitGraphReader {
                 refuseFields(option, value, fields, inputs)
                 val glob = fields[0]
                 require(glob.isNotEmpty()) { "$option '$value' names no pattern" }
+                require(RefKind.entries.any { reaches(glob, it.namespace) }) {
+                    outsideKnownNamespaces(option, value, glob)
+                }
 
                 val writeAs = fields.getOrNull(1)?.let { destination ->
                     require(destinations) {
@@ -452,6 +455,39 @@ object CommitGraphReader {
         }
 
     private val WHITESPACE = Regex("\\s+")
+
+    /**
+     * Whether [pattern] can match any name under [namespace] at all.
+     *
+     * Decided on the pattern's literal head, the part before its first `*`: with nothing to match
+     * loosely, the pattern itself has to sit under the namespace, and with a star anywhere the head
+     * and the namespace have to agree as far as the shorter of the two runs. So `refs/tags/v1.*`
+     * reaches the tags, a star alone or `refs/` with one reaches both, and a pattern under
+     * `refs/notes/` reaches neither.
+     *
+     * Conservative in the one direction that is safe: the head is all this looks at, so a pattern
+     * whose star sits inside a namespace's own text (`re*fs/heads/x`) is let through on a head of
+     * `re` agreeing with `refs/heads/`, whatever the pattern as a whole then goes on to match —
+     * with the star standing for nothing, `refs/heads/x` among other things. What matters is that
+     * nothing which *could* match is refused.
+     */
+    private fun reaches(pattern: String, namespace: String): Boolean {
+        val head = pattern.substringBefore('*')
+        if (head.length == pattern.length) return pattern.startsWith(namespace)
+        return namespace.startsWith(head) || head.startsWith(namespace)
+    }
+
+    /**
+     * Why a pattern aimed outside the two namespaces is refused rather than left to match nothing.
+     *
+     * A well-formed selection matching nothing is indistinguishable, from the command line, from an
+     * input that simply does not have what was asked for — so a pattern under `refs/notes/` used to
+     * be as quiet as `--ref 'refs/tags/v9.*'` against a repository with no v9. One of those is a fact
+     * about the input and one is a fact about this program, and only the second can be said here.
+     */
+    private fun outsideKnownNamespaces(option: String, value: String, glob: String): String =
+        "$option '$value' can match no ref: '$glob' is outside ${Constants.R_HEADS} and " +
+            "${Constants.R_TAGS}, the only namespaces this program reads"
 
     /**
      * Matches a full ref name against [pattern], where `*` is the only metacharacter and it spans

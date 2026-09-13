@@ -1009,6 +1009,35 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `a pattern aimed outside the two namespaces is refused, not left to match nothing`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
+            r.branch("main", r.commit("a1", at = at("09:00")))
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.branch("main", r.commit("b1", at = at("10:00")))
+        }
+        fun run(vararg extra: String) = MergeCommand().test(
+            listOf("-o", tmp.resolve("out-${extra.hashCode()}.git").toString()) + extra +
+                listOf(path("backend.git"), path("webui.git"))
+        )
+        fun refused(vararg extra: String) =
+            run(*extra).also { assertNotEquals(0, it.statusCode, it.output) }.output
+
+        // The case this refusal exists for: a well-formed selection that could never match, and
+        // used to be as quiet as a pattern that merely found nothing. A short name is that mistake
+        // made by hand.
+        assertTrue(refused("--ref", "main").contains("refs/heads/"))
+        // It holds on every ref option, including the two that do not select.
+        assertTrue(refused("--interleave-ref", "refs/replace/*").contains("refs/tags/"))
+        assertTrue(refused("--label-ref", "refs/stash").contains("refs/tags/"))
+
+        // And nothing that could match is refused.
+        for (pattern in listOf("*", "refs/*", "refs/heads/*", "refs/tags/v1.*", "refs/heads/main")) {
+            assertEquals(0, run("--ref", pattern).statusCode, pattern)
+        }
+    }
+
+    @Test
     fun `an emptied prefix leaves the names plain, and a collision under it is refused`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
