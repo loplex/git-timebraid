@@ -58,6 +58,12 @@ class MergeRequest(
      * default scope, the mainline chains alone.
      */
     val interleaveRefs: List<String>,
+    /**
+     * Glob patterns over full ref names recreated when the run already holds their target. Empty
+     * matches nothing. Reads nothing extra and never weighs on the braid — see
+     * [CommitGraphReader.read].
+     */
+    val labelRefs: List<String>,
     /** Whether one input's destination may lie inside another's, the two spliced into one tree. */
     val splice: Boolean,
     /**
@@ -129,9 +135,19 @@ class MergeRunner(
                     mainlineBranch = request.mainlineBranch,
                     refs = request.refs,
                     interleaveRefs = request.interleaveRefs,
+                    labelRefs = request.labelRefs,
                 )
             }
 
+            if (braid.labelsAttached > 0 || braid.labelsSkipped > 0) {
+                val skipped =
+                    if (braid.labelsSkipped == 0) ""
+                    else ", skipping ${braid.labelsSkipped} that matched nothing loaded"
+                progress.result("${braid.labelsAttached} refs attached by label$skipped")
+            }
+            // Through detail and not result: this count is of what --interleave-ref asked for — the
+            // commits its refs name, whose ancestry was allowed to widen the scope — and only a
+            // reader tuning that option has a use for it.
             if (braid.interleaveTips.isNotEmpty()) {
                 progress.detail(
                     "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +

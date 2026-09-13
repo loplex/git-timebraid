@@ -396,12 +396,13 @@ class BraidWriter(
      * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its
      * message — is recreated in full by [tagTarget] under the output's own prefixed tag name.
      *
-     * The mirror covers the refs that were read, so `-b` narrows it the same way it narrows the
-     * output, and for the same reason: the fetch was narrowed to those refs too, and a ref pointing
-     * at an object that is not there is a broken repository. The mainline is among them whatever
-     * `-b` says, since the braid is built along it: its commits are fetched and rewritten either
-     * way, and without a mirror of its own a run that never selected it would leave its originals in
-     * the output with nothing naming them.
+     * The mirror covers every ref the run carried over, the selection and the labels alike, so
+     * `-b` narrows it the same way it narrows the output. A label was not read and so was not
+     * fetched, but it is attached only where its target is already in the graph — the object came
+     * in behind some selected ref's ancestry — so no mirrored ref points at nothing. The mainline
+     * is mirrored whatever `-b` says, since the braid is built along it: its commits are fetched and
+     * rewritten either way, and without a mirror of its own a run that never selected it would
+     * leave its originals in the output with nothing naming them.
      *
      * @return how many remote-tracking refs were added.
      */

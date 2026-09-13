@@ -281,6 +281,33 @@ The selection also decides which commits are read at all, and `--interleave-ref`
 case the other way round. Both are worked out under
 [which refs are carried over](how-it-works.md#which-refs-are-carried-over).
 
+### Naming a ref without letting it weigh
+
+`--label-ref` recreates every ref it matches whose target the run already holds, and does nothing
+else. It reads nothing extra, and it can never delay a merge.
+
+That is what makes *these branches, and the tags that sit on them* expressible:
+
+```bash
+--ref 'refs/heads/main' --label-ref 'refs/tags/*'
+```
+
+Writing the second half as `--ref 'refs/tags/*'` instead looks equivalent and is not. It carries
+every tag in the repository, including tags whose only path to the root runs through a branch the
+selection left out — so the commits only those tags reach come back in, which is what naming the
+branch was meant to keep out.
+
+- A match whose target was not loaded is skipped rather than refused, and the run says how many
+  were, in the closing report as well, which `-q` still prints (on its `refs:` line, or on a line
+  of its own on a dry run): a label names what is already there, so asking for a superset of it is
+  ordinary use.
+- A ref matched by both flags is selected. That is the wider of the two meanings — it is read from
+  as well as recreated.
+- An input's mainline is never a label: the braid's own branch stands for it.
+- **Adding a label cannot change a single commit the run writes.** A selection can, which is why
+  the two are separate flags; [which refs are carried
+  over](how-it-works.md#which-refs-are-carried-over) works out how.
+
 ### The inputs' original commits
 
 They are in the output too, with their own shas intact, next to the rewritten ones.
@@ -503,6 +530,12 @@ Which history is read, and how it interleaves:
                                  alike (repeatable).
                                  Patterns are matched against full ref names.
                                  Default: every ref.
+  --label-ref=<text>             Also recreate the refs matching this glob whose target the run
+                                 already holds (repeatable).
+                                 Reads nothing extra and never delays a merge, so adding one cannot
+                                 change a commit.
+                                 A match whose target was not loaded is skipped, not an error.
+                                 Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).
                                  Default: none.

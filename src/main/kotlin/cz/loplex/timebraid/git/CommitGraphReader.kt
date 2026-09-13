@@ -30,6 +30,15 @@ class BraidInputs(
      * mainline chains alone (see `BraidInterleave`).
      */
     val interleaveTips: List<Commit> = emptyList(),
+    /** Refs attached by `--label-ref`, across every input. */
+    val labelsAttached: Int = 0,
+    /**
+     * Refs `--label-ref` matched whose target is not in the graph, across every input. They are not
+     * an error — the flag names what is already there, and asking for a superset of it is the
+     * normal way to use one. Counted so that a match this run could not attach is not silent — a
+     * pattern matching no ref at all is a different case, and this does not see it.
+     */
+    val labelsSkipped: Int = 0,
 )
 
 /** What was read out of one input repository, with every ref resolved to the commit it names. */
@@ -51,11 +60,22 @@ class SourceInputs(
     val readRefs: List<String>,
 )
 
-/** A branch resolved to the commit it points at. */
-class BraidRef(val name: String, val commit: Commit)
+/**
+ * A branch resolved to the commit it points at.
+ *
+ * [labelOnly] marks one attached by `--label-ref` rather than selected by `--ref`: it named a commit
+ * the graph already held instead of bringing one in, and it is not eligible to weigh on the braid.
+ */
+class BraidRef(val name: String, val commit: Commit, val labelOnly: Boolean = false)
 
 /** A tag resolved to the commit it peels to, keeping its annotation if it had one. */
-class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotation?)
+class BraidTag(
+    val name: String,
+    val commit: Commit,
+    val annotation: TagAnnotation?,
+    /** As [BraidRef.labelOnly]. */
+    val labelOnly: Boolean = false,
+)
 
 /**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
@@ -95,6 +115,19 @@ object CommitGraphReader {
      *   ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that
      *   trades away. Matched against what [refs] selected, so widening the interleave cannot widen
      *   what is loaded.
+     * @param labelRefs glob patterns matched against full ref names, recreating every matched ref
+     *   whose target the graph *already* holds. Empty matches nothing, the flag being opt-in.
+     *
+     *   This is the naming axis on its own, and it is separate from [refs] because the two carry
+     *   different risks. Selecting a ref decides what is read, and what is read decides what
+     *   [interleaveRefs] can match — so a ref named purely to have it in the output can end up
+     *   moving the braid, and the refs cheapest to name are the likeliest to: one pointing into the
+     *   mainline's own history costs no commits, and its ancestry is exactly the merged-in history
+     *   whose arrival into scope makes merges wait.
+     *
+     *   A label never extends what is read and never becomes an interleave tip, which makes the
+     *   safety a property rather than a coincidence of two globs missing each other: **adding any
+     *   label to a run cannot change a single commit the run writes.**
      */
     fun read(
         repositories: List<SourceRepository>,
@@ -102,6 +135,7 @@ object CommitGraphReader {
         mainlineBranch: String? = null,
         refs: List<String> = emptyList(),
         interleaveRefs: List<String> = emptyList(),
+        labelRefs: List<String> = emptyList(),
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
         require(repositories.map { it.name }.toSet().size == repositories.size) {
@@ -110,10 +144,15 @@ object CommitGraphReader {
 
         val mainline = resolveMainline(repositories, mainlineBranch)
         val selected = selection(refs)
+        // Empty matches nothing here, the other way round from the selection: a label is something
+        // a run asks for, where carrying the refs over is what it does by default.
+        val labelled = if (labelRefs.isEmpty()) ({ _: String -> false }) else globs(labelRefs)
         val builder = CommitGraphBuilder()
         val heads = ArrayList<Commit>(repositories.size)
         val original = HashMap<Commit, SourceCommit>()
         val inputs = ArrayList<SourceInputs>(repositories.size)
+        var labelsAttached = 0
+        var labelsSkipped = 0
 
         for (repo in repositories) {
             val source = builder.addSource(repo.name)
@@ -123,6 +162,19 @@ object CommitGraphReader {
 
             val selectedBranches = repo.branches().filter { selected("${Constants.R_HEADS}${it.name}") }
             val selectedTags = repo.tags().filter { selected("${Constants.R_TAGS}${it.name}") }
+
+            // Labels are what the selection did not already take. A ref matched by both is selected,
+            // which is the wider meaning of the two: it is read from as well as recreated. The
+            // mainline is no label either: it is read whatever is selected, and the braid's own
+            // branch stands for it, so the writer skips it and a count of it would be of nothing.
+            val labelledBranches = repo.branches().filter {
+                val name = "${Constants.R_HEADS}${it.name}"
+                it.name != mainline && !selected(name) && labelled(name)
+            }
+            val labelledTags = repo.tags().filter {
+                val name = "${Constants.R_TAGS}${it.name}"
+                !selected(name) && labelled(name)
+            }
 
             // The refs the graph is read from, and the objects they point at. Both are needed and
             // they are not the same thing: the walk starts from objects, while the fetch that later
@@ -156,15 +208,32 @@ object CommitGraphReader {
             // A ref whose target never made it into the graph is dropped rather than rejected: it
             // points at something that is not a commit, which is a fact about the input, not an
             // error in the run.
+            //
+            // A label reaches the same line by the ordinary route rather than the exceptional one.
+            // Nothing above put its target in, so it is there only if something else's ancestry
+            // carried it, and the miss is counted instead of being a fact about the input.
+            val labelBranchRefs = labelledBranches.mapNotNull { branch ->
+                builder.find(source, branch.target.name)
+                    ?.let { BraidRef(branch.name, it, labelOnly = true) }
+            }
+            val labelTagRefs = labelledTags.mapNotNull { tag ->
+                builder.find(source, tag.target.name)
+                    ?.let { BraidTag(tag.name, it, tag.annotation, labelOnly = true) }
+            }
+            labelsAttached += labelBranchRefs.size + labelTagRefs.size
+            labelsSkipped +=
+                (labelledBranches.size - labelBranchRefs.size) +
+                (labelledTags.size - labelTagRefs.size)
+
             inputs += SourceInputs(
                 source = source,
                 branches = selectedBranches.mapNotNull { branch ->
                     builder.find(source, branch.target.name)?.let { BraidRef(branch.name, it) }
-                },
+                } + labelBranchRefs,
                 tags = selectedTags.mapNotNull { tag ->
                     builder.find(source, tag.target.name)
                         ?.let { BraidTag(tag.name, it, tag.annotation) }
-                },
+                } + labelTagRefs,
                 readRefs = readRefs.toList(),
             )
         }
@@ -181,6 +250,8 @@ object CommitGraphReader {
             commits = original,
             sources = inputs,
             interleaveTips = interleaveTips(interleaveRefs, inputs),
+            labelsAttached = labelsAttached,
+            labelsSkipped = labelsSkipped,
         )
     }
 
@@ -190,17 +261,22 @@ object CommitGraphReader {
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
      * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
-     * and a bare star is every ref — which puts the whole graph they reach in scope.
+     * and a bare star is every ref the run selected — which puts the whole graph they reach in scope.
+     * A label is none of those, whatever the pattern says: see the loop.
      */
     private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
         if (patterns.isEmpty()) return emptyList()
         val matches = globs(patterns)
         val tips = LinkedHashSet<Commit>()
         for (input in inputs) {
+            // A label is skipped whatever the pattern says. That is the whole of the separation:
+            // the interleave matches what a run chose to read, and a label chose nothing.
             for (branch in input.branches) {
+                if (branch.labelOnly) continue
                 if (matches("${Constants.R_HEADS}${branch.name}")) tips += branch.commit
             }
             for (tag in input.tags) {
+                if (tag.labelOnly) continue
                 if (matches("${Constants.R_TAGS}${tag.name}")) tips += tag.commit
             }
         }

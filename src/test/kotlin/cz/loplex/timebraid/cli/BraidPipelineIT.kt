@@ -10,6 +10,7 @@ import org.eclipse.jgit.lib.ObjectId
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -381,6 +382,156 @@ class BraidPipelineIT {
 
         OutputRepo.assertEveryOriginalEdgePreserved(out)
         if (GitCli.available) GitCli.fsck(out)
+    }
+
+    @Test
+    fun `--label-ref attaches a ref without letting it weigh on the braid`() {
+        // The property the flag exists for, on the fixture that makes the difference visible: f is
+        // an ancestor of main, so naming it adds no commits either way, and f is timestamped after
+        // the merge m that took it, so its arrival into the interleave scope moves m.
+        //
+        // Both runs opt feature into the interleave by name. The only difference is how feature is
+        // asked for, and a label has to come out on the harmless side of it: it is not something the
+        // run read, so there is nothing there for --interleave-ref to match.
+        //
+        // The pattern is feature rather than '*' deliberately. A star reaches the same scope through
+        // main's own tip whatever is selected, so it would pass this test without testing anything.
+        val ids = lateMergeFixture()
+        val plain = tmp.resolve("plain.git")
+        val labelled = tmp.resolve("labelled.git")
+
+        braid(
+            "-o", plain.toString(),
+            "--ref", "refs/heads/main", "--interleave-ref", "refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+        braid(
+            "-o", labelled.toString(),
+            "--ref", "refs/heads/main", "--label-ref", "refs/heads/feature",
+            "--interleave-ref", "refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        assertEquals(
+            OutputRepo.read(plain).commits.map { it.id.name }.toSet(),
+            OutputRepo.read(labelled).commits.map { it.id.name }.toSet(),
+            "a label changed a commit, which is the one thing it may never do",
+        )
+
+        val written = OutputRepo.read(labelled)
+        SourceRepository.open(labelled).use { repo ->
+            val feature = repo.branches().singleOrNull { it.name == "feature" }
+            assertNotNull(feature, "the label was not attached")
+            assertEquals(
+                written.byOriginalSha.getValue(ids.getValue("f").name).id,
+                feature!!.target,
+                "the label points at the wrong commit",
+            )
+        }
+        SourceRepository.open(plain).use { repo ->
+            assertTrue(
+                repo.branches().none { it.name == "feature" },
+                "the baseline was supposed to be the run without that ref",
+            )
+        }
+    }
+
+    @Test
+    fun `selecting one more ref can move the braid where labelling it cannot`() {
+        // The other half, and what gives the test above its teeth. --interleave-ref is matched
+        // against what the run selected, so the same pattern reaches feature only once feature is
+        // selected: m then waits for f and lands after webui's history, a different sha for the same
+        // commit out of a flag whose stated job is to say which refs are carried over.
+        val ids = lateMergeFixture()
+        val plain = tmp.resolve("plain.git")
+        val selected = tmp.resolve("selected.git")
+
+        braid(
+            "-o", plain.toString(),
+            "--ref", "refs/heads/main", "--interleave-ref", "refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+        braid(
+            "-o", selected.toString(),
+            "--ref", "refs/heads/main", "--ref", "refs/heads/feature",
+            "--interleave-ref", "refs/heads/feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        val m = ids.getValue("m").name
+        assertNotEquals(
+            OutputRepo.read(plain).byOriginalSha.getValue(m).id,
+            OutputRepo.read(selected).byOriginalSha.getValue(m).id,
+            "the selection stopped reaching the interleave, so the label test proves nothing",
+        )
+    }
+
+    @Test
+    fun `--label-ref whose target was never loaded is skipped rather than failing`() {
+        // A label names what is already there, so asking for a superset of it is the ordinary way to
+        // use one — 'refs/heads/*' across inputs whose side branches were not all selected, say.
+        // backend's wip is such a branch: it exists, the label matches it, and nothing selected
+        // reaches its tip, so there is no commit to attach the label to.
+        val ids = lateMergeFixture()
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { r ->
+            r.branch("wip", r.commit("w", parents = listOf(ids.getValue("a1")), at = at("09:30")))
+        }
+        val out = tmp.resolve("merged.git")
+
+        val run = MergeCommand().test(
+            listOf(
+                // No -v: what a run skipped is a result line, which prints without it.
+                "-o", out.toString(), "--ref", "refs/heads/main",
+                "--label-ref", "refs/heads/wip",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertEquals(0, run.statusCode, run.output)
+        assertTrue(run.output.contains("skipping 1"), run.output)
+        assertTrue(run.output.contains("1 labels skipped"), run.output)
+        // The closing report says it too, which is all a --quiet run prints.
+        val quiet = MergeCommand().test(
+            listOf(
+                "-q", "-o", tmp.resolve("quiet.git").toString(), "--ref", "refs/heads/main",
+                "--label-ref", "refs/heads/wip",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertTrue(quiet.output.contains("1 labels skipped"), quiet.output)
+        // And so does a dry run's, which writes no refs: line.
+        val dry = MergeCommand().test(
+            listOf(
+                "-q", "--dry-run", "--ref", "refs/heads/main", "--label-ref", "refs/heads/wip",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+        assertEquals(0, dry.statusCode, dry.output)
+        assertTrue(dry.output.contains("1 labels skipped"), dry.output)
+
+        SourceRepository.open(out).use { repo ->
+            assertTrue(repo.branches().none { it.name.endsWith("wip") }, repo.branches().toString())
+        }
+        assertTrue(OutputRepo.read(out).byOriginalSha.containsKey(ids.getValue("m").name))
+    }
+
+    @Test
+    fun `an input's own mainline is no label, the braid's branch standing for it`() {
+        // A label pattern matching every branch matches each input's mainline too, which the braid
+        // writes as its own branch; counted as a label, it would be reported and never written.
+        val ids = lateMergeFixture()
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { r -> r.branch("topic", ids.getValue("b1")) }
+
+        val run = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(), "--ref", "refs/heads/feature",
+                "--label-ref", "refs/heads/*",
+                path("backend.git"), path("webui.git"),
+            )
+        )
+
+        assertEquals(0, run.statusCode, run.output)
+        // webui's topic is the one label; the two mainlines are not.
+        assertTrue(run.output.contains("1 refs attached by label"), run.output)
     }
 
     @Test

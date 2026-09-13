@@ -166,6 +166,14 @@ Twenty-two changes alter what a command line written for 0.1.0 does:
   Branches and tags alike.\
   The default is every ref, and the mainline is kept whatever the patterns say.
 
+- **`--label-ref PATTERN`** — also recreate the refs matching this glob whose target the run
+  already holds (repeatable).\
+  It reads nothing extra and never delays a merge, so adding one cannot change a commit.\
+  `--ref 'refs/heads/main' --label-ref 'refs/tags/*'` is *this branch, and the tags on it* —
+  which the selection alone cannot say, `--ref 'refs/tags/*'` carrying every tag in the
+  repository and the commits behind them.\
+  A match whose target was not loaded is skipped, and the closing report says how many were.
+
 - **`--splice`** — let one input's destination lie inside another's.\
   The pair is refused without it: the paths alone cannot tell a typo from an intended layout.\
   Every splice is checked against every tree before any object is written into the output,

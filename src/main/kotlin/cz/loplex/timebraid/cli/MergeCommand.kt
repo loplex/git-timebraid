@@ -148,6 +148,16 @@ private class HistoryOptions : OptionGroup(
                 "Default: every ref."
         )
 
+    val labelRefs by option("--label-ref").multiple()
+        .help(
+            "Also recreate the refs matching this glob whose target the run already holds " +
+                "(repeatable)." + BR +
+                "Reads nothing extra and never delays a merge, so adding one cannot change a " +
+                "commit." + BR +
+                "A match whose target was not loaded is skipped, not an error." + BR +
+                "Default: none."
+        )
+
     val interleaveRefs by option("--interleave-ref").multiple()
         .help(
             "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
@@ -380,6 +390,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             mainlineBranch = history.mainlineBranch,
             refs = history.branches.map(CommitGraphReader::branchPattern) + history.refs,
             interleaveRefs = history.interleaveRefs,
+            labelRefs = history.labelRefs,
             splice = placement.splice,
             dissolveSubmodules = placement.dissolveSubmodules,
             writeOptions = WriteOptions(
@@ -692,11 +703,20 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             )
             val remotes =
                 if (summary.remoteRefs > 0) ", ${summary.remoteRefs} remote-tracking" else ""
+            // What was left out is said here as well as in its phase, because -q prints this alone.
+            val skipped = result.braid.labelsSkipped
+            val labels = if (skipped > 0) ", $skipped labels skipped" else ""
             echo(
-                "refs: ${summary.branches} branches, ${summary.tags} tags$remotes, " +
+                "refs: ${summary.branches} branches, ${summary.tags} tags$remotes$labels, " +
                     "HEAD -> ${summary.head}",
                 err = true,
             )
+        }
+        // A dry run writes no refs and so prints no refs: line, but what the run would leave out is
+        // said all the same, -q included: a dry run is how a pattern is tuned.
+        if (result.write == null) {
+            val skipped = result.braid.labelsSkipped
+            if (skipped > 0) echo("$skipped labels skipped", err = true)
         }
     }
 
