@@ -58,7 +58,23 @@
         -->
         <surefire.version>3.5.6</surefire.version>
 
+        <!--
+            The program's entry point: what the jar's manifest names, and what `mvn exec:java` runs
+            unless told otherwise.
+
+            Two names for it, one value. `main.class` is what goes in the manifest, of both the jar
+            and the shaded jar. `exec.mainClass` is the property exec-maven-plugin documents, so
+            that `-Dexec.mainClass=...` on the command line runs something else for one
+            invocation, a generator in the test sources say, without that also being the class the
+            manifest would get if the same command packaged anything.
+
+            Configuring the plugin is what makes the default work at all, and is also what made the
+            documented property lose: a plugin's own configuration beats the user property it would
+            otherwise read, so before this split `-Dexec.mainClass=...` was ignored without a word
+            and the program ran instead.
+        -->
         <main.class>cz.loplex.timebraid.MainKt</main.class>
+        <exec.mainClass>${main.class}</exec.mainClass>
 
         <!--
             The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of
@@ -384,7 +400,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.6.3</version>
                 <configuration>
-                    <mainClass>${main.class}</mainClass>
+                    <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
             </plugin>
         </plugins>
