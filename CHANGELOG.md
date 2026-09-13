@@ -184,6 +184,9 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
   It now gives the transfer and each ref written as the `git` command it is the equivalent of.\
   The commit-by-commit writing stays out: it is not one command, and `--plan-out` already dumps it.
 
+- **A flag that can be turned off is written `--[no-]bare`, not `--bare / --no-bare`.**\
+  That is how git writes one, and it is a line shorter each time.
+
 ### Added
 
 - **`--notes`** — carry over every input's `refs/notes/`, rekeyed onto the commits the run writes.\

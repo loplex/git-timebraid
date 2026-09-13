@@ -747,6 +747,12 @@ Three options decide whether anything is drawn, rather than leaving it to stderr
 | `--no-progress` | draw nothing even when it is                                            |
 | `-q`, `--quiet` | say nothing at all bar the closing report, animation included           |
 
+Each row is its own option, so a pair that contradicts itself is an error rather than a resolution:
+`--progress --no-progress`, `--progress --quiet` and `--quiet --verbose` are all refused. The same
+holds for `--ascii`/`--no-ascii`. That is what distinguishes them from `--[no-]bare` and
+`--[no-]provenance`, which are one option with an off switch and where the last one given wins —
+`--help` spells all four the same way.
+
 `-v`/`--verbose` adds a line under each phase for every `git` command the run shells out to, and the
 equivalent of the transfer and of every ref written. See [Options](#options) below.
 
@@ -770,6 +776,12 @@ Two options override that, for a console the check reads wrong in either directi
 |--------------|----------------------------------------------|
 | `--ascii`    | draw with ASCII whatever the console reports |
 | `--no-ascii` | draw with the full set whatever it reports   |
+
+`--help` renders these as `--[no-]ascii`, the way it renders `--[no-]bare`, and the two pairs do not
+behave alike. A flag with a default is on unless the negative is given, so giving both is simply the
+later one winning. These two override a decision the program makes for itself and have no default
+between them, so giving both says nothing and is refused rather than resolved. The same holds for
+`--[no-]progress`.
 
 Colour is not part of this and does not change: a console short of characters is not short of
 colour.
@@ -888,35 +900,35 @@ What the output repository holds:
   substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
   rather than resolved.
 
-  --bare / --no-bare              Write a bare output repository.
-                                  --no-bare checks out a working tree instead.
-                                  Default: bare.
-  --keep-remotes                  Add each input as a remote.
-                                  Every ref it carried over lands under refs/remotes/<name>/*, at
-                                  the original commits, and so does each input's mainline whether
-                                  the selection took it or not. Notes are written under refs/notes/
-                                  and are not mirrored.
-  --tag-prefix=<text>             Prefix prepended to every recreated tag.
-                                  Default: "{repo}/"
-  --branch-prefix=<text>          Prefix prepended to every recreated branch.
-                                  Default: "{repo}/"
-  --subject-prefix=<text>         Prefix prepended to every commit subject.
-                                  {repo} and {subdir} are substituted.
-                                  Default: "{repo}: "
-  --notes                         Carry over every input's refs/notes/, rekeyed onto the commits
-                                  this run writes.
-                                  Default: notes are not read.
-  --notes-prefix=<text>           Prefix prepended to every recreated notes ref, below refs/notes/.
-                                  Default: "{repo}/"
-  --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
-                                  tagger, date and message.
-                                  Default: an annotated tag stays annotated.
-  --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
-                                  Default: on.
-  --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.
-                                  {repo}, {commit} and {parents} are substituted.
-                                  Default: "[timebraid: repo="{repo}" commit={commit}
-                                  parents={parents}]"
+  --[no-]bare                  Write a bare output repository.
+                               --no-bare checks out a working tree instead.
+                               Default: bare.
+  --keep-remotes               Add each input as a remote.
+                               Every ref it carried over lands under refs/remotes/<name>/*, at the
+                               original commits, and so does each input's mainline whether the
+                               selection took it or not. Notes are written under refs/notes/ and are
+                               not mirrored.
+  --tag-prefix=<text>          Prefix prepended to every recreated tag.
+                               Default: "{repo}/"
+  --branch-prefix=<text>       Prefix prepended to every recreated branch.
+                               Default: "{repo}/"
+  --subject-prefix=<text>      Prefix prepended to every commit subject.
+                               {repo} and {subdir} are substituted.
+                               Default: "{repo}: "
+  --notes                      Carry over every input's refs/notes/, rekeyed onto the commits this
+                               run writes.
+                               Default: notes are not read.
+  --notes-prefix=<text>        Prefix prepended to every recreated notes ref, below refs/notes/.
+                               Default: "{repo}/"
+  --lightweight-tags           Recreate every annotated tag as a lightweight one, dropping its
+                               tagger, date and message.
+                               Default: an annotated tag stays annotated.
+  --[no-]provenance            Record each commit's original sha and parents in a trailer.
+                               Default: on.
+  --provenance-trailer=<text>  The trailer --provenance writes, as its own paragraph.
+                               {repo}, {commit} and {parents} are substituted.
+                               Default: "[timebraid: repo="{repo}" commit={commit}
+                               parents={parents}]"
 
 Inspecting a run:
   --dry-run          Compute and summarize the plan, write no output.
@@ -926,13 +938,14 @@ Inspecting a run:
                      Every git command it shells out to, and the equivalent of the transfer and of
                      every ref written.
                      Writing the commits is not one command; --plan-out dumps that.
-  --progress         Draw progress even when stderr is not a terminal.
-                     For watching a log of a run that is taking too long.
-  --no-progress      Draw no progress even when stderr is a terminal.
+  --[no-]progress    Draw progress, or refuse to, whatever stderr is.
+                     For a log of a run that is taking too long, or a terminal to keep clean.
+                     Two options, not one: giving both, or --progress with --quiet, is an error.
                      Default: drawn when stderr is a terminal, and not otherwise.
-  --ascii            Draw progress with ASCII characters only.
-                     For a console that shows the bar as question marks.
-  --no-ascii         Draw progress with the full character set.
+  --[no-]ascii       Draw progress with ASCII characters only, or with the full set.
+                     For a console that shows the bar as question marks, or one misread the other
+                     way.
+                     Two options, not one: giving both is an error.
                      Default: whichever of the two the console can encode.
 
 Options:

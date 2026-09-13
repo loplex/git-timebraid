@@ -277,34 +277,35 @@ private class ReportingOptions : OptionGroup(
         )
 
     // Two flags rather than one with a secondary name, because the default is neither of them: a
-    // run decides for itself, and each of these overrides that decision in one direction. It is
-    // also how --quiet and --verbose are spelled a few lines up.
+    // run decides for itself, and each of these overrides that decision in one direction. Giving
+    // both is an error, as it is for --quiet and --verbose a few lines up.
+    //
+    // The help shows them as the one --[no-]progress they are to a reader, so this one carries the
+    // help for both and the one below carries none. Help written there would be dropped unsaid.
     val progress by option("--progress").flag()
         .help(
-            "Draw progress even when stderr is not a terminal." + BR +
-                "For watching a log of a run that is taking too long."
-        )
-
-    val noProgress by option("--no-progress").flag()
-        .help(
-            "Draw no progress even when stderr is a terminal." + BR +
+            "Draw progress, or refuse to, whatever stderr is." + BR +
+                "For a log of a run that is taking too long, or a terminal to keep clean." + BR +
+                "Two options, not one: giving both, or --progress with --quiet, is an error." + BR +
                 "Default: drawn when stderr is a terminal, and not otherwise."
         )
 
+    val noProgress by option("--no-progress").flag()
+
     // The same two-flag shape, and for the same reason: the default is neither, a run working out
     // for itself what its console can encode. These say what it may draw with when that is wrong —
-    // in either direction, since the check can misjudge a console both ways.
+    // in either direction, since the check can misjudge a console both ways. One row again, so the
+    // help is all on this one.
     val ascii by option("--ascii").flag()
         .help(
-            "Draw progress with ASCII characters only." + BR +
-                "For a console that shows the bar as question marks."
+            "Draw progress with ASCII characters only, or with the full set." + BR +
+                "For a console that shows the bar as question marks, or one misread the other " +
+                "way." + BR +
+                "Two options, not one: giving both is an error." + BR +
+                "Default: whichever of the two the console can encode."
         )
 
     val noAscii by option("--no-ascii").flag()
-        .help(
-            "Draw progress with the full character set." + BR +
-                "Default: whichever of the two the console can encode."
-        )
 }
 
 /**
@@ -334,6 +335,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     init {
         versionOption(version()) { "git-timebraid version $it" }
+
+        context { helpFormatter = { TimebraidHelpFormatter(it) } }
 
         // The help formatter lays out to the terminal's width, which mordant asks the OS for when
         // the output is a console and otherwise settles at 79 — what a redirect, a pipe into a
