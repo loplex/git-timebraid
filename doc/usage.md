@@ -813,6 +813,10 @@ is to an option, what it *means* is a section above it on this page, or is in
 `--order-by`, and for `--interleave-ref` the
 [guarantee it gives up](how-it-works.md#trading-the-guarantee-away-on-purpose).
 
+Syntax that several options in a group share is stated once, in the paragraph under that group's
+heading in the list below, rather than in every entry that takes it. `<ref-pattern>` is defined
+there and then only named.
+
 <!-- BEGIN --help -->
 ```text
 Usage: git-timebraid [<options>] [<repo>]...
@@ -841,59 +845,49 @@ Finding the inputs, and placing their content:
                          Its .gitmodules section is dropped with it.
 
 Which history is read, and how it interleaves:
-  --mainline-branch=<text>       Branch treated as the mainline in every input (repeatable).
-                                 Prefix with <input>:: to give one input its own, where two do not
-                                 agree.
-                                 One quoted argument may hold several, separated by spaces.
+  --mainline-branch=<branch>     Branch treated as the mainline in every input (repeatable).
+                                 Prefix with <input>:: to give one input its own; one quoted
+                                 argument may hold several, separated by spaces.
                                  An unscoped value covers the rest and names the output's branch.
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
                                  Default: committer.
-  -b, --branch=<text>            Carry over these branches, by short name, or with ^ leave them out
-                                 (repeatable).
-                                 Shorthand for --ref refs/heads/<name>, so naming one without a ^
-                                 leaves out every ref not named, tags included.
-                                 Takes an <input>:: prefix, a ^ in front of the branch and a
-                                 :<destination>, as --ref does.
-                                 One quoted argument may hold several, separated by spaces.
-  --ref=<text>                   Carry over the refs matching this glob, branches and tags alike, or
-                                 with ^ leave them out (repeatable).
-                                 Patterns are matched against full ref names, and may be prefixed
-                                 <input>:: to narrow one input.
-                                 A ^ in front of the pattern subtracts instead of selecting:
-                                 ^refs/heads/wip/* keeps every other branch and tag, with nothing
-                                 else to name.
-                                 A :<destination> after the pattern is a refspec's right half,
-                                 naming where the matches land.
-                                 refs/tags/ hands them to --tag-prefix; a destination holding a star
-                                 spells the name out, substituting what the pattern matched.
-                                 Beyond refs/heads/ and refs/tags/ a namespace is read only when
-                                 named, and then the destination is required.
-                                 One quoted argument may hold several, separated by spaces.
-                                 Default: every branch and tag, each in the namespace it came from.
-  --label-ref=<text>             Also recreate the refs matching this glob whose target the run
-                                 already holds (repeatable).
-                                 Reads nothing extra and never delays a merge, so adding one cannot
-                                 change a commit.
-                                 A match whose target was not loaded is skipped, not an error.
-                                 Takes an <input>:: prefix, a leading ^ and a :<destination>, as
-                                 --ref does.
-                                 A ^ needs something positive to subtract from: no pattern here
-                                 means no label, so subtractions alone are refused.
-                                 One quoted argument may hold several.
-                                 Default: none.
-  --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
-                                 (repeatable).
-                                 Takes an <input>:: prefix; one quoted argument may hold several.
-                                 A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every
-                                 side branch; a bare '*' opts in every tag too.
-                                 It subtracts the ref, not its commits: they stay in scope if
-                                 another opted-in ref reaches them.
-                                 A ^ needs something positive to subtract from, no pattern here
-                                 meaning no ref at all.
-                                 Default: none.
+
+Which refs a pattern speaks for:
+
+  A <ref-pattern> is [<input>::][^]<refspec>, matched against full ref names. <input>:: narrows it
+  to one input, and a ^ in front subtracts instead of selecting. With nothing selected, -b and --ref
+  subtract from every branch and tag, while --label-ref and --interleave-ref, which take no ref
+  unless asked, refuse a ^ alone.
+
+  The <refspec> is git's, <glob>[:<destination>]: -b, --ref and --label-ref take the destination,
+  saying where the matches land, as 'refs/heads/*:refs/tags/' does.
+
+  Every option here is repeatable, and one quoted argument may hold several patterns, separated by
+  spaces.
+
+  -b, --branch=<branch>           Carry over these branches, by short name, or with ^ leave them
+                                  out.
+                                  Shorthand for --ref refs/heads/<branch>, so naming one without a ^
+                                  leaves out every ref not named, tags included.
+  --ref=<ref-pattern>             Carry over the refs matching this pattern, branches and tags
+                                  alike, or with ^ leave them out.
+                                  Default: every branch and tag, each in the namespace it came from.
+  --label-ref=<ref-pattern>       Also recreate the refs matching this pattern whose target the run
+                                  already holds.
+                                  Adding one cannot change a commit the run writes; a selection can.
+                                  Default: none.
+  --interleave-ref=<ref-pattern>  Let this ref's commits delay a mainline merge that merges them in.
+                                  'refs/heads/* ^refs/heads/main' is every side branch; a bare '*'
+                                  opts in every tag too.
+                                  Default: none.
 
 What the output repository holds:
+
+  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} is
+  substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
+  rather than resolved.
+
   --bare / --no-bare              Write a bare output repository.
                                   --no-bare checks out a working tree instead.
                                   Default: bare.
@@ -903,25 +897,16 @@ What the output repository holds:
                                   the selection took it or not. Notes are written under refs/notes/
                                   and are not mirrored.
   --tag-prefix=<text>             Prefix prepended to every recreated tag.
-                                  {repo} is substituted; an empty value qualifies nothing.
-                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
   --branch-prefix=<text>          Prefix prepended to every recreated branch.
-                                  {repo} is substituted; an empty value qualifies nothing.
-                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
                                   Default: "{repo}: "
   --notes                         Carry over every input's refs/notes/, rekeyed onto the commits
                                   this run writes.
-                                  A merge gives every commit a new sha, so a note carried over
-                                  unchanged would be attached to nothing.
-                                  A note on an object the run did not write is skipped, and the run
-                                  says how many.
                                   Default: notes are not read.
   --notes-prefix=<text>           Prefix prepended to every recreated notes ref, below refs/notes/.
-                                  {repo} is substituted; an empty value qualifies nothing.
                                   Default: "{repo}/"
   --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
                                   tagger, date and message.
@@ -930,8 +915,6 @@ What the output repository holds:
                                   Default: on.
   --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.
                                   {repo}, {commit} and {parents} are substituted.
-                                  Dropping {commit} or {parents} gives up what makes the output
-                                  checkable.
                                   Default: "[timebraid: repo="{repo}" commit={commit}
                                   parents={parents}]"
 

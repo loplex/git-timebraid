@@ -172,6 +172,8 @@ Twenty-seven changes alter what a command line written for 0.1.0 does:
 
 - **`--help` groups its options by the decision they belong to, one line per default.**\
   0.1.0 listed every option in one ungrouped run.\
+  Syntax several options share is stated once, under their group's heading: the options taking a
+  ref pattern carry `<ref-pattern>` as their metavar, and their group defines it.\
   What an option *means* is left to `doc/usage.md`, which the epilog points at; an entry says
   enough to recognise a flag and gives its default.
 
