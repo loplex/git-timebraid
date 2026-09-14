@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Twenty-eight changes alter what a command line written for 0.1.0 does:
+Twenty-nine changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory,
@@ -119,6 +119,12 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   `--interleave-ref 'refs/changes/*'` matched nothing too, 0.1.0 reading only branches and tags;
   a namespace a pattern names is now read, and its refs interleave as a branch's do.
 
+- `-h` prints less than it did, and less than `--help`.\
+  Every option is still listed, with the first line of its entry;
+  the qualifiers, the defaults,
+  and all but the first paragraph of the text above the options and above each group of them
+  are now `--help` only, or `-hh` where git handles `--help` itself.
+
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
   It runs only beside its dependencies' jars, which an archive's `lib/` and a build's `target/lib/` hold:
@@ -163,6 +169,8 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
 
 - **`--help` groups its options by the decision they belong to, one line per default.**\
   0.1.0 listed every option in one ungrouped run.\
+  Syntax several options share is stated once, under their group's heading:
+  the options taking a ref pattern carry `<ref-pattern>` as their metavar, and their group defines it.\
   What an option *means* is left to `doc/usage.md`, which the epilog points at;
   an entry says enough to recognise a flag and gives its default.
 
@@ -171,6 +179,16 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   A merge of local inputs into a bare output starts none of the four itself, and the flag printed nothing.\
   It now gives the transfer and each ref written as the `git` command it is the equivalent of.\
   The commit-by-commit writing stays out: it is not one command, and `--plan-out` already dumps it.
+
+- **`-h` is no longer a synonym for `--help`.**\
+  It prints every option with its entry cut to the first line —
+  what the option does, without the qualifiers and the defaults under it.\
+  The text above the options, and above each group of them, keeps its first paragraph.\
+  Nothing is left out of the list, so no flag becomes harder to find; `git fetch -h` is the same split.\
+  `--help` is unchanged, and `-hh` is a second name for it.
+
+- **A flag that can be turned off is written `--[no-]bare`, not `--bare / --no-bare`.**\
+  That is how git writes one, and it is a line shorter each time.
 
 - **The archives carry each dependency as its own jar in `lib/`,
   beside `git-timebraid.jar`, and a release no longer offers the jar on its own.**\
