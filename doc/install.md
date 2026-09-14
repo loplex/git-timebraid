@@ -19,10 +19,16 @@ tar xzf git-timebraid-<version>-linux-x64.tar.gz -C ~/opt
 export PATH="$HOME/opt/git-timebraid-<version>-linux-x64/bin:$PATH"
 
 git-timebraid --help
-git timebraid -h                     # the same through git, which keeps --help for its own page
+git timebraid -hh                    # git runs any git-<name> it finds on PATH
 ```
 
 There is one for Linux and macOS on x64 and aarch64, and one for Windows on x64.
+
+`-hh` rather than `--help` in the last line, and that is not a typo: git handles `--help` on a
+subcommand itself, looking for a `git-timebraid(1)` manual page instead of running the program. So
+through the `git timebraid` spelling the help is `-h` for each option's first line and `-hh` for all
+of them with their defaults. Run as `git-timebraid`, all three of `-h`, `-hh` and `--help` reach the
+program and mean what they say.
 
 `git` on `PATH` is the only other thing, and only for three jobs: cloning a remote input and
 refreshing that clone on a later run, recording the inputs as remotes under `--keep-remotes`, and

@@ -747,6 +747,12 @@ Three options decide whether anything is drawn, rather than leaving it to stderr
 | `--no-progress` | draw nothing even when it is                                            |
 | `-q`, `--quiet` | say nothing at all bar the closing report, animation included           |
 
+Each row is its own option, so a pair that contradicts itself is an error rather than a resolution:
+`--progress --no-progress`, `--progress --quiet` and `--quiet --verbose` are all refused. The same
+holds for `--ascii`/`--no-ascii`. That is what distinguishes them from `--[no-]bare` and
+`--[no-]provenance`, which are one option with an off switch and where the last one given wins —
+`--help` spells all four the same way.
+
 `-v`/`--verbose` adds a line under each phase for every `git` command the run shells out to, and the
 equivalent of the transfer and of every ref written. See [Options](#options) below.
 
@@ -770,6 +776,12 @@ Two options override that, for a console the check reads wrong in either directi
 |--------------|----------------------------------------------|
 | `--ascii`    | draw with ASCII whatever the console reports |
 | `--no-ascii` | draw with the full set whatever it reports   |
+
+`--help` renders these as `--[no-]ascii`, the way it renders `--[no-]bare`, and the two pairs do not
+behave alike. A flag with a default is on unless the negative is given, so giving both is simply the
+later one winning. These two override a decision the program makes for itself and have no default
+between them, so giving both says nothing and is refused rather than resolved. The same holds for
+`--[no-]progress`.
 
 Colour is not part of this and does not change: a console short of characters is not short of
 colour.
@@ -802,6 +814,12 @@ This block is `git-timebraid --help` as the program prints it, generated from th
 `.github/scripts/check-help.py --write` rather than written out here, and CI fails when it falls
 behind the tool.
 
+`-h` prints the same list with every entry cut to its first line, and the text above the options and
+above each group of them cut to its first paragraph — every option still there, the qualifiers, the
+defaults and the paragraphs after those gone. Reached through git, `git timebraid --help` is handled
+by git rather than by this program, so the two spellings that work there are `-h` and `-hh`; see
+[install.md](install.md).
+
 It is rendered at 100 columns, the width this page is written to. What you see is laid out to your
 own terminal instead, and `COLUMNS` overrides that.
 
@@ -812,6 +830,10 @@ is to an option, what it *means* is a section above it on this page, or is in
 [which timestamp to order by](how-it-works.md#that-instant-is-the-mainline-not-the-deployment) for
 `--order-by`, and for `--interleave-ref` the
 [guarantee it gives up](how-it-works.md#trading-the-guarantee-away-on-purpose).
+
+Syntax that several options in a group share is stated once, in the paragraph under that group's
+heading in the list below, rather than in every entry that takes it. `<ref-pattern>` is defined
+there and then only named.
 
 <!-- BEGIN --help -->
 ```text
@@ -841,99 +863,78 @@ Finding the inputs, and placing their content:
                          Its .gitmodules section is dropped with it.
 
 Which history is read, and how it interleaves:
-  --mainline-branch=<text>       Branch treated as the mainline in every input (repeatable).
-                                 Prefix with <input>:: to give one input its own, where two do not
-                                 agree.
-                                 One quoted argument may hold several, separated by spaces.
+  --mainline-branch=<branch>     Branch treated as the mainline in every input (repeatable).
+                                 Prefix with <input>:: to give one input its own; one quoted
+                                 argument may hold several, separated by spaces.
                                  An unscoped value covers the rest and names the output's branch.
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
                                  Default: committer.
-  -b, --branch=<text>            Carry over these branches, by short name, or with ^ leave them out
-                                 (repeatable).
-                                 Shorthand for --ref refs/heads/<name>, so naming one without a ^
-                                 leaves out every ref not named, tags included.
-                                 Takes an <input>:: prefix, a ^ in front of the branch and a
-                                 :<destination>, as --ref does.
-                                 One quoted argument may hold several, separated by spaces.
-  --ref=<text>                   Carry over the refs matching this glob, branches and tags alike, or
-                                 with ^ leave them out (repeatable).
-                                 Patterns are matched against full ref names, and may be prefixed
-                                 <input>:: to narrow one input.
-                                 A ^ in front of the pattern subtracts instead of selecting:
-                                 ^refs/heads/wip/* keeps every other branch and tag, with nothing
-                                 else to name.
-                                 A :<destination> after the pattern is a refspec's right half,
-                                 naming where the matches land.
-                                 refs/tags/ hands them to --tag-prefix; a destination holding a star
-                                 spells the name out, substituting what the pattern matched.
-                                 Beyond refs/heads/ and refs/tags/ a namespace is read only when
-                                 named, and then the destination is required.
-                                 One quoted argument may hold several, separated by spaces.
-                                 Default: every branch and tag, each in the namespace it came from.
-  --label-ref=<text>             Also recreate the refs matching this glob whose target the run
-                                 already holds (repeatable).
-                                 Reads nothing extra and never delays a merge, so adding one cannot
-                                 change a commit.
-                                 A match whose target was not loaded is skipped, not an error.
-                                 Takes an <input>:: prefix, a leading ^ and a :<destination>, as
-                                 --ref does.
-                                 A ^ needs something positive to subtract from: no pattern here
-                                 means no label, so subtractions alone are refused.
-                                 One quoted argument may hold several.
-                                 Default: none.
-  --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
-                                 (repeatable).
-                                 Takes an <input>:: prefix; one quoted argument may hold several.
-                                 A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every
-                                 side branch; a bare '*' opts in every tag too.
-                                 It subtracts the ref, not its commits: they stay in scope if
-                                 another opted-in ref reaches them.
-                                 A ^ needs something positive to subtract from, no pattern here
-                                 meaning no ref at all.
-                                 Default: none.
+
+Which refs a pattern speaks for:
+
+  A <ref-pattern> is [<input>::][^]<refspec>, matched against full ref names. <input>:: narrows it
+  to one input, and a ^ in front subtracts instead of selecting. With nothing selected, -b and --ref
+  subtract from every branch and tag, while --label-ref and --interleave-ref, which take no ref
+  unless asked, refuse a ^ alone.
+
+  The <refspec> is git's, <glob>[:<destination>]: -b, --ref and --label-ref take the destination,
+  saying where the matches land, as 'refs/heads/*:refs/tags/' does.
+
+  Every option here is repeatable, and one quoted argument may hold several patterns, separated by
+  spaces.
+
+  -b, --branch=<branch>           Carry over these branches, by short name, or with ^ leave them
+                                  out.
+                                  Shorthand for --ref refs/heads/<branch>, so naming one without a ^
+                                  leaves out every ref not named, tags included.
+  --ref=<ref-pattern>             Carry over the refs matching this pattern, branches and tags
+                                  alike, or with ^ leave them out.
+                                  Default: every branch and tag, each in the namespace it came from.
+  --label-ref=<ref-pattern>       Also recreate the refs matching this pattern whose target the run
+                                  already holds.
+                                  Adding one cannot change a commit the run writes; a selection can.
+                                  Default: none.
+  --interleave-ref=<ref-pattern>  Let this ref's commits delay a mainline merge that merges them in.
+                                  'refs/heads/* ^refs/heads/main' is every side branch; a bare '*'
+                                  opts in every tag too.
+                                  Default: none.
 
 What the output repository holds:
-  --bare / --no-bare              Write a bare output repository.
-                                  --no-bare checks out a working tree instead.
-                                  Default: bare.
-  --keep-remotes                  Add each input as a remote.
-                                  Every ref it carried over lands under refs/remotes/<name>/*, at
-                                  the original commits, and so does each input's mainline whether
-                                  the selection took it or not. Notes are written under refs/notes/
-                                  and are not mirrored.
-  --tag-prefix=<text>             Prefix prepended to every recreated tag.
-                                  {repo} is substituted; an empty value qualifies nothing.
-                                  Two inputs then meeting on one name is refused, not resolved.
-                                  Default: "{repo}/"
-  --branch-prefix=<text>          Prefix prepended to every recreated branch.
-                                  {repo} is substituted; an empty value qualifies nothing.
-                                  Two inputs then meeting on one name is refused, not resolved.
-                                  Default: "{repo}/"
-  --subject-prefix=<text>         Prefix prepended to every commit subject.
-                                  {repo} and {subdir} are substituted.
-                                  Default: "{repo}: "
-  --notes                         Carry over every input's refs/notes/, rekeyed onto the commits
-                                  this run writes.
-                                  A merge gives every commit a new sha, so a note carried over
-                                  unchanged would be attached to nothing.
-                                  A note on an object the run did not write is skipped, and the run
-                                  says how many.
-                                  Default: notes are not read.
-  --notes-prefix=<text>           Prefix prepended to every recreated notes ref, below refs/notes/.
-                                  {repo} is substituted; an empty value qualifies nothing.
-                                  Default: "{repo}/"
-  --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
-                                  tagger, date and message.
-                                  Default: an annotated tag stays annotated.
-  --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
-                                  Default: on.
-  --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.
-                                  {repo}, {commit} and {parents} are substituted.
-                                  Dropping {commit} or {parents} gives up what makes the output
-                                  checkable.
-                                  Default: "[timebraid: repo="{repo}" commit={commit}
-                                  parents={parents}]"
+
+  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} is
+  substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
+  rather than resolved.
+
+  --[no-]bare                  Write a bare output repository.
+                               --no-bare checks out a working tree instead.
+                               Default: bare.
+  --keep-remotes               Add each input as a remote.
+                               Every ref it carried over lands under refs/remotes/<name>/*, at the
+                               original commits, and so does each input's mainline whether the
+                               selection took it or not. Notes are written under refs/notes/ and are
+                               not mirrored.
+  --tag-prefix=<text>          Prefix prepended to every recreated tag.
+                               Default: "{repo}/"
+  --branch-prefix=<text>       Prefix prepended to every recreated branch.
+                               Default: "{repo}/"
+  --subject-prefix=<text>      Prefix prepended to every commit subject.
+                               {repo} and {subdir} are substituted.
+                               Default: "{repo}: "
+  --notes                      Carry over every input's refs/notes/, rekeyed onto the commits this
+                               run writes.
+                               Default: notes are not read.
+  --notes-prefix=<text>        Prefix prepended to every recreated notes ref, below refs/notes/.
+                               Default: "{repo}/"
+  --lightweight-tags           Recreate every annotated tag as a lightweight one, dropping its
+                               tagger, date and message.
+                               Default: an annotated tag stays annotated.
+  --[no-]provenance            Record each commit's original sha and parents in a trailer.
+                               Default: on.
+  --provenance-trailer=<text>  The trailer --provenance writes, as its own paragraph.
+                               {repo}, {commit} and {parents} are substituted.
+                               Default: "[timebraid: repo="{repo}" commit={commit}
+                               parents={parents}]"
 
 Inspecting a run:
   --dry-run          Compute and summarize the plan, write no output.
@@ -943,21 +944,25 @@ Inspecting a run:
                      Every git command it shells out to, and the equivalent of the transfer and of
                      every ref written.
                      Writing the commits is not one command; --plan-out dumps that.
-  --progress         Draw progress even when stderr is not a terminal.
-                     For watching a log of a run that is taking too long.
-  --no-progress      Draw no progress even when stderr is a terminal.
+  --[no-]progress    Draw progress, or refuse to, whatever stderr is.
+                     For a log of a run that is taking too long, or a terminal to keep clean.
+                     Two options, not one: giving both, or --progress with --quiet, is an error.
                      Default: drawn when stderr is a terminal, and not otherwise.
-  --ascii            Draw progress with ASCII characters only.
-                     For a console that shows the bar as question marks.
-  --no-ascii         Draw progress with the full character set.
+  --[no-]ascii       Draw progress with ASCII characters only, or with the full set.
+                     For a console that shows the bar as question marks, or one misread the other
+                     way.
+                     Two options, not one: giving both is an error.
                      Default: whichever of the two the console can encode.
 
 Options:
-  --version   Show the version and exit
-  -h, --help  Show this message and exit
+  --version    Show the version and exit.
+  -h           Show each option's first line and exit.
+  -hh, --help  Show every option with its defaults and exit.
 
 Arguments:
-  <repo>  Everything before the last '::' is the location, used verbatim -- never escaped.
+  <repo>  <path-or-url>[::[<subdir>][=<name>]]
+
+          Everything before the last '::' is the location, used verbatim -- never escaped.
           Append a bare '::' when the location itself holds one, and '=<name>' too when its last
           segment cannot be a ref name.
 

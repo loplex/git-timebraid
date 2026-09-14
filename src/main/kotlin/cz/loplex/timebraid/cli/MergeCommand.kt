@@ -4,6 +4,8 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.NoSuchOption
+import com.github.ajalt.clikt.core.PrintHelpMessage
+import com.github.ajalt.clikt.core.PrintMessage
 import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.core.terminal
 import com.github.ajalt.clikt.core.UsageError
@@ -17,6 +19,7 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
 import com.github.ajalt.clikt.parameters.options.multiple
+import com.github.ajalt.clikt.parameters.options.eagerOption
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
@@ -57,7 +60,7 @@ import kotlin.io.path.writeText
  * character reaches no console — which is why `MessageCharsetTest` exempts this one and nothing
  * else.
  */
-private const val BR = "\u0085"
+internal const val BR = "\u0085"
 
 /*
  * The groups below exist for `--help`, which clikt renders one section per group. A single flat
@@ -74,6 +77,12 @@ private const val BR = "\u0085"
  * What an option *means*, and what it costs, stays in `doc/usage.md`, which the epilog points at. A
  * help entry that grows past a few lines is almost always a copy of that page, and the copy is the
  * one that goes stale.
+ *
+ * A group carries help of its own, which clikt sets above its option list, and that is where syntax
+ * more than one of its options shares is written. A metavar is what binds the two: `<ref-pattern>`
+ * is spelled out once in the group, and an option that takes one says so in its own term rather
+ * than listing the fields again. Spelling it out per option is what made this list long, and a
+ * sentence repeated four times stays true in all four copies only by luck.
  */
 
 private class OutputRepoOptions : OptionGroup(
@@ -121,11 +130,11 @@ private class PlacementOptions : OptionGroup(
 private class HistoryOptions : OptionGroup(
     name = "Which history is read, and how it interleaves",
 ) {
-    val mainlineBranch by option("--mainline-branch").multiple()
+    val mainlineBranch by option("--mainline-branch", metavar = "<branch>").multiple()
         .help(
             "Branch treated as the mainline in every input (repeatable)." + BR +
-                "Prefix with <input>:: to give one input its own, where two do not agree." + BR +
-                "One quoted argument may hold several, separated by spaces." + BR +
+                "Prefix with <input>:: to give one input its own; one quoted argument may hold " +
+                "several, separated by spaces." + BR +
                 "An unscoped value covers the rest and names the output's branch." + BR +
                 "Default: the first of " +
                 "${CommitGraphReader.MAINLINE_CANDIDATES.joinToString("/")} present in all."
@@ -135,67 +144,54 @@ private class HistoryOptions : OptionGroup(
         .choice("author" to OrderBy.AUTHOR, "committer" to OrderBy.COMMITTER)
         .default(OrderBy.COMMITTER)
         .help("Timestamp used to interleave the strands." + BR + "Default: committer.")
+}
 
-    val branches by option("-b", "--branch").multiple()
+private class RefOptions : OptionGroup(
+    name = "Which refs a pattern speaks for",
+    help = "A <ref-pattern> is [<input>::][^]<refspec>, matched against full ref names. " +
+        "<input>:: narrows it to one input, and a ^ in front subtracts instead of selecting. With " +
+        "nothing selected, -b and --ref subtract from every branch and tag, while --label-ref and " +
+        "--interleave-ref, which take no ref unless asked, refuse a ^ alone.\n\n" +
+        "The <refspec> is git's, <glob>[:<destination>]: -b, --ref and --label-ref take the " +
+        "destination, saying where the matches land, as 'refs/heads/*:refs/tags/' does.\n\n" +
+        "Every option here is repeatable, and one quoted argument may hold several patterns, " +
+        "separated by spaces.",
+) {
+    val branches by option("-b", "--branch", metavar = "<branch>").multiple()
         .help(
-            "Carry over these branches, by short name, or with ^ leave them out " +
-                "(repeatable)." + BR +
-                "Shorthand for --ref refs/heads/<name>, so naming one without a ^ leaves out " +
-                "every ref not named, tags included." + BR +
-                "Takes an <input>:: prefix, a ^ in front of the branch and a :<destination>, " +
-                "as --ref does." + BR +
-                "One quoted argument may hold several, separated by spaces."
+            "Carry over these branches, by short name, or with ^ leave them out." + BR +
+                "Shorthand for --ref refs/heads/<branch>, so naming one without a ^ leaves out " +
+                "every ref not named, tags included."
         )
 
-    val refs by option("--ref").multiple()
+    val refs by option("--ref", metavar = "<ref-pattern>").multiple()
         .help(
-            "Carry over the refs matching this glob, branches and tags alike, or with ^ leave " +
-                "them out (repeatable)." + BR +
-                "Patterns are matched against full ref names, and may be prefixed <input>:: " +
-                "to narrow one input." + BR +
-                "A ^ in front of the pattern subtracts instead of selecting: ^refs/heads/wip/* " +
-                "keeps every other branch and tag, with nothing else to name." + BR +
-                "A :<destination> after the pattern is a refspec's right half, naming where the matches land." +
-                BR +
-                "refs/tags/ hands them to --tag-prefix; a destination holding a star spells the " +
-                "name out, substituting what the pattern matched." + BR +
-                "Beyond refs/heads/ and refs/tags/ a namespace is read only when named, and then " +
-                "the destination is required." + BR +
-                "One quoted argument may hold several, separated by spaces." + BR +
+            "Carry over the refs matching this pattern, branches and tags alike, or with ^ leave " +
+                "them out." + BR +
                 "Default: every branch and tag, each in the namespace it came from."
         )
 
-    val labelRefs by option("--label-ref").multiple()
+    val labelRefs by option("--label-ref", metavar = "<ref-pattern>").multiple()
         .help(
-            "Also recreate the refs matching this glob whose target the run already holds " +
-                "(repeatable)." + BR +
-                "Reads nothing extra and never delays a merge, so adding one cannot change a " +
-                "commit." + BR +
-                "A match whose target was not loaded is skipped, not an error." + BR +
-                "Takes an <input>:: prefix, a leading ^ and a :<destination>, as --ref does." +
-                BR + "A ^ needs something positive to subtract from: no pattern here means no " +
-                "label, so subtractions alone are refused." + BR +
-                "One quoted argument may hold several." + BR +
+            "Also recreate the refs matching this pattern whose target the run already holds." + BR +
+                "Adding one cannot change a commit the run writes; a selection can." + BR +
                 "Default: none."
         )
 
-    val interleaveRefs by option("--interleave-ref").multiple()
+    val interleaveRefs by option("--interleave-ref", metavar = "<ref-pattern>").multiple()
         .help(
-            "Let this ref's commits delay a mainline merge that merges them in (repeatable)." +
-                BR + "Takes an <input>:: prefix; one quoted argument may hold several." +
-                BR + "A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every side " +
-                "branch; a bare '*' opts in every tag too." +
-                BR + "It subtracts the ref, not its commits: they stay in scope if another " +
-                "opted-in ref reaches them." +
-                BR + "A ^ needs something positive to subtract from, no pattern here meaning no " +
-                "ref at all." +
-                BR + "Default: none."
+            "Let this ref's commits delay a mainline merge that merges them in." + BR +
+                "'refs/heads/* ^refs/heads/main' is every side branch; a bare '*' opts in " +
+                "every tag too." + BR +
+                "Default: none."
         )
-
 }
 
 private class OutputContentOptions : OptionGroup(
     name = "What the output repository holds",
+    help = "--tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: " +
+        "{repo} is substituted, an empty value qualifies nothing, and two inputs then meeting " +
+        "on one name is refused rather than resolved.",
 ) {
     val bare by option("--bare").flag("--no-bare", default = true)
         .help(
@@ -215,16 +211,12 @@ private class OutputContentOptions : OptionGroup(
     val tagPrefix by option("--tag-prefix").default(WriteOptions().tagPrefix)
         .help(
             "Prefix prepended to every recreated tag." + BR +
-                "{repo} is substituted; an empty value qualifies nothing." + BR +
-                "Two inputs then meeting on one name is refused, not resolved." + BR +
                 "Default: \"" + WriteOptions().tagPrefix + "\""
         )
 
     val branchPrefix by option("--branch-prefix").default(WriteOptions().branchPrefix)
         .help(
             "Prefix prepended to every recreated branch." + BR +
-                "{repo} is substituted; an empty value qualifies nothing." + BR +
-                "Two inputs then meeting on one name is refused, not resolved." + BR +
                 "Default: \"" + WriteOptions().branchPrefix + "\""
         )
 
@@ -237,17 +229,13 @@ private class OutputContentOptions : OptionGroup(
 
     val notes by option("--notes").flag()
         .help(
-            "Carry over every input's refs/notes/, rekeyed onto the commits this run writes." + BR +
-                "A merge gives every commit a new sha, so a note carried over unchanged would " +
-                "be attached to nothing." + BR +
-                "A note on an object the run did not write is skipped, and the run says how many." +
+            "Carry over every input's refs/notes/, rekeyed onto the commits this run writes." +
                 BR + "Default: notes are not read."
         )
 
     val notesPrefix by option("--notes-prefix").default(WriteOptions().notesPrefix)
         .help(
             "Prefix prepended to every recreated notes ref, below refs/notes/." + BR +
-                "{repo} is substituted; an empty value qualifies nothing." + BR +
                 "Default: \"" + WriteOptions().notesPrefix + "\""
         )
 
@@ -267,7 +255,6 @@ private class OutputContentOptions : OptionGroup(
         .help(
             "The trailer --provenance writes, as its own paragraph." + BR +
                 "{repo}, {commit} and {parents} are substituted." + BR +
-                "Dropping {commit} or {parents} gives up what makes the output checkable." + BR +
                 "Default: \"" + WriteOptions().provenanceTrailer + "\""
         )
 }
@@ -293,34 +280,35 @@ private class ReportingOptions : OptionGroup(
         )
 
     // Two flags rather than one with a secondary name, because the default is neither of them: a
-    // run decides for itself, and each of these overrides that decision in one direction. It is
-    // also how --quiet and --verbose are spelled a few lines up.
+    // run decides for itself, and each of these overrides that decision in one direction. Giving
+    // both is an error, as it is for --quiet and --verbose a few lines up.
+    //
+    // The help shows them as the one --[no-]progress they are to a reader, so this one carries the
+    // help for both and the one below carries none. Help written there would be dropped unsaid.
     val progress by option("--progress").flag()
         .help(
-            "Draw progress even when stderr is not a terminal." + BR +
-                "For watching a log of a run that is taking too long."
-        )
-
-    val noProgress by option("--no-progress").flag()
-        .help(
-            "Draw no progress even when stderr is a terminal." + BR +
+            "Draw progress, or refuse to, whatever stderr is." + BR +
+                "For a log of a run that is taking too long, or a terminal to keep clean." + BR +
+                "Two options, not one: giving both, or --progress with --quiet, is an error." + BR +
                 "Default: drawn when stderr is a terminal, and not otherwise."
         )
 
+    val noProgress by option("--no-progress").flag()
+
     // The same two-flag shape, and for the same reason: the default is neither, a run working out
     // for itself what its console can encode. These say what it may draw with when that is wrong —
-    // in either direction, since the check can misjudge a console both ways.
+    // in either direction, since the check can misjudge a console both ways. One row again, so the
+    // help is all on this one.
     val ascii by option("--ascii").flag()
         .help(
-            "Draw progress with ASCII characters only." + BR +
-                "For a console that shows the bar as question marks."
+            "Draw progress with ASCII characters only, or with the full set." + BR +
+                "For a console that shows the bar as question marks, or one misread the other " +
+                "way." + BR +
+                "Two options, not one: giving both is an error." + BR +
+                "Default: whichever of the two the console can encode."
         )
 
     val noAscii by option("--no-ascii").flag()
-        .help(
-            "Draw progress with the full character set." + BR +
-                "Default: whichever of the two the console can encode."
-        )
 }
 
 /**
@@ -349,7 +337,29 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     override fun aliases(): Map<String, List<String>> = mapOf("--" to listOf("--", END_OF_OPTIONS))
 
     init {
-        versionOption(version()) { "git-timebraid version $it" }
+        versionOption(version(), help = "Show the version and exit.") { "git-timebraid version $it" }
+
+        context {
+            helpFormatter = { TimebraidHelpFormatter(it) }
+            // -h is no longer a synonym for --help but this command's own option, printing the
+            // terse list below. That is git's split — `git fetch -h` is one line per option and
+            // `git fetch --help` is the manual — and here it is also the only split that works:
+            // git intercepts --help on a subcommand before dispatching it and looks for a man
+            // page, so `git timebraid --help` never reaches this program at all. -hh is the
+            // spelling that gets the full list through that form.
+            helpOptionNames = emptySet()
+        }
+
+        eagerOption("-h", help = "Show each option's first line and exit.") {
+            throw PrintMessage(terseHelp(context))
+        }
+
+        eagerOption(
+            "--help", "-hh",
+            help = "Show every option with its defaults and exit.",
+        ) {
+            throw PrintHelpMessage(context)
+        }
 
         // The help formatter lays out to the terminal's width, which mordant asks the OS for when
         // the output is a console and otherwise settles at 79 — what a redirect, a pipe into a
@@ -364,13 +374,19 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     private val outputRepo by OutputRepoOptions()
     private val placement by PlacementOptions()
     private val history by HistoryOptions()
+    private val refPatterns by RefOptions()
     private val outputContent by OutputContentOptions()
     private val reporting by ReportingOptions()
 
     private val inputs by argument("repo")
         .help(
-            "Everything before the last '::' is the location, used verbatim -- never escaped." +
-                BR + "Append a bare '::' when the location itself holds one, and '=<name>' too " +
+            // The form again, because this is where its fields are described and an entry a
+            // reader jumps to has to stand on its own. The prolog is a hundred lines up in the
+            // rendered help.
+            "<path-or-url>[::[<subdir>][=<name>]]\n\n" +
+                "Everything before the last '::' is the location, used verbatim -- never " +
+                "escaped." + BR +
+                "Append a bare '::' when the location itself holds one, and '=<name>' too " +
                 "when its last segment cannot be a ref name.\n\n" +
                 "<subdir> is where its content lands, and may be nested (::libs/backend)." + BR +
                 "Defaults to <name>.\n\n" +
@@ -389,6 +405,22 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     override fun helpEpilog(context: Context): String =
         "More on each option, and what the output holds: " +
             "https://github.com/loplex/git-timebraid/blob/main/doc/usage.md"
+
+    /**
+     * What `-h` prints: every option, its entry cut to the first line.
+     *
+     * The epilog is not the one `--help` carries. A reader of the terse list needs the full list
+     * before the page that explains it, and needs both spellings, since which of the two works
+     * depends on whether this program was reached through git.
+     */
+    private fun terseHelp(context: Context): String = TerseHelpFormatter(context).formatHelp(
+        error = null,
+        prolog = help(context),
+        epilog = "Every option with its defaults: git-timebraid --help, or git timebraid -hh." +
+            "\n\n" + helpEpilog(context),
+        parameters = allHelpParams(),
+        programName = commandName,
+    )
 
     override fun run() {
         if (reporting.quiet && reporting.verbose) {
@@ -441,9 +473,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             keepRemotes = outputContent.keepRemotes,
             orderBy = history.orderBy,
             mainlineBranch = history.mainlineBranch,
-            refs = branchPatterns(history.branches, merged.map { it.name }) + history.refs,
-            interleaveRefs = history.interleaveRefs,
-            labelRefs = history.labelRefs,
+            refs = branchPatterns(refPatterns.branches, merged.map { it.name }) +
+                refPatterns.refs,
+            interleaveRefs = refPatterns.interleaveRefs,
+            labelRefs = refPatterns.labelRefs,
             notes = outputContent.notes,
             splice = placement.splice,
             dissolveSubmodules = placement.dissolveSubmodules,

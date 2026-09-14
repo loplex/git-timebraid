@@ -197,12 +197,12 @@ object CommitGraphReader {
      * A git branch name cannot contain a star, so the short form desugars into the general one
      * exactly — there is no name for which the two select differently, and nothing to escape. Nor
      * can it contain a space, which is what lets one argument carry several of them: see [words],
-     * through which `-b` passes as every option taking a ref pattern does.
+     * through which `-b` passes for the same reason every other option in its group does.
      *
-     * The rest of the ref-pattern grammar belongs around the branch name rather than inside it, so
-     * only the pattern is prefixed and the scope, the subtracting `^` and a destination are held
-     * back: `backend::^wip` becomes `backend::^refs/heads/wip`. Neither a `:` nor a `^` can occur in
-     * a ref name, so nothing a branch could legitimately be called is mistaken for one of them.
+     * The rest of the group's grammar belongs around the branch name rather than inside it, so only
+     * the pattern is prefixed and the scope, the subtracting `^` and a destination are held back:
+     * `backend::^wip` becomes `backend::^refs/heads/wip`. Neither a `:` nor a `^` can occur in a ref
+     * name, so nothing a branch could legitimately be called is mistaken for one of them.
      *
      * What is malformed as a `-b` value is refused here, naming `-b` and the text as written: its
      * fields, and its scope and destination by the rules a `--ref` is held to ([scopeOf],
