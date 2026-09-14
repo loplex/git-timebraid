@@ -1,0 +1,32 @@
+# Every job that builds an archive to ship or to smoke-test runs this first, so that the archive
+# carries the manual page as HTML; .github/scripts/render-man-html.sh says why the HTML is there and
+# why Maven does not make it.
+# One action rather than the two steps in each job, so that the jobs cannot install groff, or
+# render, in different ways.
+name: Render the manual page as HTML
+description: Install groff where the runner lacks it, and run render-man-html.sh.
+runs:
+  using: composite
+  steps:
+    # What is asked is whether groff can write HTML, not whether there is a groff: the Ubuntu image
+    # carries groff-base, whose groff has no html device and fails the render. Where it can, nothing
+    # is installed. The package index is refreshed first, for the reason the docs job in ci.yml
+    # gives. `sed` rather than `head` takes the first line, so that groff never writes into a closed
+    # pipe.
+    - name: Install groff
+      shell: bash
+      run: |
+        set -euo pipefail
+        if groff -Thtml < /dev/null > /dev/null 2>&1; then
+            groff --version | sed -n 1p
+            exit 0
+        fi
+        case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y --no-install-recommends groff ;;
+            macOS) brew install groff ;;
+            *)     echo "no way to install groff on $RUNNER_OS" >&2; exit 1 ;;
+        esac
+
+    - name: Render the manual page as HTML
+      shell: bash
+      run: .github/scripts/render-man-html.sh

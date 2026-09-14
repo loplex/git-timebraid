@@ -54,6 +54,9 @@ jobs:
       - name: mvn verify
         run: mvn -B -ntp verify
 
+      - uses: ./.github/actions/render-man-html
+        if: runner.os != 'Windows'
+
       # The bundled-runtime profile is the part of the build most likely to fail on a platform
       # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
       # and links a hand-written module list. Building it in the same matrix that runs the tests
@@ -99,6 +102,8 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - uses: ./.github/actions/render-man-html
+
       # Assigned before it is used: a failing substitution inside an argument would leave the
       # build to run on the jmods of this JDK instead, and name a Linux image for Windows.
       - name: Build the bundled-runtime archive
@@ -132,6 +137,26 @@ jobs:
       - name: Merge two repositories with the unpacked archive
         shell: bash
         run: .github/scripts/smoke-distribution.sh
+
+      # What install.md tells a Git for Windows user to do, done to the runner's own git: the page
+      # copied into git's HTML path, and asked for as a user would, with the archive's bin/ on PATH
+      # -- without it git takes `timebraid` for no command at all and looks for no page. The browser
+      # is replaced by echo, which prints the page git hands it.
+      - name: Check git timebraid --help finds the HTML page
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          tar xzf target/git-timebraid-*-windows-x64.tar.gz -C "$work"
+          home=$(cd "$work"/*/ && pwd)
+          git config --show-origin help.format || echo "help.format is not set"
+          cp "$home/share/doc/git-doc/git-timebraid.html" "$(git --html-path)/"
+          opened=$(PATH="$home/bin:$PATH" git -c web.browser=show -c browser.show.cmd=echo timebraid --help)
+          echo "$opened"
+          case "$opened" in
+              *git-timebraid.html*) ;;
+              *) echo "git timebraid --help opened something other than git-timebraid.html" >&2; exit 1 ;;
+          esac
 
   # Two places quote the tool's own output to a reader as something they can reproduce: the worked
   # examples, and the option list in doc/usage.md. `mvn verify` proves the behaviour; it says
@@ -175,6 +200,12 @@ jobs:
       # without regenerating fails here rather than leaving the list stale for a reader.
       - name: Check doc/usage.md quotes the real --help
         run: .github/scripts/check-help.py
+
+      # The manual page is written rather than generated, so what is checked is narrower: the
+      # signature line of every entry against the name column of --help. An option added, renamed
+      # or respelled fails here; a reworded description does not, which is the point of writing it.
+      - name: Check the man page documents the real options
+        run: .github/scripts/check-man.py
 
       - name: Show what drifted
         if: failure()
@@ -236,10 +267,10 @@ jobs:
   # nor the examples job can see either one: the first tests behaviour, the second compares quoted
   # command output. This reads the documents themselves.
   #
-  # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
-  # job wants nothing but a checkout, and it finishes in under a second.
+  # No JDK and no build: the checks read tracked files as text, the Kotlin sources and the manual
+  # page included, so the job wants a checkout and groff, and finishes in seconds.
   docs:
-    name: doc and KDoc links resolve, blocks fit
+    name: doc and KDoc links resolve, blocks fit, man page renders
     runs-on: ubuntu-latest
 
     steps:
@@ -273,3 +304,18 @@ jobs:
       # which this does not see.
       - name: Check no doc comment stands on another
         run: .github/scripts/check-doc-comments.py
+
+      # groff rather than the runner's luck: it is not in the image's package list, and a check
+      # that quietly skips itself where its tool is missing is no check. Installing it costs a few
+      # seconds in a job that otherwise finishes in one. The package index is refreshed first: the
+      # image's can be stale, and an install from a stale index can fail.
+      - name: Install groff
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends groff
+
+      # What the man page is, as opposed to what it says: valid roff that renders inside the margin.
+      # The option names are check-man.py's job, in the examples job, where the jar to compare
+      # against has been built.
+      - name: Check the man page is roff that renders clean
+        run: .github/scripts/check-roff.sh

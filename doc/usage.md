@@ -720,7 +720,7 @@ transcript, a pipe — gets the same headings and the same lines with the animat
 a single carriage return.
 
 A heading is ruled to the width of the terminal, or to `COLUMNS` where that is set — the same
-variable that lays `--help` out, so it decides how wide a merge prints and not only the help.
+variable that lays `-h` and `-hh` out, so it decides how wide a merge prints and not only the help.
 Redirected output without `COLUMNS` has no width to ask for and gets a fixed one.
 
 Once the last phase is done, the closing report says what the run came to: the output's mainline,
@@ -817,8 +817,8 @@ behind the tool.
 `-h` prints the same list with every entry cut to its first line, and the text above the options and
 above each group of them cut to its first paragraph — every option still there, the qualifiers, the
 defaults and the paragraphs after those gone. Reached through git, `git timebraid --help` is handled
-by git rather than by this program, so the two spellings that work there are `-h` and `-hh`; see
-[install.md](install.md).
+by git, which opens the manual page, or the HTML page on Git for Windows, so the two spellings that
+reach this program there are `-h` and `-hh`; see [install.md](install.md).
 
 It is rendered at 100 columns, the width this page is written to. What you see is laid out to your
 own terminal instead, and `COLUMNS` overrides that.

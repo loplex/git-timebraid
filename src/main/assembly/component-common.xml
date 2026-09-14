@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     What both distribution archives carry regardless of whether a JVM is bundled: the two launchers,
-    the files that have to travel with the program for legal reasons, and the documents README.md
-    links to, so that its links resolve in the unpacked archive as they do in the repository.
+    the manual page and its HTML, the files that have to travel with the program for legal reasons,
+    and the documents README.md links to, so that its links resolve in the unpacked archive as they
+    do in the repository.
 
     Kept apart from the descriptors that include it so the portable and the platform-specific archive
     cannot drift into laying these out differently — the launcher's mode in particular, which is what
@@ -30,6 +31,46 @@
             </includes>
             <fileMode>0644</fileMode>
             <lineEnding>dos</lineEnding>
+        </fileSet>
+        <!--
+            The manual page git looks for when asked for help by the `git timebraid` name.
+
+            man-db derives a man directory from every `<prefix>/bin` on PATH, so an archive
+            unpacked anywhere is found with no MANPATH set, and install.md asks for `bin/` on
+            PATH anyway. Measured on man-db 2.12.0 with git 2.43.0; `share/man` is the one chosen.
+
+            Git for Windows asks for HTML instead, in the next fileSet, and the Windows archive
+            carries this page unread. Kept anyway rather than split this component in two, which
+            is how the archives would start to differ.
+        -->
+        <fileSet>
+            <directory>src/main/man</directory>
+            <outputDirectory>share/man/man1</outputDirectory>
+            <includes>
+                <include>git-timebraid.1</include>
+            </includes>
+            <fileMode>0644</fileMode>
+            <lineEnding>unix</lineEnding>
+        </fileSet>
+        <!--
+            The same page as HTML, which is what git reads where `help.format` is `html`, Git for
+            Windows' default. Git looks for it in one directory only, the HTML path of its own
+            installation, so no place in an unpacked archive is found by itself: install.md says
+            where to copy it.
+            share/doc/git-doc is where git's own pages sit under its prefix.
+
+            Rendered by .github/scripts/render-man-html.sh before the build, not by it, so a build
+            that did not run the script packages none, and smoke-distribution.sh refuses that
+            archive. Carried by every archive, the ones that never read it included, for the reason
+            above.
+        -->
+        <fileSet>
+            <directory>${project.build.directory}/man-html</directory>
+            <outputDirectory>share/doc/git-doc</outputDirectory>
+            <includes>
+                <include>git-timebraid.html</include>
+            </includes>
+            <fileMode>0644</fileMode>
         </fileSet>
         <fileSet>
             <directory>${project.basedir}</directory>

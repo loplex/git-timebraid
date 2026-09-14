@@ -35,11 +35,13 @@ src/test is read on the same terms as src/main. It holds no user-facing message,
 can be confused with one, and a comment in a test is read in the same editor as any other.
 .github/scripts is left out because it writes ` -- ` throughout and is consistent in itself, and
 pom.xml because Maven's own vocabulary carries the ASCII mark in contexts this cannot tell from
-prose. The rest of what the scan below does not read is named here too:
-doc/examples/build-inputs.sh, the workflows and .gitattributes, for the first of those reasons,
-writing the ASCII mark and never the em dash; the root git-timebraid wrapper, which writes neither;
-LICENSE and NOTICE, which are legal text; and .gitignore and the plan.txt dumps, which are not
-prose at all.
+prose. The manual page is left out because this check reads no roff. groff refuses an em dash
+written as a raw byte, with `invalid input character code 128`, but has `\\(em` for one, so the
+page's ` \\- ` is a choice of its own, held by nothing here. The rest of what the scan below
+does not read is named here too: doc/examples/build-inputs.sh, the workflows and .gitattributes, for
+the first of those reasons, writing the ASCII mark and never the em dash; the root git-timebraid
+wrapper, which writes neither; LICENSE and NOTICE, which are legal text; and .gitignore and the
+plan.txt dumps, which are not prose at all.
 
 **The pattern over-matches and is then filtered**, rather than enumerating the positions a dash can
 sit in. A list of them -- between words, and at the end of a line -- misses three more: a line that

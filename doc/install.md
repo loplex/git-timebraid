@@ -24,11 +24,27 @@ git timebraid -hh                    # git runs any git-<name> it finds on PATH
 
 There is one for Linux and macOS on x64 and aarch64, and one for Windows on x64.
 
-`-hh` rather than `--help` in the last line, and that is not a typo: git handles `--help` on a
-subcommand itself, looking for a `git-timebraid(1)` manual page instead of running the program. So
-through the `git timebraid` spelling the help is `-h` for each option's first line and `-hh` for all
-of them with their defaults. Run as `git-timebraid`, all three of `-h`, `-hh` and `--help` reach the
-program and mean what they say.
+`-hh` rather than `--help` in the last line, and that is not a typo. Git handles `--help` on a
+subcommand itself: rather than running the program it looks for its documentation — a
+`git-timebraid(1)` manual page, or on Git for Windows an HTML page, as
+[below](#git-for-windows-reads-the-html-page).
+
+The archive ships the manual page under `share/man/man1`, and it is found there while `MANPATH` is
+unset or has an empty entry — a leading or trailing `:`, or a `::` — because `man` then adds the
+search path it derives from the `PATH` the `export` line sets. A `MANPATH` your shell sets otherwise
+is the whole search path: add the archive's `share/man` to it, or leave an empty entry in it. Where
+the launcher is linked into a directory already on `PATH` instead of the archive's `bin` being added
+to it, link `share/man/man1/git-timebraid.1` into the matching place beside that directory as well
+— `~/share/man/man1/` for a link in `~/bin/` — because `man` looks next to each `PATH` entry, not
+next to where a link points.
+
+So `git timebraid --help` opens the manual, while `-h` and `-hh` are this program's own help —
+each option's first line, and every option with its defaults. Run as `git-timebraid`, all three
+reach the program and mean what they say.
+
+Where git finds no page, or has no viewer to hand it to, `--help` reports that instead of running
+anything, and the message is git's or the viewer's rather than this program's. `-hh` is the spelling
+that reaches the program on any platform, which is why it is the one written above.
 
 `git` on `PATH` is the only other thing, and only for three jobs: cloning a remote input and
 refreshing that clone on a later run, recording the inputs as remotes under `--keep-remotes`, and
@@ -37,6 +53,22 @@ braid all happen in-process.
 
 Each release carries a `SHA256SUMS`; `sha256sum --check --ignore-missing SHA256SUMS` verifies what
 you downloaded against it.
+
+### Git for Windows reads the HTML page
+
+Git for Windows shows help as HTML — `html` is its default `help.format` — so
+`git timebraid --help` there looks for `git-timebraid.html`, and only in the one directory
+`git --html-path` prints, inside git's own installation. The archive carries the page at
+`share/doc/git-doc/git-timebraid.html`, and no place in an unpacked archive is found by itself:
+copy it into that directory, from Git Bash in the unpacked archive:
+
+```bash
+cp share/doc/git-doc/git-timebraid.html "$(git --html-path)/"
+```
+
+Under `C:\Program Files` that takes a Git Bash run as administrator. An update of Git for Windows
+can replace the directory, and the copy with it; copy it again if `--help` stops finding it. Until
+the page is there, `git timebraid --help` fails with git's `documentation file not found`.
 
 ## The portable archive, if you already have Java
 
@@ -96,7 +128,10 @@ mvn -q package                       # builds target/git-timebraid-<version>.tar
 ```
 
 That is the portable archive, unpacked the same way, plus `target/git-timebraid.jar` for running the
-jar straight out of the build.
+jar straight out of the build. The release archives also carry the manual page as HTML, which
+`.github/scripts/render-man-html.sh` renders before they are packaged, and which needs groff and
+python3; an archive packaged without running it first has no `share/doc/git-doc/`, which only
+[Git for Windows](#git-for-windows-reads-the-html-page) misses.
 
 **`./git-timebraid` in the repo root runs that jar**, so a clone needs no install to be driven. It
 is what the [worked examples](examples/README.md) are written in terms of, and it reads
