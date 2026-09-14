@@ -118,32 +118,41 @@ class MergeRunner(
         val sources = ArrayList<SourceRepository>(locations.size)
         try {
             locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
-            progress.step("reading ${sources.size} repositories")
-            val braid = CommitGraphReader.read(
-                repositories = sources,
-                orderBy = request.orderBy,
-                mainlineBranch = request.mainlineBranch,
-                refs = request.refs,
-                interleaveRefs = request.interleaveRefs,
-            )
+            progress.phase("reading the inputs and planning the braid")
+            val braid = progress.whileWorking(
+                "reading ${sources.size} repositories",
+                finished = { "${sources.size} repositories, ${it.graph.size} commits" },
+            ) {
+                CommitGraphReader.read(
+                    repositories = sources,
+                    orderBy = request.orderBy,
+                    mainlineBranch = request.mainlineBranch,
+                    refs = request.refs,
+                    interleaveRefs = request.interleaveRefs,
+                )
+            }
 
-            progress.step("planning the braid over ${braid.graph.size} commits")
             if (braid.interleaveTips.isNotEmpty()) {
                 progress.detail(
                     "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +
                         "wait for them"
                 )
             }
-            val plan = braid.graph
-                .braid(braid.heads, braid.interleaveTips)
-                .plan(
-                    // The strands are in the order the inputs were given, so the two are paired by
-                    // position here rather than by asking a Source where it sits.
-                    braid.graph.sources
-                        .mapIndexed { index, source -> source to request.inputs[index].subdir }
-                        .toMap(),
-                    splice = request.splice,
-                )
+            val plan = progress.whileWorking(
+                "planning",
+                finished = { "${it.commits.size} commits planned, ${it.braid.size} on the braid" },
+            ) {
+                braid.graph
+                    .braid(braid.heads, braid.interleaveTips)
+                    .plan(
+                        // The strands are in the order the inputs were given, so the two are paired
+                        // by position here rather than by asking a Source where it sits.
+                        braid.graph.sources
+                            .mapIndexed { index, source -> source to request.inputs[index].subdir }
+                            .toMap(),
+                        splice = request.splice,
+                    )
+            }
 
             // The one place that pairs the two: these are the repositories handed to read() above,
             // and it gives back one SourceInputs per repository in the same order, each naming the
@@ -154,7 +163,9 @@ class MergeRunner(
             // Before anything is written into the output, and on a dry run too — a splice that
             // collides does so at one commit of the braid rather than at all of them, so a dry run
             // that skipped this would report a plan it cannot carry out.
-            val splices = SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+            val splices = progress.whileWorking("checking the splices") {
+                SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+            }
             for (splice in splices) {
                 val dissolved =
                     if (splice.dissolved == 0) ""
@@ -193,8 +204,10 @@ class MergeRunner(
             val written = writeOutput(output, repoOf, braid, plan)
             if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
             if (!request.bare) {
-                progress.step("checking out ${braid.mainlineBranch}")
-                git.checkout(output, braid.mainlineBranch)
+                progress.phase("checking out ${braid.mainlineBranch}")
+                // Its own progress, drawn as it arrives. Reading the stream is what made it look
+                // as though git had nothing to say here; it had, and now it is passed on.
+                progress.gitProgress().use { git.checkout(output, braid.mainlineBranch, it) }
             }
             return MergeResult(braid, plan, splices, written.fetch, written.write)
         } finally {
@@ -230,10 +243,20 @@ class MergeRunner(
         braid: BraidInputs,
         plan: MergePlan,
     ): Written {
-        TargetRepository.create(output, braid.mainlineBranch, request.force, request.bare).use { target ->
+        // Opened before the output is created: creating it is the first thing the run does to the
+        // output, and under `-v` it says so in a command line of its own, which belongs under this
+        // heading rather than under the planning one before it.
+        progress.phase("fetching the inputs into the output")
+        TargetRepository.create(
+            output,
+            braid.mainlineBranch,
+            request.force,
+            request.bare,
+            log = { progress.detail(it) },
+        ).use { target ->
             val fetch = fetchInputs(target, repoOf, braid)
 
-            progress.step("writing ${plan.commits.size} commits into $output")
+            progress.phase("writing the braid")
             val write = BraidWriter(
                 target = target,
                 repoOf = repoOf,
@@ -243,9 +266,11 @@ class MergeRunner(
                 mirrorRemotes = request.keepRemotes,
                 dissolveSubmodules = request.dissolveSubmodules,
                 relocation = relocation,
+                onCommitWritten = progress.counter(plan.commits.size, "commits written"),
+                publishing = { publish -> progress.whileWorking("publishing the refs", work = publish) },
             ).write()
 
-            target.dropFetchRefs()
+            progress.whileWorking("dropping the refs the transfer parked") { target.dropFetchRefs() }
             return Written(fetch, write)
         }
     }
@@ -259,8 +284,10 @@ class MergeRunner(
         var refs = 0
         for (input in braid.sources) {
             val repo = repoOf.getValue(input.source)
-            progress.step("fetching ${input.readRefs.size} refs from ${repo.name}")
-            refs += target.fetchFrom(repo, input.readRefs)
+            // Ahead of the transfer, because it says what is about to be asked for; what came of
+            // it is what the transfer's own tasks leave behind.
+            progress.result("[${repo.name}] ${input.readRefs.size} refs")
+            refs += target.fetchFrom(repo, input.readRefs, progress.monitor(repo.name))
         }
         return FetchSummary(braid.sources.size, refs)
     }
@@ -272,9 +299,10 @@ class MergeRunner(
      * that lets a later `git fetch <name>` pick up what the input has gained since.
      */
     private fun keepRemotes(output: Path, locations: List<LocalInput>) {
+        progress.phase("recording the inputs as remotes")
         for (input in locations) {
-            progress.step("recording remote ${input.name}")
             git.addRemote(output, input.name, input.remote)
+            progress.result("${input.name} -> ${input.remote}")
         }
     }
 
@@ -289,6 +317,7 @@ class MergeRunner(
         if (request.inputs.none { it.isRemote }) {
             return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
         }
+        progress.phase("making every input a local repository")
         val root = cloneRoot().also {
             try {
                 it.createDirectories()
@@ -312,11 +341,11 @@ class MergeRunner(
             val dir = root.resolve("${input.name}.git")
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
                 refuseOtherOrigin(dir, input)
-                progress.step("refreshing ${input.name} in $dir")
-                git.fetch(dir)
+                progress.gitProgress(input.name).use { git.fetch(dir, it) }
+                progress.result("[${input.name}] refreshed in $dir")
             } else {
-                progress.step("cloning ${input.location} into $dir")
-                git.cloneMirror(input.location, dir)
+                progress.gitProgress(input.name).use { git.cloneMirror(input.location, dir, it) }
+                progress.result("[${input.name}] cloned into $dir")
             }
             LocalInput(dir, input.name, input.location)
         }
@@ -363,7 +392,7 @@ class MergeRunner(
     private fun removeTemporaryClones() {
         val root = temporaryClones ?: return
         if (!root.toFile().deleteRecursively()) {
-            progress.step("could not remove every clone under $root")
+            progress.result("could not remove every clone under $root")
         }
     }
 

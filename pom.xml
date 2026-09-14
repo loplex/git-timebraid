@@ -48,6 +48,7 @@
         <jgit.version>7.7.1.202607240634-r</jgit.version>
         <slf4j.version>2.0.18</slf4j.version>
         <clikt.version>5.1.0</clikt.version>
+        <jna.version>5.14.0</jna.version>
         <junit.version>5.14.4</junit.version>
 
         <!--
@@ -151,6 +152,20 @@
             <groupId>com.github.ajalt.clikt</groupId>
             <artifactId>clikt-jvm</artifactId>
             <version>${clikt.version}</version>
+        </dependency>
+
+        <!--
+            Asking whether stderr is a terminal, which decides whether progress is drawn at all.
+            It arrives anyway, at runtime scope, because mordant reads the terminal size through it
+            where the JDK's own foreign function API is not open to it;
+            declared here because this project now calls it directly, and a compile against a
+            dependency nobody declared breaks the day the one that brought it stops needing it.
+            The version is pinned to what mordant resolves, so the two cannot disagree.
+        -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>${jna.version}</version>
         </dependency>
 
         <dependency>

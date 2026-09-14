@@ -419,14 +419,72 @@ class MergeCommandOptionsTest {
             tmp.resolve("backend.git").toString(),
             tmp.resolve("webui.git").toString(),
         )
-        assertFalse(quiet.output.contains("git-timebraid:"), quiet.output)
+        assertFalse(quiet.output.contains("-- writing the braid"), quiet.output)
+        // Nor a blank line ahead of the closing report: no phase was printed to set it off from.
+        assertTrue(quiet.stderr.startsWith("mainline branch:"), quiet.stderr)
 
         val verbose = run(
             "-o", tmp.resolve("v.git").toString(), "--verbose", "--keep-remotes",
             tmp.resolve("backend.git").toString(),
             tmp.resolve("webui.git").toString(),
         )
-        assertTrue(verbose.output.contains("git-timebraid:"), verbose.output)
+        assertTrue(verbose.output.contains("-- writing the braid"), verbose.output)
         assertTrue(verbose.output.contains("remote add"), verbose.output)
+        // Creating the output is the fetching phase's first step, and is printed under its heading.
+        val created = verbose.output.indexOf("symbolic-ref")
+        val fetching = verbose.output.indexOf("-- fetching the inputs into the output")
+        assertTrue(fetching in 0 until created, verbose.output)
+    }
+
+    @Test
+    fun `the pairs that say opposite things about progress refuse to be combined`() {
+        corpus()
+        val backend = tmp.resolve("backend.git").toString()
+        for (pair in listOf(
+            listOf("--progress", "--no-progress"),
+            listOf("--quiet", "--progress"),
+            listOf("--ascii", "--no-ascii"),
+        )) {
+            val refused = MergeCommand().test(
+                listOf("-o", tmp.resolve("x-${pair.joinToString("")}.git").toString()) + pair + backend
+            )
+            assertEquals(1, refused.statusCode, refused.output)
+            assertTrue(refused.output.contains("cannot be combined"), refused.output)
+        }
+    }
+
+    @Test
+    fun `--verbose reports the in-process work too, where nothing runs through GitCommand`() {
+        corpus()
+
+        // Local inputs, bare output, no --keep-remotes: the program starts none of its git commands
+        // here, so this run is the one where a flag that only echoed them would have nothing
+        // whatever to say.
+        val out = tmp.resolve("v2.git")
+        // backend is typed as a relative path, where one exists: the two share a filesystem root,
+        // which on Windows they need not. Only a source typed relative can show it was made
+        // absolute on the way to the logged line.
+        val cwd = Path.of("").toAbsolutePath()
+        val backendDir = tmp.resolve("backend.git")
+        val typed = if (cwd.root == tmp.root) cwd.relativize(backendDir) else backendDir
+        val verbose = run(
+            "-o", out.toString(), "--verbose",
+            typed.toString(),
+            tmp.resolve("webui.git").toString(),
+        )
+
+        // One per input, which is what makes this a transfer rather than an object-by-object copy.
+        val transfers = verbose.output.lines().filter { it.contains("fetch --no-tags") }
+        assertEquals(2, transfers.size, verbose.output)
+        // The source has to be absolute for the line to run: `-C` has already moved the working
+        // directory by the time git reads it. Matched as a word of the line, not as a substring: a
+        // relative spelling that climbs to the root and back down ends in the absolute one.
+        val backend = backendDir.toAbsolutePath().toString()
+        val transfer = transfers.single { backend in it.split(' ') }
+        assertTrue(transfer.contains("+refs/heads/main:"), transfer)
+
+        assertTrue(verbose.output.contains("update-ref refs/heads/main "), verbose.output)
+        assertTrue(verbose.output.contains("update-ref -d refs/timebraid-fetch/"), verbose.output)
+        assertTrue(verbose.output.contains("symbolic-ref HEAD refs/heads/main"), verbose.output)
     }
 }

@@ -12,6 +12,8 @@
   `--dissolve-submodules`.
 - [What ends up in the output](#what-ends-up-in-the-output) — what the output repository holds when
   the run finishes: its refs, its commits, and the messages on them.
+- [What a run prints](#what-a-run-prints) — the headings, the lines a bar leaves behind, and what
+  decides whether one is drawn at all.
 - [The plan](#the-plan) — what `--plan-out` writes.
 - [Options](#options) — every option, as `--help` prints them.
 
@@ -328,6 +330,101 @@ trailer and gives up that check, since it is those two that a script reads.
 
 ---
 
+## What a run prints
+
+Two streams, and the split is the point: **stdout carries the result** — the plan summary, and
+nothing else — so `git-timebraid --dry-run … > summary.txt` gives a file holding the plan summary
+and a terminal still showing what happened. **stderr carries the narration**, which is everything
+below.
+
+A run is reported one phase at a time. Each opens with a ruled heading saying what is about to
+happen, and closes with indented lines saying what came of it:
+
+```text
+-- fetching the inputs into the output ----------------------------------------
+  [backend] 214 refs
+  [backend] remote: Counting objects, 2.5s
+  [backend] remote: Finding sources, 64536 in 0.3s
+  [backend] remote: Getting sizes, 25821 in 0.1s
+  [backend] Receiving objects, 64536 in 0.9s
+  [backend] Resolving deltas, 31954 in 1.2s
+
+-- writing the braid ----------------------------------------------------------
+  commits written, 6732 in 2.8s
+  publishing the refs, 0.8s
+  dropping the refs the transfer parked, 0.4s
+```
+
+The steps a transfer reports are git's and JGit's own, so which of them appear is theirs to decide
+and not this program's.
+
+An indented line is what a bar leaves behind: what it was, how far it got, and how long that took.
+The count is what was *reached*, so a phase that failed half way through says so rather than
+reporting the total it never made. A `[name]` at the front says which input it was for.
+
+While a phase runs it draws a bar over that line — how far, how fast, how long is left — or a
+spinner where there is nothing to count, as when a pack is being flushed. The bar goes when the
+phase ends and the line is what stays.
+
+Nothing is drawn unless stderr is a terminal somebody is watching. Redirected output — a log, a CI
+transcript, a pipe — gets the same headings and the same lines with the animation left out, and not
+a single carriage return.
+
+A heading is ruled to the width of the terminal, or to `COLUMNS` where that is set — the same
+variable that lays `--help` out, so it decides how wide a merge prints and not only the help.
+Redirected output without `COLUMNS` has no width to ask for and gets a fixed one.
+
+Once the last phase is done, the closing report says what the run came to: the output's mainline,
+what was fetched into it, what was written on top, and the refs it ends with. On stderr:
+
+```text
+mainline branch: main
+fetched 3 refs from 2 repositories into out.git
+wrote 6 commits and 6 trees on top
+refs: 2 branches, 0 tags, HEAD -> main
+```
+
+A splice `--splice` enabled and a dissolved submodule each add a line under the first, and
+`--plan-out` one saying where the plan went. An option that carries refs of a kind of its own adds
+their count to the `refs:` line, as `--keep-remotes` does its remote-tracking refs. A dry run
+fetches and writes nothing, so its report has no `fetched`, `wrote` or `refs:` line. The plan
+summary printed in the middle of it goes to stdout.
+
+Three options decide whether anything is drawn, rather than leaving it to stderr:
+
+| option          | effect                                                                  |
+|-----------------|-------------------------------------------------------------------------|
+| `--progress`    | draw even when stderr is not a terminal, for watching a log as it fills |
+| `--no-progress` | draw nothing even when it is                                            |
+| `-q`, `--quiet` | say nothing at all bar the closing report, animation included           |
+
+`-v`/`--verbose` adds a line under each phase for every `git` command the run shells out to, and the
+equivalent of the transfer and of every ref written. See [Options](#options) below.
+
+### The bar falls back to ASCII on a console that cannot encode it
+
+Everything this program writes itself is ASCII, for a reason that is worth knowing here: a JVM on
+Windows encodes a console in a code page which lacks most of what is outside it, and an encoder
+substitutes a `?` for a character its charset has no room for.
+
+The bar and the spinner are the exception, being drawn by a library rather than written here. So
+each is checked against the charset stderr reports, and each falls back to ASCII — `#` and `>` for
+the bar, `|/-\` for the spinner — when that charset cannot carry what it would otherwise use.
+
+Separately, because the answers differ. A cp932 console, which is the default on a Japanese Windows,
+carries the character the bar is drawn with and has no braille at all, so one answer for both would
+either strand the spinner or give up a bar that would have drawn.
+
+Two options override that, for a console the check reads wrong in either direction:
+
+| option       | effect                                       |
+|--------------|----------------------------------------------|
+| `--ascii`    | draw with ASCII whatever the console reports |
+| `--no-ascii` | draw with the full set whatever it reports   |
+
+Colour is not part of this and does not change: a console short of characters is not short of
+colour.
+
 ## The plan
 
 Every run prints the plan's summary on stdout, `--dry-run` included: where each input's content
@@ -347,6 +444,8 @@ per commit in the order the commits are written:
 - For each input with content at that point, the original commit whose tree it carries there.
 
 The file is deterministic, so two runs that should plan the same thing can be diffed.
+
+---
 
 ## Options
 
@@ -439,7 +538,18 @@ Inspecting a run:
   --dry-run          Compute and summarize the plan, write no output.
   --plan-out=<path>  Dump the deterministic plan as text to this file.
   -q, --quiet        Say nothing but the closing report and any error.
-  -v, --verbose      Print each git command the tool shells out to, as it runs.
+  -v, --verbose      Print the git command behind each step.
+                     Every git command it shells out to, and the equivalent of the transfer and of
+                     every ref written.
+                     Writing the commits is not one command; --plan-out dumps that.
+  --progress         Draw progress even when stderr is not a terminal.
+                     For watching a log of a run that is taking too long.
+  --no-progress      Draw no progress even when stderr is a terminal.
+                     Default: drawn when stderr is a terminal, and not otherwise.
+  --ascii            Draw progress with ASCII characters only.
+                     For a console that shows the bar as question marks.
+  --no-ascii         Draw progress with the full character set.
+                     Default: whichever of the two the console can encode.
 
 Options:
   --version   Show the version and exit

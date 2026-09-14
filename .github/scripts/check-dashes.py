@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Hold the punctuation dash to one spelling, where the spelling is a choice and not a constraint.
 
-Everything the program prints is ASCII, because a Windows console encodes to a code page that has
+Every string the program spells is ASCII, because a Windows console encodes to a code page that has
 no em dash and substitutes a `?` for it. So a user-facing string writes ` -- `, and MessageCharsetTest
-holds it there by reading the compiled constant pool.
+holds it there by reading the compiled constant pool. The progress bar's glyphs are mordant's, not
+the program's, and fall back to ASCII where the console cannot encode them (Glyphs.kt).
 
 Comments and prose reach no console, so that reason does not apply to them and the em dash is what
 they use. Both spellings then live in one tree for different reasons, which is how they drift: a
