@@ -673,7 +673,7 @@ class BraidWriter(
          * turns a lock error half way through them into one message naming both refs.\
          * The output is not untouched: the fetch has run by then,
          * so it holds the history of every ref the run read, still parked under `refs/timebraid-fetch/`,
-         * which this refusal leaves in place.
+         * and this refusal leaves it where it got to, as the manual page's EXIT STATUS says.
          */
         fun checkRefNames(names: Collection<String>) {
             val all = names.toSet()
