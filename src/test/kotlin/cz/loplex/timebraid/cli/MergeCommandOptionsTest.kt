@@ -298,13 +298,13 @@ class MergeCommandOptionsTest {
         }
 
         // Nothing named: every branch and every tag, which is what a plain run has always done.
-        assertEquals(listOf("feature", "main") to listOf("backend/v1"), refsOf("all.git"))
+        assertEquals(listOf("backend/feature", "main") to listOf("backend/v1"), refsOf("all.git"))
 
         // -b main is refs/heads/main and nothing else, so backend's tag is not carried over. This
         // is the point of the option and what it could not do while tags were loaded regardless.
         assertEquals(listOf("main") to emptyList<String>(), refsOf("narrow.git", "-b", "main"))
         assertEquals(
-            listOf("feature", "main") to emptyList<String>(),
+            listOf("backend/feature", "main") to emptyList<String>(),
             refsOf("side.git", "-b", "feature"),
         )
 
@@ -313,6 +313,123 @@ class MergeCommandOptionsTest {
             listOf("main") to listOf("backend/v1"),
             refsOf("both.git", "--ref", "refs/heads/main", "--ref", "refs/tags/*"),
         )
+    }
+
+    @Test
+    fun `one -b argument carries several branch names`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            repo.branch("main", a1)
+            repo.branch("feature", repo.commit("a2", parents = listOf(a1), at = Instant.parse("2021-01-01T11:00:00Z")))
+            repo.branch("wip", repo.commit("a3", parents = listOf(a1), at = Instant.parse("2021-01-01T12:00:00Z")))
+        }
+        val out = tmp.resolve("two-of-three.git")
+
+        // One quoted argument may hold several patterns on every option taking one, and -b is
+        // shorthand for one of them. The third branch is what shows the run still narrows.
+        run("-o", out.toString(), "-b", "main feature", tmp.resolve("backend.git").toString())
+
+        // `feature` arrives under the branch prefix and the mainline does not, which is the rule
+        // everywhere else; what this pins is that both names were read out of the one argument.
+        assertEquals(
+            listOf("backend/feature", "main"),
+            SourceRepository.open(out).use { repo -> repo.branches().map { it.name }.sorted() },
+        )
+    }
+
+    @Test
+    fun `a -b value takes an input scope, as a --ref pattern does`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            repo.branch("main", a1)
+            repo.lightweightTag("backend-tag", a1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            val b1 = repo.commit("b1", at = Instant.parse("2021-01-01T10:00:00Z"))
+            repo.branch("main", b1)
+            repo.lightweightTag("webui-tag", b1)
+        }
+        val out = tmp.resolve("scoped.git")
+
+        // -b stands among the options whose grammar is [<input>::][^]<refspec>, and takes it too: the
+        // scope goes around the branch rather than into it, `refs/heads/` going on after the `::`.
+        run(
+            "-o", out.toString(), "-b", "backend::main",
+            tmp.resolve("backend.git").toString(),
+            tmp.resolve("webui.git").toString(),
+        )
+
+        // The scope narrows backend and leaves webui alone, so backend's tag goes and webui's
+        // stays. An unscoped `-b main` would have taken both.
+        val tags = SourceRepository.open(out).use { repo -> repo.tags().map { it.name }.sorted() }
+        assertEquals(1, tags.size, "backend's tag should be gone and webui's kept: $tags")
+        assertTrue(tags.single().endsWith("webui-tag"), tags.toString())
+    }
+
+    @Test
+    fun `a -b value may subtract, with the mark in front of the branch`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            repo.branch("main", a1)
+            repo.branch("wip", repo.commit("a2", parents = listOf(a1), at = Instant.parse("2021-01-01T11:00:00Z")))
+        }
+        val out = tmp.resolve("minus-wip.git")
+
+        // Nothing but a subtraction, so it resolves against every branch and tag and takes wip out
+        // of that. The mark stays in front of the branch and `refs/heads/` goes in behind it.
+        run("-o", out.toString(), "-b", "^wip", tmp.resolve("backend.git").toString())
+
+        assertEquals(
+            listOf("main"),
+            SourceRepository.open(out).use { repo -> repo.branches().map { it.name }.sorted() },
+        )
+    }
+
+    @Test
+    fun `a malformed -b value is refused under its own name`() {
+        corpus()
+
+        // The refusal has to name what was typed. Read by the pattern parser instead, the same
+        // value would be reported as `--ref` and in whatever the desugaring had made of it. One
+        // value per way a -b value can be malformed: its fields, its scope, its destination. Each
+        // is held to its own reason too, since a value often breaks more than one rule and a later
+        // check would otherwise cover for an earlier one gone missing.
+        val malformed = listOf(
+            "backend::a:b:c" to "':'-separated fields",
+            "^backend::wip" to "the pattern: 'backend::^wip/*' subtracts",
+            "backend::" to "names no branch",
+            "^" to "subtracts no branch",
+            "ma^in" to "holds a '^' inside",
+            "nosuch::main" to "is for input 'nosuch'",
+            "::main" to "names no input before its '::'",
+            "backend:main" to "a scope is ended by '::'",
+            "^backend:wip" to "as 'backend::^wip'",
+            "backend::main:" to "names no destination",
+            "backend::^wip:refs/heads/x" to "gives a destination to a pattern that subtracts",
+            "backend::main:refs/notes/x" to "writes into refs/notes/",
+        )
+        for ((value, reason) in malformed) {
+            val result = MergeCommand().test(
+                listOf(
+                    "-o", tmp.resolve("never.git").toString(), "-b", value,
+                    tmp.resolve("backend.git").toString(),
+                )
+            )
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("-b '$value'"), result.output)
+            assertTrue(result.output.contains(reason), result.output)
+        }
+
+        // And none of those checks refuses the well-formed value beside it: a scope that is an
+        // input, a destination that can be carried out.
+        val wellFormed = MergeCommand().test(
+            listOf(
+                "--dry-run", "-b", "backend::main:refs/heads/trunk",
+                tmp.resolve("backend.git").toString(),
+            ),
+        )
+        assertEquals(0, wellFormed.statusCode, wellFormed.output)
     }
 
     @Test
@@ -334,7 +451,7 @@ class MergeCommandOptionsTest {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(
             result.output.contains(
-                "the branch 'tags/v1.0' and the tag 'v1.0' of 'backend' would both be mirrored as " +
+                "'refs/heads/tags/v1.0' and 'refs/tags/v1.0' of 'backend' would both be mirrored as " +
                     "'refs/remotes/backend/tags/v1.0'"
             ),
             result.output,

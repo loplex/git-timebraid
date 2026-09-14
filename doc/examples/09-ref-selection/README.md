@@ -1,7 +1,7 @@
 # 09 — which refs a run carries over (`-b`, `--ref`)
 
 `-b` and `--ref` are one selection, not two, and it applies to branches and tags alike. Shows what
-each of four runs ends up holding — including the one that surprises people, where narrowing to a
+each of five runs ends up holding — including the one that surprises people, where narrowing to a
 branch drops the tags *and* the commits only a tag could reach.
 
 ## Input
@@ -26,7 +26,7 @@ fe31057d0ddc3794e3f62f31ff239a54cb783da3 tag	refs/tags/v1.1
 `r1` is reachable from `release/1.x` and from `v1.1`, and from nothing on `main`. That is what makes
 it the interesting commit here.
 
-## The four runs
+## The five runs
 
 Every run merges the same two inputs; they differ only in the selection. Each writes its own output
 directory, so they can be compared side by side.
@@ -43,18 +43,19 @@ refs: 2 branches, 3 tags, HEAD -> main
 
 ```console
 $ git -C output for-each-ref --format='%(objecttype) %(refname)'
+commit refs/heads/backend/release/1.x
 commit refs/heads/main
-commit refs/heads/release/1.x
 commit refs/tags/backend/v1.0
 tag refs/tags/backend/v1.1
 commit refs/tags/webui/v2.0
 ```
 
-All five commits, both branches, all three tags. `release/1.x` keeps its own name because only one
-input used it; the two `main` branches collapse into the single braid. Tags are prefixed with the
-repository name (`--tag-prefix` defaults to `{repo}/`), which is what stops `backend`'s `v1.0` and a
-`v1.0` from anywhere else colliding. `backend/v1.1` is still `objecttype tag` — an annotated tag
-stays annotated, keeping its tagger and message.
+All five commits, both branches, all three tags. The two `main` branches collapse into the single
+braid; every other ref is prefixed with the repository name (`--branch-prefix` and `--tag-prefix`
+both default to `{repo}/`), which is what stops `backend`'s `v1.0` and a `v1.0` from anywhere else
+colliding — and what makes `backend/release/1.x` called that whatever else the run selects.
+`backend/v1.1` is still `objecttype tag` — an annotated tag stays annotated, keeping its tagger and
+message.
 
 `braid: 4` against `commits: 5` is `r1`: it is off the mainline, so it is recreated but is not part
 of the braid.
@@ -119,8 +120,8 @@ refs: 2 branches, 0 tags, HEAD -> main
 
 ```console
 $ git -C output-release-glob for-each-ref --format='%(objecttype) %(refname)'
+commit refs/heads/backend/release/1.x
 commit refs/heads/main
-commit refs/heads/release/1.x
 ```
 
 Three rules at once:
@@ -133,14 +134,50 @@ Three rules at once:
   built along it, and the output's branch of that name is the braid's tip. It is the one ref a
   selection cannot exclude.
 
+### The same glob, subtracting
+
+```console
+$ ./git-timebraid -o doc/examples/09-ref-selection/output-not-release --no-bare \
+    --ref '^refs/heads/release/*' \
+    doc/examples/09-ref-selection/input/backend doc/examples/09-ref-selection/input/webui
+commits: 5 (braid: 4)
+refs: 1 branches, 3 tags, HEAD -> main
+```
+
+```console
+$ git -C output-not-release for-each-ref --format='%(objecttype) %(refname)'
+commit refs/heads/main
+commit refs/tags/backend/v1.0
+tag refs/tags/backend/v1.1
+commit refs/tags/webui/v2.0
+```
+
+A `^` in front of the pattern subtracts instead of selecting, which is git's own spelling for a
+negative refspec. Compare it against the run above it: the same glob, and apart from `main`, which
+the mainline always keeps, the outputs are each other's complement.
+
+Two rules are visible here at once.
+
+- **The subtraction applies over every branch and tag**, because that is what `--ref` means when
+  nothing selects. Three tags are carried over that nothing named — which is the whole point:
+  dropping one branch out of the repository takes one pattern, not a list of everything else.
+- **It subtracts the ref, not the commits behind it.** `commits: 5`, `r1` among them. Dropping
+  `release/1.x` did not drop `r1`, because `backend/v1.1` still points at it, and that tag was not
+  subtracted. Adding `--ref '^refs/tags/v1.1'` is what takes the commit too.
+
+`--label-ref` and `--interleave-ref` read their empty case the other way — no ref — so a run holding
+nothing but subtractions there has nothing to take back out, and is refused rather than quietly
+matching nothing.
+
 ## In short
 
-| selection                        | commits | branches                | tags                |
-|----------------------------------|--------:|-------------------------|---------------------|
-| *(none)*                         |       5 | `main`, `release/1.x`   | all three           |
-| `-b main`                        |       4 | `main`                  | none                |
-| `-b main --ref 'refs/tags/*'`    |       5 | `main`                  | all three           |
-| `--ref 'refs/heads/release/*'`   |       5 | `main`, `release/1.x`   | none                |
+| selection                        | commits | branches                        | tags      |
+|----------------------------------|--------:|---------------------------------|-----------|
+| *(none)*                         |       5 | `main`, `backend/release/1.x`   | all three |
+| `-b main`                        |       4 | `main`                          | none      |
+| `-b main --ref 'refs/tags/*'`    |       5 | `main`                          | all three |
+| `--ref 'refs/heads/release/*'`   |       5 | `main`, `backend/release/1.x`   | none      |
+| `--ref '^refs/heads/release/*'`  |       5 | `main`                          | all three |
 
 `-b main` *is* `--ref refs/heads/main`; the shorthand carries no exemption of its own.
 

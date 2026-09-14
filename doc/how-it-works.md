@@ -260,8 +260,8 @@ Branches need no special handling, which is worth explaining because it looks li
   already carries the accumulated content of every repository.
 
 The consequence is that a branch which exists in **one** input repository still gives you a working
-checkout of the whole system. Checking out `esbuild-experiment`, a branch that only ever existed
-in `webui`:
+checkout of the whole system. Checking out `webui/esbuild-experiment`, a branch that only ever
+existed in `webui`:
 
 | Directory              | Holds                                      |
 |------------------------|--------------------------------------------|
@@ -285,19 +285,56 @@ merely unnamed.
   to branches and tags alike (`--ref`, repeatable). A short name cannot say whether `v1.0` is a
   branch or a tag, so the patterns are matched against the full name and a `*` spans path
   separators.
-- No selection means **every** ref. `-b`/`--branch` is shorthand for one pattern,
+- No selection means **every branch and tag**. `-b`/`--branch` is shorthand for one pattern,
   `--ref refs/heads/<name>`; since a branch name cannot contain a `*`, the short form desugars
   exactly — and it therefore selects that branch *and no tags*.
 - The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
-- Tags are recreated under a prefix, `{repo}/` by default (`--tag-prefix`), so two inputs that both
-  tagged `v1.0` do not collide. A branch is qualified the same way, `--branch-prefix`, but only when
-  two inputs used the name.
+- Every ref is recreated under a prefix, `{repo}/` by default — `--tag-prefix` for a tag,
+  `--branch-prefix` for a branch — so two inputs that both hold `v1.0` do not collide. It applies
+  wherever a pattern has not spelled its destination out, which is what makes an output ref name
+  follow from the input it came from and from nothing else the run did; emptying it asks for the
+  plain names, and two inputs meeting there is refused rather than resolved.
 
 `--interleave-ref` uses the same matcher and reads its empty case the other way round: no selection
-is every ref, no interleave pattern is none of them. It is also matched against what the selection
-already admitted, so widening the interleave cannot widen what is read.
+is every branch and tag, no interleave pattern is none of them. It is also matched against what the
+selection already admitted, so widening the interleave cannot widen what is read.
 
-[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+That last clause is also why there is a third flag. One selection answers three questions, and they
+do not carry the same risk:
+
+| Question                                              | Decided by                                                | What changes when it changes        |
+|-------------------------------------------------------|-----------------------------------------------------------|-------------------------------------|
+| What is read into the graph                           | `--ref`, and the mainline whatever it says                | how many commits the output holds   |
+| What may move the braid                               | `--interleave-ref`, matched against what `--ref` admitted | the braid's commits, and their shas |
+| What gets a ref in the output, and in which namespace | `--ref` and `--label-ref`, with their destination         | nothing but the ref names           |
+
+Naming is free, and a caller should be able to ask for it generously. Weighing is a scheduling
+decision, and should be deliberate and small. Because `--interleave-ref` can only match what `--ref`
+admitted, a ref named purely to have it in the output can reach the second row — and the refs
+cheapest to name are the likeliest to do it. One pointing into the mainline's own history adds no
+commits at all, and its ancestry is exactly the merged-in history whose arrival into scope makes
+merges wait.
+
+`--label-ref` is that third row on its own. It recreates a matched ref whose target the graph
+already holds, never extends what is read, and never becomes an interleave tip. The safety is then
+something that can be stated and tested, rather than a coincidence of two globs missing each other:
+**adding any `--label-ref` to a run cannot change a single commit the run writes.**
+
+Git draws the same distinction with a two-sided refspec — `+refs/heads/*:refs/remotes/origin/*`,
+where the left half says what is fetched and the right half what it is called. `--label-ref` is how
+the right half is asked for alone, and a pattern's destination *is* that right half:
+`--ref 'legacy::refs/heads/*:refs/tags/'` reads `legacy`'s branches and writes them as tags, which
+is how a dead branch is kept for the record without keeping it as a branch or dropping the commits
+only it reaches.
+
+The prefix rules above are the default naming, and a destination overrides exactly the part of the
+name it spells out — nothing, the namespace, or the whole of it. A destination holding a `*` takes
+the last of those: the star is substituted with what the pattern's own star matched, so
+`refs/changes/*:refs/changes/{repo}/*` keeps a namespace this program has no rule for and qualifies
+it, and no prefix goes near the result. That is also why a pattern reading such a namespace must
+carry a destination: there would otherwise be nothing to name the result with.
+
+[Example 09](examples/09-ref-selection/README.md) runs five selections over one pair of repositories
 and lists what each output holds — including the commit that disappears entirely under `-b main`,
 and comes back when the tags are asked for.
 
@@ -354,6 +391,26 @@ guarantee, and `--interleave-ref` is how you give it up deliberately:
   predecessor younger than itself.
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
+
+A plain pattern can only add, so a `^` in front of one takes refs back out of what the rest matched
+— the same mark git puts on a negative refspec. The subtraction is over ref names and happens before
+any commit is reached, so a commit two refs name is opted in by whichever of them survives rather
+than by neither.
+
+The pairing that matters is `--interleave-ref 'refs/heads/* ^refs/heads/main'`. Since the scope is
+the ancestry of every opted-in tip, and a mainline tip's ancestry is everything that mainline ever
+merged, opting the mainlines in is nearly the whole graph; subtracting the mainline refs from the
+branches is what leaves *every side branch* as the scope. A bare star opts in every tag besides, and
+a tag on a mainline reaches what that mainline had merged by then.
+
+Here a subtraction needs something to subtract from: this option's empty case is *no ref*, so a
+value holding nothing but subtractions is refused rather than resolving to nothing. `--ref` reads
+its empty case the other way, and `^` alone there means *every branch and tag except* — see
+[taking refs back out](usage.md#taking-refs-back-out).
+
+What it cannot do is take a commit out of scope that something else opted in reaches — and that is a
+property of the history rather than of this implementation. A branch merged into a mainline is that
+mainline's ancestry, so *in scope, except the commits of this merged branch* describes no graph.
 
 [Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a six-commit
 history you can build and inspect: two inputs, braided both ways, with the merge landing before the

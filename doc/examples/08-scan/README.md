@@ -33,8 +33,8 @@ Error: two inputs resolve to the same repository name 'core': doc/examples/08-sc
 ```
 
 `libs/core` and `tools/core` derive the same name, and a name has to be unique — it is the tag
-prefix, the provenance label and what `--root-repo` matches. The scan cannot invent a distinction it
-was not given, so it refuses and says how to give one.
+prefix, the branch prefix, the provenance label and what `--root-repo` matches. The scan cannot
+invent a distinction it was not given, so it refuses and says how to give one.
 
 ## Command
 

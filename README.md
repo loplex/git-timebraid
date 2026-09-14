@@ -77,7 +77,8 @@ git-timebraid -o /tmp/merged ~/repos/backend.git ~/repos/webui.git ~/repos/codeg
 
 That makes `/tmp/merged` a bare repository whose mainline braids every input's mainline in date
 order, each input's files under its own `backend/`, `webui/` or `codegen/`. The inputs' other
-branches come along too, and each input's tags prefixed with its name: `webui/v1.2`.
+branches and their tags come along too, each prefixed with its input's name: `webui/feature`,
+`webui/v1.2`.
 
 `git` has to be on `PATH` only to clone a remote input and refresh that clone on a later run, to
 record the inputs as remotes under `--keep-remotes`, and to check out a `--no-bare` output.
@@ -210,8 +211,8 @@ Neither is something braiding introduces, and both are worked through under
 
 - Reading the inputs — a local path in place, a URL through a clone — and planning the interleaving.
 - Writing the output, bare or with a working tree.
-- Recreating the branches and prefixed tags a run carries over — every ref by default, narrowed
-  with `--ref`.
+- Recreating the branches and tags a run carries over, each under its input's prefix — every
+  branch and tag by default, narrowed with `--ref`.
 - The provenance trailer on every commit message.
 - Keeping the inputs as remotes, their commits still reachable.
 - Progress on stderr.
@@ -280,7 +281,8 @@ not share.
   that history as `dangling commit`, and an annotated tag's original object as `dangling tag`, until
   `git gc --prune=now` reclaims them. `--keep-remotes` gives the commits refs, not the tag objects.
   On a 139 MB corpus they are 3 MB of the 97 the output takes.
-- **Not transferred:** `refs/notes/*`, reflogs, and any repository-local configuration.
+- **Not transferred:** reflogs and any repository-local configuration; `refs/notes/*` only with
+  `--notes`.
 
 ## License
 

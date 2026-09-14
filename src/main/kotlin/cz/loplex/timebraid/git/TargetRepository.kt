@@ -12,6 +12,7 @@ import org.eclipse.jgit.lib.RefUpdate
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.lib.TagBuilder
+import org.eclipse.jgit.lib.TreeFormatter
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.RefSpec
 import org.eclipse.jgit.transport.TagOpt
@@ -76,9 +77,11 @@ class TargetRepository private constructor(
      * blob to an [ObjectInserter], and the sending side deltifies what it sends, where the
      * inserter can only store each object whole — 97 MB against 221 MB for the same content.
      *
-     * [refs] narrows the transfer to exactly the refs the graph was read from, so `-b` keeps out
-     * history this run never meant to include; a ref pointing at an object that is not there is a
-     * broken repository, and so is a repository holding history nobody asked for.
+     * [refs] narrows the transfer to the refs the graph was read from, so `-b` keeps out history
+     * this run never meant to include; a ref pointing at an object that is not there is a broken
+     * repository, and so is a repository holding history nobody asked for. The one addition is a
+     * `--notes` run's notes refs, whose own history comes along and stays unreferenced; see
+     * [SourceInputs.noteRefs] for why they are fetched at all.
      *
      * @return how many refs were fetched.
      */
@@ -162,6 +165,21 @@ class TargetRepository private constructor(
      */
     fun writeBlob(text: String): ObjectId =
         inserter.insert(Constants.OBJ_BLOB, text.toByteArray(Charsets.UTF_8))
+
+    /**
+     * Writes a tree with exactly [entries] and returns its id.
+     *
+     * Sorted here rather than by the caller: [TreeFormatter] writes entries in the order it is given
+     * them, and a tree in any other order is one `git fsck` rejects. [TreeAssembler] builds the
+     * braid's own trees and does its own sorting; this is for the flat trees nothing else assembles
+     * — a notes tree, keyed by sha.
+     */
+    fun writeTree(entries: List<TreeEntry>): ObjectId {
+        val sorted = entries.sortedWith(TreeAssembler.GIT_TREE_ORDER)
+        val formatter = TreeFormatter(sorted.size)
+        for (entry in sorted) formatter.append(entry.name, entry.mode, entry.id)
+        return inserter.insert(formatter)
+    }
 
     /** Writes a commit object and returns its id. */
     fun writeCommit(

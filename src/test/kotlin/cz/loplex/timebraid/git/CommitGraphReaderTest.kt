@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.lib.Constants
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -93,7 +94,7 @@ class CommitGraphReaderTest {
 
         open("backend", "webui").useAll { repos ->
             val error = assertThrows<IllegalArgumentException> {
-                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = "develop")
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = listOf("develop"))
             }
             assertTrue(error.message!!.contains("webui"))
         }
@@ -120,10 +121,15 @@ class CommitGraphReaderTest {
             fun read(vararg patterns: String) =
                 CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
 
-            fun branchesOf(inputs: BraidInputs) = inputs.sources[0].branches.map { it.name }.sorted()
-            fun tagsOf(inputs: BraidInputs) = inputs.sources[0].tags.map { it.name }.sorted()
+            // By the namespace each ref lands in, which is what the output actually holds.
+            fun under(inputs: BraidInputs, namespace: String) = inputs.sources[0].refs
+                .filter { it.namespace == namespace }
+                .map { it.name }
+                .sorted()
+            fun branchesOf(inputs: BraidInputs) = under(inputs, Constants.R_HEADS)
+            fun tagsOf(inputs: BraidInputs) = under(inputs, Constants.R_TAGS)
 
-            // No pattern is every ref, which is what a plain run does.
+            // No pattern is every branch and tag, which is what a plain run does.
             val everything = read()
             assertEquals(4, everything.graph.size)
             assertEquals(listOf("experiment", "main"), branchesOf(everything))
@@ -150,6 +156,82 @@ class CommitGraphReaderTest {
             assertEquals(emptyList<String>(), branchesOf(tagsOnly))
             assertEquals(listOf("v1.0"), tagsOf(tagsOnly))
             assertEquals(a2.name, tagsOnly.heads[0].id)
+        }
+    }
+
+    @Test
+    fun `a caret subtracts from whatever the rest of the patterns selected`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1")
+            val a2 = repo.commit("a2", parents = listOf(a1))
+            val side = repo.commit("side", parents = listOf(a1))
+            repo.branch("main", a2)
+            repo.branch("experiment", side)
+            repo.annotatedTag("v1.0", a1)
+            // On the side branch again, so it can be seen keeping `side` reachable on its own.
+            repo.lightweightTag("v2.0", side)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("main", repo.commit("b1"))
+            repo.branch("experiment", repo.commit("b-side"))
+        }
+
+        open("backend", "webui").useAll { repos ->
+            fun read(vararg patterns: String) =
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
+
+            fun under(inputs: BraidInputs, index: Int, namespace: String) = inputs.sources[index].refs
+                .filter { it.namespace == namespace }
+                .map { it.name }
+                .sorted()
+            fun branchesOf(inputs: BraidInputs, index: Int = 0) = under(inputs, index, Constants.R_HEADS)
+            fun tagsOf(inputs: BraidInputs, index: Int = 0) = under(inputs, index, Constants.R_TAGS)
+
+            // The empty case underneath a subtraction is this option's own — every branch and tag — so
+            // one pattern says "all but these" without the run naming a single thing it wants. That is
+            // where this parts company with git, whose command line drops the configured refspec as
+            // soon as one is named and so gives nothing back for subtractions alone.
+            val allButExperiment = read("^refs/heads/experiment")
+            assertEquals(listOf("main"), branchesOf(allButExperiment))
+            assertEquals(listOf("v1.0", "v2.0"), tagsOf(allButExperiment))
+            assertEquals(listOf("main"), branchesOf(allButExperiment, 1))
+
+            // Subtraction is by ref name, and `side` is held by the tag rather than by the branch —
+            // so dropping the branch alone leaves the commit, and dropping both takes it.
+            // a1, a2 and side from backend — side only because the tag still holds it — plus
+            // webui's b1. Its own `experiment` went with the unscoped pattern, b-side with it.
+            assertEquals(4, allButExperiment.graph.size)
+            val neither = read("^refs/heads/experiment", "^refs/tags/v2.*")
+            assertEquals(3, neither.graph.size)
+            assertEquals(listOf("v1.0"), tagsOf(neither))
+
+            // Applied after the patterns that select, not instead of them.
+            val branchesButOne = read("refs/heads/*", "^refs/heads/experiment")
+            assertEquals(listOf("main"), branchesOf(branchesButOne))
+            assertEquals(emptyList<String>(), tagsOf(branchesButOne))
+
+            // The mark goes after the scope, in front of the refspec — so a subtraction narrows one
+            // input and leaves the others carrying what they had.
+            val scoped = read("backend::^refs/heads/experiment")
+            assertEquals(listOf("main"), branchesOf(scoped))
+            assertEquals(listOf("experiment", "main"), branchesOf(scoped, 1))
+
+            // A '^' anywhere but in front is refused rather than read as part of a name: git allows
+            // one nowhere in a ref, which is what makes the leading one decidable as a mark.
+            val inside = assertThrows<IllegalArgumentException> { read("refs/heads/ex^periment") }
+            assertTrue(inside.message!!.contains("'^'"), inside.message)
+
+            // Nothing lands from a subtraction, so a destination would have nothing to name: git
+            // refuses '^refs/heads/x:refs/tags/' as a refspec for the same reason.
+            val destined = assertThrows<IllegalArgumentException> {
+                read("^refs/heads/experiment:refs/tags/")
+            }
+            assertTrue(destined.message!!.contains("nothing to name"), destined.message)
+
+            // A '^' opening the scope is named for what it always is — the mark written a scope too
+            // early — rather than as an input called '^backend' that is not there.
+            val misplaced = assertThrows<IllegalArgumentException> { read("^backend::refs/heads/experiment") }
+            assertTrue(misplaced.message!!.contains("belongs in"), misplaced.message)
         }
     }
 
@@ -209,10 +291,21 @@ class CommitGraphReaderTest {
             assertEquals(setOf(f.name), idsFor("refs/heads/feature/*"))
             // Tags are refs too, and are matched under their own prefix.
             assertEquals(setOf(tagged.name), idsFor("refs/tags/v1.*"))
-            // A short name matches nothing: patterns are against the full ref name on purpose.
-            assertEquals(emptySet<String>(), idsFor("feature/x/y"))
-            // A bare star is every ref.
+            // A short name is refused rather than quietly matching nothing: patterns are against the
+            // full ref name on purpose, and a pattern that could never match is a mistake this
+            // program can name where an empty result cannot be told from an input that has no such
+            // ref.
+            val short = assertThrows<IllegalArgumentException> { idsFor("feature/x/y") }
+            assertTrue(short.message!!.contains("refs/"), short.message)
+            // A bare star is every branch and every tag.
             assertEquals(setOf(f.name, tagged.name), idsFor("*"))
+            // A '^' subtracts from it, which is the only way to write "broadly, except these".
+            assertEquals(setOf(tagged.name), idsFor("*", "^refs/heads/feature/*"))
+            // But it needs something to subtract from, and here the empty case is no ref at all —
+            // so subtractions alone would resolve to nothing however they were meant, and are
+            // refused instead of quietly matching nothing.
+            val alone = assertThrows<IllegalArgumentException> { idsFor("^refs/heads/feature/*") }
+            assertTrue(alone.message!!.contains("subtract"), alone.message)
             // No pattern means the default scope, and nothing to resolve.
             assertEquals(emptySet<String>(), idsFor())
         }

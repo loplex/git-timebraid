@@ -165,7 +165,73 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         }
     }
 
-    private fun point(ref: String, target: ObjectId) {
+    /**
+     * Writes a notes ref holding one note per entry of [notes], keyed by the commit it annotates.
+     *
+     * [fanout] is how many leading characters of the sha become a directory, which is the shape
+     * `git notes` itself writes above a handful of notes — the reader has to rejoin the path
+     * whatever depth it finds, so a fixture has to be able to produce more than one. [authorAt]
+     * dates the notes commit's author apart from its committer, as for [commit].
+     */
+    fun notes(
+        ref: String = "commits",
+        notes: Map<ObjectId, String>,
+        fanout: Int = 0,
+        authorAt: Instant? = null,
+    ): ObjectId {
+        repository.newObjectInserter().use { inserter ->
+            val tree = HashMap<String, Any>()
+            for ((target, text) in notes) {
+                val blob = inserter.insert(Constants.OBJ_BLOB, text.toByteArray(StandardCharsets.UTF_8))
+                val sha = target.name
+                val path = if (fanout == 0) sha else "${sha.take(fanout)}/${sha.drop(fanout)}"
+                put(tree, path.split('/'), blob)
+            }
+            val root = writeNoteTree(inserter, tree)
+            val builder = CommitBuilder().apply {
+                @Suppress("UsePropertyAccessSyntax")
+                setTreeId(root)
+                author = who(authorAt ?: clock)
+                committer = who(clock)
+                setMessage("Notes added by 'git notes add'\n")
+            }
+            val id = inserter.insert(builder)
+            inserter.flush()
+            point(Constants.R_NOTES + ref, id)
+            return id
+        }
+    }
+
+    /** Places [blob] at [path] in the nested map [here], creating the directories above it. */
+    private fun put(here: MutableMap<String, Any>, path: List<String>, blob: ObjectId) {
+        if (path.size == 1) {
+            here[path[0]] = blob
+            return
+        }
+        @Suppress("UNCHECKED_CAST")
+        val next = here.getOrPut(path[0]) { HashMap<String, Any>() } as MutableMap<String, Any>
+        put(next, path.drop(1), blob)
+    }
+
+    private fun writeNoteTree(inserter: ObjectInserter, here: Map<String, Any>): ObjectId {
+        val entries = ArrayList<TreeEntry>()
+        for ((name, value) in here) {
+            entries += when (value) {
+                is ObjectId -> TreeEntry(name, FileMode.REGULAR_FILE, value)
+                else -> {
+                    @Suppress("UNCHECKED_CAST")
+                    TreeEntry(name, FileMode.TREE, writeNoteTree(inserter, value as Map<String, Any>))
+                }
+            }
+        }
+        entries.sortWith(TreeAssembler.GIT_TREE_ORDER)
+        val tree = TreeFormatter(entries.size)
+        for (entry in entries) tree.append(entry.name, entry.mode, entry.id)
+        return inserter.insert(tree)
+    }
+
+    /** Points any full ref name at [target] — how a fixture grows a namespace of its own. */
+    fun point(ref: String, target: ObjectId) {
         repository.updateRef(ref).apply {
             // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) — same asymmetry as
             // above: assigning through the property does not compile.

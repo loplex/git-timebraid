@@ -78,10 +78,10 @@ The same CLI, with every ref opted into the interleave:
 ```
 
 `--interleave-ref` puts a matched ref's ancestry in scope, so a mainline merge that merges it in
-waits for it; a bare star matches every ref and therefore reproduces a pass over the whole graph
-here, where the run takes every branch, the mainlines among them. That is the far end of one
-mechanism rather than a second algorithm — with nothing opted in, the same code reduces to a k-way
-merge of the mainline chains, which is the default.
+waits for it; a bare star matches every branch and tag and therefore reproduces a pass over the
+whole graph they reach. That is the far end of one mechanism rather than a second algorithm — with
+nothing opted in, the same code reduces to a k-way merge of the mainline chains, which is the
+default.
 
 Neither output needs code of its own, and that is the same seam twice: the braid is a parameter, and
 the write order is derived from the braided graph rather than supplied alongside it.
@@ -149,4 +149,4 @@ what the tool declines to guess.
 | [06-splice](06-splice/README.md)                                   | `--splice`: one input's destination inside another's                   | The pair without the flag, and a real collision with it      |
 | [07-dissolve-submodule](07-dissolve-submodule/README.md)           | `--dissolve-submodules`: a gitlink giving way to the input's history   | The gitlink as an ordinary collision without the flag        |
 | [08-scan](08-scan/README.md)                                       | `--scan`: the layout read off a directory tree, and a finding renamed  | Two findings deriving the same name                          |
-| [09-ref-selection](09-ref-selection/README.md)                     | `-b`/`--ref`: four selections, and what each output ends up holding    | — (nothing is refused; what is dropped is the point)         |
+| [09-ref-selection](09-ref-selection/README.md)                     | `-b`/`--ref`: five selections, and what each output ends up holding    | — (nothing is refused; what is dropped is the point)         |

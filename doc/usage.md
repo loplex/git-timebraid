@@ -10,6 +10,8 @@
 - [Taking the layout off a directory tree](#taking-the-layout-off-a-directory-tree) — `--scan`.
 - [Dissolving a submodule into its content](#dissolving-a-submodule-into-its-content) —
   `--dissolve-submodules`.
+- [Which history is read, and how it interleaves](#which-history-is-read-and-how-it-interleaves) —
+  mainlines that do not agree, and narrowing what may weigh on the interleave.
 - [What ends up in the output](#what-ends-up-in-the-output) — what the output repository holds when
   the run finishes: its refs, its commits, and the messages on them.
 - [What a run prints](#what-a-run-prints) — the headings, the lines a bar leaves behind, and what
@@ -67,7 +69,7 @@ git-timebraid \
 ```
 
 Without that `--ref`, this run would carry no tags at all: naming any ref leaves out the rest.
-[Example 09](examples/09-ref-selection/README.md) runs four selections over one pair of repositories
+[Example 09](examples/09-ref-selection/README.md) runs five selections over one pair of repositories
 and shows what each output ends up holding, down to the commit that only a tag reaches.
 
 ---
@@ -138,9 +140,9 @@ Placement and naming travel together, and can be separated.
 - It may be a nested path (`repo.git::libs/backend`), and inputs sharing a prefix share the
   directory for it — so `backend.git::libs/backend webui.git::apps/webui` gives the output a
   `libs/` and an `apps/`. Both are named after the last segment.
-- The name is the input's identity: the tag prefix, the provenance label, the commit subject prefix,
-  what `--root-repo` matches, and what has to be unique — it is how two inputs whose directories
-  happen to share a name are told apart.
+- The name is the input's identity: the tag prefix, the branch prefix, the provenance label, the
+  commit subject prefix, what `--root-repo` matches, and what has to be unique — it is how two
+  inputs whose directories happen to share a name are told apart.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
   placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
   what the second one is mostly for: the scan already decided where it goes.
@@ -234,6 +236,64 @@ Two things it deliberately does not do:
 Which `[submodule]` sections are dropped, and when no root `.gitmodules` is written at all, is
 worked out under [dissolving a submodule](how-it-works.md#dissolving-a-submodule).
 
+## Which history is read, and how it interleaves
+
+`--order-by` picks the timestamp the strands interleave by, the committer's unless it says the
+author's; which suits which question is under
+["that instant" is the mainline](how-it-works.md#that-instant-is-the-mainline-not-the-deployment).
+
+### Mainlines that do not agree
+
+`--mainline-branch` takes the `<input>::` scope a ref pattern takes ([saying it for one input
+only](#saying-it-for-one-input-only)), with a branch's short name rather than a glob. It is how two
+inputs that never standardised on one name are merged at all:
+
+```bash
+--mainline-branch 'backend::main' --mainline-branch 'webui::master'
+--mainline-branch 'backend::main webui::master'
+```
+
+An unscoped value is the default for every input that has no scoped one, **and** names the branch
+the output carries. With no unscoped value the output takes the branch of the first input — the
+first on the command line, or under `--scan` the first the scan found — `main` above, if `backend`
+is given first. To choose it outright, give both:
+
+```bash
+--mainline-branch trunk --mainline-branch 'backend::main' --mainline-branch 'webui::master'
+```
+
+Where nothing is named, the mainline is detected as the first of `main`/`master`/`develop` present
+in **every** input still awaiting one. It is not done per input, which would quietly pick `main` for
+one repository and `master` for another wherever both exist.
+
+### Narrowing what may weigh
+
+`--interleave-ref` only adds, so a [subtraction](#taking-refs-back-out) is how a run says *broadly,
+except these*:
+
+```bash
+--interleave-ref 'refs/heads/* ^refs/heads/main'
+```
+
+That one is worth knowing by name: *every side branch*. A pattern reaching the mainline tips opts
+them in when the selection carries them, as it does by default, and the scope is the ancestry of
+everything opted in — so a mainline tip reaches every commit that mainline ever merged, which is
+close to the widest scope there is. Subtracting the mainline refs leaves the side branches. An input
+whose mainline is named otherwise needs its own subtraction:
+`'refs/heads/* ^refs/heads/main webui::^refs/heads/master'`.
+
+A bare star is not the same thing. It opts every tag in as well, and a tag on a mainline reaches
+what that mainline had merged by then, so `'* ^refs/heads/main'` still brings a merged branch into
+scope through any release tag made after the merge.
+
+**It subtracts the ref, not the commits behind it.** They stay in scope if some other opted-in ref
+reaches them, so subtracting a branch a mainline already merged does nothing at all under a star.
+
+That is a limit worth reading twice, because it is not an implementation shortcut: a branch merged
+into a mainline **is** that mainline's ancestry, so asking for it to be out of scope while the
+mainline is in scope asks for a contradiction. What subtracts is a pattern that leaves the mainline
+out — the example above, or a narrow one over a release series.
+
 ---
 
 ## What ends up in the output
@@ -243,25 +303,119 @@ worked out under [dissolving a submodule](how-it-works.md#dissolving-a-submodule
 **All of them**, recreated at the corresponding new commits (narrow with `-b` or `--ref`):
 
 - The mainline branch collapses into one: every input contributed its own to the same braid, so the
-  output has a single branch of that name, at the braid's tip.
-- Any other branch keeps its own name — unless two inputs happen to have used that name, in which
-  case both are qualified as `<repo>/<branch>`. The qualifier is `--branch-prefix`, and a branch
-  only one input has never sees it.
+  output has a single branch at the braid's tip, named by the unscoped `--mainline-branch` or else
+  after the first input's mainline ([mainlines that do not agree](#mainlines-that-do-not-agree)).
+- Any other branch is prefixed with the repository name (`wip` from `webui` becomes `webui/wip`), so
+  branches from different repositories cannot collide. The prefix is `--branch-prefix`.
+
+Prefixing every other branch is a change in 0.2.0. The qualifier used to go on a branch only where
+two inputs had used the name, which made the name depend on what the other inputs called theirs:
+adding an input that had a branch of the same name renamed this one's, out of an argument that says
+nothing about naming.
 
 Why a side branch needs no special handling, and why a branch from one input still gives you a
 checkout of the whole system, is under [branches](how-it-works.md#branches).
 
 ### Tags
 
-**All of them**, prefixed with the repository name by default (`v1.2` from `webui` becomes
-`webui/v1.2`), so tags from different repositories cannot collide. The prefix is `--tag-prefix`.
+**All of them**, prefixed the same way (`v1.2` from `webui` becomes `webui/v1.2`). The prefix is
+`--tag-prefix`.
 
-An annotated tag stays annotated, keeping its tagger and its message.
+An annotated tag stays annotated, keeping its tagger and its message — dropping them would lose text
+no other object holds, and a merge should not do that quietly.
+
+`--lightweight-tags` asks for exactly that loss: every tag becomes a plain ref at the same commit
+and no tag object is written. It is the case where a run wants the ref names without carrying the
+name, address and date of whoever cut each of forty releases.
+
+### Turning the prefix off
+
+Both prefixes are templates, and emptying one asks for the plain names:
+
+```bash
+--branch-prefix '' --tag-prefix ''
+```
+
+What the prefix buys is that an output ref name follows from the input it came from and nothing
+else. Without it two inputs can meet on one name, and a run that would write two different commits
+to one ref is **refused** rather than resolved — naming both inputs and the ref they collided on.
+Even with it, an input can meet the braid's own branch, which takes no prefix: under the default,
+input `release`'s branch `x` becomes `release/x`, which is the output's branch where the mainline is
+called `release/x`. That is refused the same way, naming the braid.
+
+### Commit notes
+
+Notes are not something a selection can name, a pattern under `refs/notes/` being refused, and they
+are not carried over unless a run asks:
+
+```bash
+--notes
+```
+
+Every `refs/notes/*` of every input is then read and **rekeyed**: a note is filed under the sha of
+the object it annotates, a merge gives every commit a new sha, so a note carried over unchanged
+would be attached to nothing. This is the provenance trailer's move from the other side — the
+trailer records where a commit came from, the rekeying moves what was said about it.
+
+- Notes refs are prefixed like everything else, `--notes-prefix`, default `{repo}/`. An input with
+  notes usually has `refs/notes/commits`, which `git notes` writes by default, so without
+  the qualifier two inputs meeting on that one name is refused, naming both, rather than resolved.
+- A note on an object this run did not write — one on a commit an unselected ref reached, or on a
+  blob or a tree — is **skipped**, and the run says how many, in the closing report as well, which
+  `-q` still prints (on its `refs:` line, or on a line of its own on a dry run).
+- Only the notes themselves come over, not the history of the notes ref. Every tree behind it is
+  keyed by shas the output never wrote under those names, so carrying that chain would carry notes
+  attached to nothing. The output's notes ref is one commit, keeping the input's author, committer
+  and message.
+- Read them the way you read any notes ref: `git log --notes=backend/commits`.
+
+`--ref` does not reach here. A pattern aimed at `refs/notes/` is **refused**, naming this flag: a
+note contributes no commit and reaches no ancestry, so it cannot be part of the selection that
+decides what is read.
+
+### Writing a ref pattern
+
+A ref pattern is `[<input>::][^]<refspec>`: an optional scope, ended by `::`, the separator a
+[`<repo>`](#writing-an-input) puts between its location and its suffix, and after it git's refspec.
+The first `::` is the separator, since an input's name holds no `:`. What the scope does is under
+[saying it for one input only](#saying-it-for-one-input-only).
+
+| written                           | input    | pattern            | destination  |
+|-----------------------------------|----------|--------------------|--------------|
+| `refs/heads/*`                    | every    | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*`           | backend  | `refs/heads/*`     | its own      |
+| `backend::refs/heads/*:refs/tags/`| backend  | `refs/heads/*`     | `refs/tags/` |
+| `refs/heads/*:refs/tags/`         | every    | `refs/heads/*`     | `refs/tags/` |
+
+**A value git takes as a refspec means the same here.** The differences are few, and each is on
+purpose: a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may
+hold `{repo}`; a pattern with stars may go without a destination, which `git fetch` allows only in a
+negative refspec, or name one ref as its destination; and there is no `+`, no empty pattern or
+destination, and no short name — a pattern matches full ref names. git resolves a single short name,
+tags before branches, and never a short pattern; `-b` is the short form here, and says which of the
+two it means.
+
+What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
+
+**One quoted argument may hold several values, separated by spaces**: a space cannot occur in a ref
+name, as a `:` and a `^` cannot, so the split can never cut a pattern in half. These two are the
+same run:
+
+```bash
+--ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
+--ref 'backend::refs/heads/main webui::refs/heads/release/*'
+```
+
+It holds for `-b`, `--label-ref`, `--interleave-ref` and `--mainline-branch` alike.
+What does *not* work is leaving the quotes off: an option takes one argument, and the rest would be
+read as input repositories.
 
 ### Choosing which refs are carried over
 
 `-b` and `--ref` are one selection rather than two: `-b main` *is* `--ref refs/heads/main`, and
-naming any ref at all leaves out every ref not named.
+naming any ref at all, other than with a `^`, leaves out every ref not named. The rest of the
+pattern grammar goes around the short name rather than inside it, so `-b backend::^wip` is
+`--ref backend::^refs/heads/wip`.
 
 So a run narrowed to a branch carries no tags unless it says so — write both halves out to keep
 them:
@@ -275,11 +429,199 @@ them:
 - Matching is against the *full* ref name because a short one cannot say whether `v1.0` is a branch
   or a tag.
 - The mainline is loaded whatever the patterns say — the braid is built along it — and the output's
-  branch of that name comes from the braid's tip.
+  mainline branch comes from the braid's tip.
+
+- A pattern may also **subtract** rather than select, written with a leading `^` — see [taking refs
+  back out](#taking-refs-back-out).
 
 The selection also decides which commits are read at all, and `--interleave-ref` reads its empty
 case the other way round. Both are worked out under
 [which refs are carried over](how-it-works.md#which-refs-are-carried-over).
+
+### Naming a ref without letting it weigh
+
+`--label-ref` recreates every ref it matches whose target the run already holds, and does nothing
+else. It reads nothing extra, and it can never delay a merge.
+
+That is what makes *these branches, and the tags that sit on them* expressible:
+
+```bash
+--ref 'refs/heads/main' --label-ref 'refs/tags/*'
+```
+
+Writing the second half as `--ref 'refs/tags/*'` instead looks equivalent and is not. It carries
+every tag in the repository, including tags whose only path to the root runs through a branch the
+selection left out — so the commits only those tags reach come back in, which is what naming the
+branch was meant to keep out.
+
+- A match whose target was not loaded is skipped rather than refused, and the run says how many
+  were, in the closing report as well, which `-q` still prints (on its `refs:` line, or on a line
+  of its own on a dry run): a label names what is already there, so asking for a superset of it is
+  ordinary use.
+- A ref matched by both flags is selected. That is the wider of the two meanings — it is read from
+  as well as recreated.
+- An input's mainline is never a label: the braid's own branch stands for it.
+- **Adding a label cannot change a single commit the run writes.** A selection can, which is why
+  the two are separate flags; [which refs are carried
+  over](how-it-works.md#which-refs-are-carried-over) works out how.
+
+### Saying where a ref lands
+
+A ref pattern is a git **refspec**, and its right half is the destination — what git writes after
+the `:` in `refs/heads/*:refs/remotes/origin/*`, where the left half says what is read and the right
+half what it is called:
+
+```bash
+--ref 'legacy::refs/heads/*:refs/tags/'
+--ref 'backend::refs/changes/*:refs/changes/{repo}/*'
+--ref 'clone::refs/remotes/origin/*:refs/heads/{repo}/*'
+```
+
+The prefix rules (`--branch-prefix`, `--tag-prefix`) are the default naming. **A destination
+overrides exactly the part of the name it writes out** — nothing, the namespace, or all of it:
+
+| destination           | `refs/heads/wip` from `backend` becomes | who named it                               |
+|-----------------------|-----------------------------------------|--------------------------------------------|
+| *(none)*              | `refs/heads/backend/wip`                | the prefix rule                            |
+| `refs/tags/`          | `refs/tags/backend/wip`                 | you the namespace, `--tag-prefix` the rest |
+| `refs/tags/archive-*` | `refs/tags/archive-wip`                 | you, and no prefix applies                 |
+
+- A `*` in the destination is **substituted** with whatever the pattern's own `*` matched, so the
+  pattern needs exactly one. It need not be a whole path segment:
+  `refs/legacy/*:refs/archived_*` turns `refs/legacy/alpha` into `refs/archived_alpha`. As in a
+  git refspec, what the `*` matched may hold a slash, and carries it into the destination.
+- A destination **ending in `/` with no `*`** is a namespace, handed back to that namespace's prefix
+  rule. Only `refs/heads/` and `refs/tags/` have one, so only those two can be written that way.
+- `{repo}` is substituted, which is what makes an unscoped pattern safe: a destination naming a ref
+  outright, with neither `{repo}` nor a `*`, gives every input's match the same name, and the run
+  would be refused for the collision.
+- Where you spell the name out, **unique names are yours to arrange**. The collision check still
+  refuses two inputs meeting on one ref, naming both, and under `--keep-remotes` it refuses any
+  destination under an input's `refs/remotes/<name>/`, where the mirrors are, meeting one or not.
+  It refuses any under `refs/timebraid-fetch/` as well, where the run parks the refs it fetches and
+  which it empties once the braid is written.
+- Where two patterns match one ref, **a scoped pattern beats an unscoped one**, which is what makes
+  *this input's branches as tags, everything else as it stands* writable. Between two of the same
+  scope the one written first decides, however specific the other is, and a `-b` counts as written
+  before every `--ref`.
+- The mainline is never redirected. It is loaded whatever the patterns say, so a pattern reaching it
+  reaches a ref the run never asked to carry over.
+
+That is how a dead branch is archived — kept for the record, not kept as a branch, and without
+dropping the commits only it reaches:
+
+```bash
+--ref 'legacy::refs/heads/*:refs/tags/'
+```
+
+A branch has no annotation, so it arrives as a **lightweight** tag. Going the other way, an
+annotated tag written into `refs/heads/` loses its annotation: a branch points at a commit and
+nothing else.
+
+### Namespaces beyond branches and tags
+
+`refs/heads/` and `refs/tags/` are read by default. Any other namespace — a Gerrit `refs/changes/`,
+a forge's `refs/pull/`, the branches an ordinary clone keeps under `refs/remotes/origin/` — is read
+**when a pattern names it**, and then the destination is required:
+
+```bash
+--ref 'refs/changes/*:refs/changes/{repo}/*'
+```
+
+- A bare `*` and a pattern under `refs/` still mean *every branch and every tag*. Naming no foreign
+  namespace reads none, so nothing a forge or a clone left lying about arrives unasked.
+- The destination is required there because nothing else could name the result: `--branch-prefix`
+  and `--tag-prefix` speak for their own two namespaces and no third rule exists.
+- A symbolic ref is skipped. `refs/remotes/origin/HEAD` points at another ref rather than being one,
+  and carrying it over would write the same commit twice.
+- `refs/notes/` is refused whatever the destination. A notes ref points at a tree keyed by shas
+  rather than at history anyone braids — see [commit notes](#commit-notes).
+
+**An ordinary clone is the case worth knowing about.** `git clone` keeps its branches under
+`refs/remotes/origin/`, and only the checked-out one under `refs/heads/` as well, so a clone given
+as an input contributes that one branch unless you ask for the rest. Naming refs for it narrows it
+as it narrows any input, its tags included, so ask for those too:
+
+```bash
+--ref 'clone::refs/remotes/origin/*:refs/heads/{repo}/* clone::refs/tags/*'
+```
+
+The checked-out branch then arrives twice: as the input's mainline, in the braid, and as
+`refs/heads/<repo>/main` from its copy under `refs/remotes/origin/`.
+
+### Saying it for one input only
+
+Every ref pattern takes an optional `<input>::` scope, naming which input it speaks for. Without one
+it speaks for all of them, so nothing written before this existed changes meaning:
+
+```bash
+--ref 'backend::refs/heads/main' \
+--ref 'webui::refs/heads/release/*' \
+--ref 'refs/tags/v*'
+```
+
+An `<input>::` naming something that is not an input is refused, so a typo is not a pattern that
+quietly matches nothing; so is an empty one, `::refs/heads/main`, the unscoped form already saying
+it.
+
+**The empty case stays per input.** An input no pattern names keeps that option's default — every
+branch and tag for `--ref`, none for `--label-ref` and `--interleave-ref`. So patterns scoped to
+`backend` and `webui` alone narrow those two while a third input still carries everything, which
+is *naming any ref leaves out every ref not named* read one input at a time; an unscoped one, like
+`refs/tags/v*` above, names every input.
+
+Narrowing one input leaves every other input's ref **names** alone: the qualifier goes on wherever a
+pattern has not spelled a destination out, so narrowing decides which refs exist and not what the
+surviving ones are called. That was not true before 0.2.0 — see [branches](#branches).
+
+### Taking refs back out
+
+A `^` in front of the pattern **subtracts** instead of selecting. It is git's own spelling for a
+negative refspec, unchanged since git 2.29:
+
+```bash
+git fetch origin 'refs/heads/*:refs/remotes/origin/*' '^refs/heads/wip/*'
+```
+
+```bash
+--ref '^refs/heads/wip/*'
+```
+
+It is the same mark in the same place, in front of the refspec, and it is decidable rather than a
+convention: `git check-ref-format` refuses a `^` anywhere in a ref name, exactly as it refuses the
+`:` a refspec is divided on.
+
+**The mark goes on the refspec, not on the value.** `backend::^refs/heads/wip` subtracts in one
+input; `^backend::refs/heads/wip` would read as *not backend*, which is a meaning this never has, so
+it is refused and says where the `^` belongs.
+
+**A subtraction carries no destination.** Nothing lands from it, so there is nothing for a
+destination to [name](#saying-where-a-ref-lands) — and git refuses the same spelling outright,
+`^refs/heads/x:refs/remotes/y` being an invalid refspec rather than a negation with a destination.
+
+#### What a run holding only subtractions means
+
+A subtraction is applied after the patterns that select, over whatever they left — and with no
+pattern selecting, that is [the option's own empty case](#saying-it-for-one-input-only), per input:
+
+| option             | empty case           | `^` alone                                          |
+|--------------------|----------------------|----------------------------------------------------|
+| `--ref`            | every branch and tag | every branch and tag except those — the useful one |
+| `--label-ref`      | no ref               | refused                                            |
+| `--interleave-ref` | no ref               | refused                                            |
+
+So dropping two branches out of forty is two patterns rather than thirty-eight, and a forty-first
+branch needs no edit. Where the empty case is *no ref*, there is nothing to take back out, and a run
+holding nothing but subtractions is refused rather than quietly resolving to nothing.
+
+**This is where subtractions alone part company with git.** Git's command line drops the
+configured refspec as soon as it names one, so `git fetch origin '^refs/heads/wip/*'` fetches
+nothing at all — silently. The rule is the same either way, a subtraction taking refs out of what
+was selected; only the empty case underneath it differs.
+
+**It subtracts a ref, not the commits behind it.** A commit two refs name is kept by whichever of
+them survives. That is not a shortcut — see [narrowing what may weigh](#narrowing-what-may-weigh),
+where the limit bites hardest.
 
 ### The inputs' original commits
 
@@ -293,7 +635,14 @@ They are in the output too, with their own shas intact, next to the rewritten on
 - `--keep-remotes` points `refs/remotes/<name>/*` at every ref the run carried over instead, and at
   each input's mainline whether the selection took it or not — a branch at its own name, everything
   else under the tail of its namespace, so a tag lands under `tags/` — which reaches all of them, so
-  the originals stay one `git log` away.
+  the originals stay one `git log` away. Notes are the exception: they are written under
+  `refs/notes/`, and a notes ref names a notes commit, which is not in the braid and so has no
+  original to point at.
+- Each remote is given the fetch refspec `+refs/heads/*:refs/remotes/<name>/*`, so a pruning fetch
+  — `git fetch --prune <repo>`, or any fetch under `fetch.prune` — deletes every mirror under
+  `refs/remotes/<name>/` that names no branch of the input: the tag mirrors among them, and what
+  only they reached is unreferenced again. It would delete a destination written there too, which is
+  why one is refused under `--keep-remotes`.
 - Either way the fetch covers the refs that were read, so narrowing the selection narrows what
   arrives: a commit only an unselected ref could reach is not merely unreferenced in the output,
   its objects are not there.
@@ -492,19 +841,56 @@ Finding the inputs, and placing their content:
                          Its .gitmodules section is dropped with it.
 
 Which history is read, and how it interleaves:
-  --mainline-branch=<text>       Branch treated as the mainline in every input.
+  --mainline-branch=<text>       Branch treated as the mainline in every input (repeatable).
+                                 Prefix with <input>:: to give one input its own, where two do not
+                                 agree.
+                                 One quoted argument may hold several, separated by spaces.
+                                 An unscoped value covers the rest and names the output's branch.
                                  Default: the first of main/master/develop present in all.
   --order-by=(author|committer)  Timestamp used to interleave the strands.
                                  Default: committer.
-  -b, --branch=<text>            Carry over only these branches, by short name (repeatable).
-                                 Shorthand for --ref refs/heads/<name>, so naming one leaves out
-                                 every ref not named, tags included.
-  --ref=<text>                   Carry over only the refs matching this glob, branches and tags
-                                 alike (repeatable).
-                                 Patterns are matched against full ref names.
-                                 Default: every ref.
+  -b, --branch=<text>            Carry over these branches, by short name, or with ^ leave them out
+                                 (repeatable).
+                                 Shorthand for --ref refs/heads/<name>, so naming one without a ^
+                                 leaves out every ref not named, tags included.
+                                 Takes an <input>:: prefix, a ^ in front of the branch and a
+                                 :<destination>, as --ref does.
+                                 One quoted argument may hold several, separated by spaces.
+  --ref=<text>                   Carry over the refs matching this glob, branches and tags alike, or
+                                 with ^ leave them out (repeatable).
+                                 Patterns are matched against full ref names, and may be prefixed
+                                 <input>:: to narrow one input.
+                                 A ^ in front of the pattern subtracts instead of selecting:
+                                 ^refs/heads/wip/* keeps every other branch and tag, with nothing
+                                 else to name.
+                                 A :<destination> after the pattern is a refspec's right half,
+                                 naming where the matches land.
+                                 refs/tags/ hands them to --tag-prefix; a destination holding a star
+                                 spells the name out, substituting what the pattern matched.
+                                 Beyond refs/heads/ and refs/tags/ a namespace is read only when
+                                 named, and then the destination is required.
+                                 One quoted argument may hold several, separated by spaces.
+                                 Default: every branch and tag, each in the namespace it came from.
+  --label-ref=<text>             Also recreate the refs matching this glob whose target the run
+                                 already holds (repeatable).
+                                 Reads nothing extra and never delays a merge, so adding one cannot
+                                 change a commit.
+                                 A match whose target was not loaded is skipped, not an error.
+                                 Takes an <input>:: prefix, a leading ^ and a :<destination>, as
+                                 --ref does.
+                                 A ^ needs something positive to subtract from: no pattern here
+                                 means no label, so subtractions alone are refused.
+                                 One quoted argument may hold several.
+                                 Default: none.
   --interleave-ref=<text>        Let this ref's commits delay a mainline merge that merges them in
                                  (repeatable).
+                                 Takes an <input>:: prefix; one quoted argument may hold several.
+                                 A ^ in front subtracts: 'refs/heads/* ^refs/heads/main' is every
+                                 side branch; a bare '*' opts in every tag too.
+                                 It subtracts the ref, not its commits: they stay in scope if
+                                 another opted-in ref reaches them.
+                                 A ^ needs something positive to subtract from, no pattern here
+                                 meaning no ref at all.
                                  Default: none.
 
 What the output repository holds:
@@ -514,17 +900,32 @@ What the output repository holds:
   --keep-remotes                  Add each input as a remote.
                                   Every ref it carried over lands under refs/remotes/<name>/*, at
                                   the original commits, and so does each input's mainline whether
-                                  the selection took it or not.
+                                  the selection took it or not. Notes are written under refs/notes/
+                                  and are not mirrored.
   --tag-prefix=<text>             Prefix prepended to every recreated tag.
-                                  {repo} is substituted.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
-  --branch-prefix=<text>          Prefix prepended to a branch two inputs both have.
-                                  A branch only one of them has keeps its own name.
-                                  {repo} is substituted.
+  --branch-prefix=<text>          Prefix prepended to every recreated branch.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Two inputs then meeting on one name is refused, not resolved.
                                   Default: "{repo}/"
   --subject-prefix=<text>         Prefix prepended to every commit subject.
                                   {repo} and {subdir} are substituted.
                                   Default: "{repo}: "
+  --notes                         Carry over every input's refs/notes/, rekeyed onto the commits
+                                  this run writes.
+                                  A merge gives every commit a new sha, so a note carried over
+                                  unchanged would be attached to nothing.
+                                  A note on an object the run did not write is skipped, and the run
+                                  says how many.
+                                  Default: notes are not read.
+  --notes-prefix=<text>           Prefix prepended to every recreated notes ref, below refs/notes/.
+                                  {repo} is substituted; an empty value qualifies nothing.
+                                  Default: "{repo}/"
+  --lightweight-tags              Recreate every annotated tag as a lightweight one, dropping its
+                                  tagger, date and message.
+                                  Default: an annotated tag stays annotated.
   --provenance / --no-provenance  Record each commit's original sha and parents in a trailer.
                                   Default: on.
   --provenance-trailer=<text>     The trailer --provenance writes, as its own paragraph.
@@ -563,8 +964,8 @@ Arguments:
           <subdir> is where its content lands, and may be nested (::libs/backend).
           Defaults to <name>.
 
-          <name> is the repository's identity: the tag prefix, the provenance label, and what
-          --root-repo matches.
+          <name> is the repository's identity: the tag prefix, the branch prefix, the provenance
+          label, and what --root-repo matches.
           Defaults to the last segment of <subdir>, or of the location.
           Neither may be written with a ':' or a '='.
 
