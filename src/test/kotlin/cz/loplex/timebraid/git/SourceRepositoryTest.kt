@@ -27,6 +27,10 @@ class SourceRepositoryTest {
         built.lightweightTag("v1.0", second)
         built.annotatedTag("v2.0", feature)
         built.close()
+        // A symbolic tag is read at what it points at, as 0.1.0 read it.
+        FileRepositoryBuilder().setGitDir(tmp.resolve("backend.git").toFile()).build().use {
+            it.updateRef("refs/tags/latest").link("refs/tags/v1.0")
+        }
 
         SourceRepository.open(tmp.resolve("backend.git")).use { repo ->
             assertEquals("backend", repo.name)
@@ -34,9 +38,9 @@ class SourceRepositoryTest {
             assertEquals(second, repo.resolveBranch("main"))
             assertNull(repo.resolveBranch("no-such-branch"))
 
-            // Both tags peel to the commit; the annotated one does not leak its tag object.
+            // Every tag peels to its commit; the annotated one does not leak its tag object.
             assertEquals(
-                mapOf("v1.0" to second, "v2.0" to feature),
+                mapOf("latest" to second, "v1.0" to second, "v2.0" to feature),
                 repo.tags().associate { it.name to it.target },
             )
 
