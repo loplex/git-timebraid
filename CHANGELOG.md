@@ -25,6 +25,15 @@ One change alters what a command line written for 0.1.0 does:
   about.\
   Still not covered: `.git.`, `git~1`, and the unicode look-alikes git also guards against.
 
+- **User-facing messages are ASCII.**\
+  Six of them wrote an em dash.\
+  A Windows console's code page cannot encode it, so they write `--` now.
+
+- **Two inputs that both describe a submodule with a blank name are refused with advice that
+  fits.**\
+  0.1.0 said to give one of them another subdirectory, which does not part them: a blank name is
+  never prefixed.
+
 ## [0.1.0] - 2026-09-08
 
 First release.
