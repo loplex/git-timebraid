@@ -102,13 +102,13 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         )
 
     private val dryRun by option("--dry-run").flag()
-        .help("Compute and summarize the plan, write nothing.")
+        .help("Compute and summarize the plan, write no output.")
 
     private val planOut by option("--plan-out").path()
         .help("Dump the deterministic plan as text to this file.")
 
     private val quiet by option("-q", "--quiet").flag()
-        .help("Only report errors.")
+        .help("Say nothing but the closing report and any error.")
 
     private val verbose by option("-v", "--verbose").flag()
         .help("Print each git command the tool shells out to, as it runs.")

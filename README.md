@@ -319,7 +319,7 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
       --bare / --no-bare        default: bare
       --keep-remotes            add inputs as remotes, their branches at their original
                                 commits under refs/remotes/<repo>/*
-      --dry-run                 compute and summarize the plan, write nothing
+      --dry-run                 compute and summarize the plan, write no output
       --plan-out FILE           dump the deterministic plan as text
   -q, --quiet / -v, --verbose
 ```
