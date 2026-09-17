@@ -104,14 +104,19 @@ file the braid writes for itself:
 The gitlink entries need no help; they ride along in their input's tree like any other entry, and the
 commit a gitlink names is fetched from the submodule's own url rather than from this repository.
 
-```
-$ git ls-tree -r HEAD
-100644 blob fa14b89…    .gitmodules          <- written by the braid
-100644 blob c70678b…    backend/.gitmodules  <- the input's own, carried along, now inert
-100644 blob 7898192…    backend/a.txt
-160000 commit 4196d3c…  backend/vendor/lib   <- the gitlink, untouched
+An input placed at `backend/`, holding `a.txt` and a submodule at `vendor/lib`, and the only input
+with content yet, gives a tree holding:
 
-$ git show HEAD:.gitmodules
+| Entry                 | Kind              | Where it came from                     |
+|-----------------------|-------------------|----------------------------------------|
+| `.gitmodules`         | blob              | written by the braid                   |
+| `backend/.gitmodules` | blob              | the input's — carried along, now inert |
+| `backend/a.txt`       | blob              | the input's                            |
+| `backend/vendor/lib`  | gitlink, `160000` | the input's, untouched                 |
+
+and the `.gitmodules` the braid writes for itself reads:
+
+```ini
 [submodule "backend/vendor/lib"]
 	path = backend/vendor/lib
 	url = https://example.com/lib.git
@@ -139,17 +144,15 @@ Branches need no special handling, which is worth explaining because it looks li
   already carries the accumulated content of every repository.
 
 The consequence is that a branch which exists in **one** input repository still gives you a working
-checkout of the whole system:
+checkout of the whole system. Checking out `esbuild-experiment`, a branch that only ever existed
+in `webui`:
 
-```
-$ git ls-tree esbuild-experiment      # a branch that only ever existed in webui
-040000 tree a11ce09…    codegen
-040000 tree 7f3d2b8…    backend
-040000 tree e90b7a3…    webui
-```
+| Directory              | Holds                                      |
+|------------------------|--------------------------------------------|
+| `codegen/`, `backend/` | whatever they were when the branch was cut |
+| `webui/`               | whatever the branch itself reached         |
 
-`codegen/` and `backend/` are frozen at whatever they were when the branch was cut, and `webui/`
-follows the branch. Which is exactly what you want, and it costs no configuration.
+Which is exactly what you want, and it costs no configuration.
 
 ---
 

@@ -89,19 +89,8 @@ Three rules, in short:
   A subdirectory entry *is* the input's own tree object, so no blob is copied — the one file the braid
   writes for itself is the root `.gitmodules`, which git reads from nowhere else.
 
-```
-$ git ls-tree HEAD                    # today
-040000 tree a11ce09…    codegen
-040000 tree 7f3d2b8…    backend
-040000 tree c4e5a10…    webui
-
-$ git ls-tree HEAD~5000               # before webui was started
-040000 tree a11ce09…    codegen
-040000 tree 2d81f4c…    backend
-```
-
-That last part is the mechanism behind the whole promise: "the state of every repository at that
-moment" is not computed on demand, it is simply what the commit's tree contains.
+Which is where the promise at the top of this page comes from: that state is not computed when you
+ask for it, it is what the commit already holds.
 
 [**doc/how-it-works.md**](doc/how-it-works.md) works the construction out properly — the exact parent
 rule, why a merge on the braid can end up with three parents, and what happens to side branches.
