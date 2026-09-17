@@ -58,10 +58,10 @@ class TargetRepository private constructor(
      * `refs/remotes/<repo>/<branch>` at.
      *
      * A fetch rather than an object-by-object copy for two reasons that were measured on a
-     * three-repository history of 14 387 commits and 139 MB of inputs: it is roughly 2.5x faster
-     * than walking the inputs and feeding every tree and blob to an [ObjectInserter], and the
-     * sending side deltifies what it sends, where the inserter can only store each object whole —
-     * 97 MB against 221 MB for the same content.
+     * three-repository history of 14 387 commits and 139 MB of inputs, a corpus outside this
+     * tree: it is roughly 2.5x faster than walking the inputs and feeding every tree and
+     * blob to an [ObjectInserter], and the sending side deltifies what it sends, where the
+     * inserter can only store each object whole — 97 MB against 221 MB for the same content.
      *
      * [refs] narrows the transfer to exactly the refs the graph was read from, so `-b` keeps out
      * history this run never meant to include; a ref pointing at an object that is not there is a
