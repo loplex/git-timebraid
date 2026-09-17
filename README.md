@@ -123,30 +123,34 @@ you have to decide by hand which `webui` commit was current at the time, check t
 hope you paired them correctly. Six bisect steps, and every one of them needs that pairing rebuilt by
 hand.
 
-In the braid it is the ordinary command:
+In the braid it is the ordinary command, run in a clone of the output, since the output itself is
+bare unless written with `--no-bare` and bisect wants a working tree to build in:
 
 ```bash
-git bisect start friday-commit tuesday-commit
+git bisect start --first-parent friday-commit tuesday-commit
 # build and run the integration test at each step
 git bisect run ./ci/integration-test.sh
 ```
 
-Every commit git offers you is a real historical state of the whole system: `backend/` holds whatever
-backend had last committed at that instant, `webui/` likewise. Not an approximation and not a
-reconstruction — that combination is what existed. The pairing is no longer something you maintain,
-and the commit bisect lands on tells you both *which repository* and *which change*.
+Every commit git offers you along the first parent, which is the braid, is a real historical state of
+the whole system: `backend/` holds whatever backend had last committed at that instant, `webui/`
+likewise. Not an approximation and not a reconstruction — that combination is what existed. The
+pairing is no longer something you maintain, and the commit bisect lands on tells you both *which
+repository* and *which change*. A commit on a side branch is not such a state: it holds what its
+fork point held plus the branch, which is why the bisect keeps to the first parent (git 2.29 or
+later).
 
 The same property answers the other questions of that shape without any tooling at all:
 
 ```bash
 # what did webui ship on a given day
-git show "$(git rev-list -n1 --before=2024-03-15 main)":webui/package.json
+git show "$(git rev-list --first-parent -n1 --before=2024-03-15 main)":webui/package.json
 
 # everything everyone did, as one timeline
 git log --first-parent --since=2024-03-01
 
 # what changed in the backend between two releases
-git diff release-2.1 release-2.2 -- backend/
+git diff backend/release-2.1 backend/release-2.2 -- backend/
 ```
 
 **Two limits on reading that literally.** "That instant" means the *mainline* branches as dated by
