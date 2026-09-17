@@ -335,9 +335,10 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
 Verification:
 
-- A matrix of end-to-end fixtures — a three-parent merge on the mainline, `--root-repo`, side
-  branches, committer-clock skew, tree dedup, `a.txt` vs `a/` ordering, CRLF and non-ASCII content,
-  the error paths — each run through `git fsck --strict`.
+- A matrix of end-to-end fixtures — a three-parent merge on the mainline, `--root-repo`,
+  committer-clock skew, tree dedup, `a.txt` vs `a/` ordering, CRLF and non-ASCII content, each run
+  through `git fsck --strict` where git is on `PATH`, as in CI — and beside them side branches and
+  the error paths.
 - An opt-in smoke run against a real corpus. On a three-repository history of 14 000 commits the
   result passes `git fsck --strict`, and walking the provenance trailers finds every original parent
   edge present in the output.
@@ -366,8 +367,9 @@ to check it runs, and uploads them with a `SHA256SUMS`. What changed between rel
   heap. This is a batch tool run once per merge, not a daemon.
 - **The output holds the inputs' original commits unreferenced.** They arrive with everything else
   the fetch brings and nothing points at them unless `--keep-remotes` does, so `git fsck` reports
-  them as `dangling commit` until a `git gc --prune=now` reclaims them. On a 139 MB corpus they are
-  3 MB of the 97 the output takes.
+  the tips of that history as `dangling commit`, and an annotated tag's original object as
+  `dangling tag`, until a `git gc --prune=now` reclaims them.
+  On a 139 MB corpus they are 3 MB of the 97 the output takes.
 - **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
   output gets a root `.gitmodules` whose paths point at where each gitlink landed, so
   `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).

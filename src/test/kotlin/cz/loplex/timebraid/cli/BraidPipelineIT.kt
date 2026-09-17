@@ -20,7 +20,8 @@ import kotlin.io.path.createDirectories
  * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command
  * line, one fixture per behaviour that has to hold end to end. Every fixture is built by
  * [TestRepoBuilder] with fixed idents and a controlled clock, so its output is byte-identical on
- * every run; where git is on `PATH` each output is run through `git fsck --strict`.
+ * every run. A test that also wants git's own verdict on its output runs `git fsck --strict` over
+ * it through `GitCli.fsck`, which needs git on `PATH`.
  *
  * The reference model is the README's two-strand example:
  *
