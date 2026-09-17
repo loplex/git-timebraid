@@ -172,12 +172,12 @@ so tags from different repositories cannot collide. An annotated tag stays annot
 tagger and its message.
 
 **The original commits**, with their own shas intact, next to the rewritten ones. The output is
-filled by fetching each input into it whole — that is what puts the inputs' trees and blobs there,
-which the braid then reuses — and a fetch cannot leave the commits out. Nothing points at them by
-default, so they are invisible to `git log` and `git gc --prune=now` reclaims them; `--keep-remotes`
-points `refs/remotes/<repo>/*` at every branch and — under `tags/` — every tag of each input
-instead, which reaches all of them, so the originals stay one `git log` away. Either way the fetch
-covers the refs that were read, so `-b` narrows what arrives, too.
+filled by fetching into it everything the refs that were read reach — that is what puts the inputs'
+trees and blobs there, which the braid then reuses — and a fetch cannot leave the commits out.
+Nothing points at them by default, so they are invisible to `git log` and `git gc --prune=now`
+reclaims them; `--keep-remotes` points `refs/remotes/<repo>/*` at every branch and — under `tags/` —
+every tag of each input instead, which reaches all of them, so the originals stay one `git log`
+away. Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
 
 **A provenance trailer** on every commit message:
 

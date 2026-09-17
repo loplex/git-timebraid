@@ -32,7 +32,7 @@ class WriteSummary(
 /**
  * Turns a [MergePlan] into a real repository.
  *
- * Everything the inputs themselves hold is in [target] before this runs — [TargetRepository.fetchFrom]
+ * What the braid takes from the inputs is in [target] before this runs — [TargetRepository.fetchFrom]
  * put it there — so what is left is what the braid invents, and the order of the two passes is forced
  * by git itself. The commits first, in the plan's write order, which guarantees that a parent already
  * has a new identity by the time its child needs it: the planner works in indices precisely because
@@ -258,8 +258,8 @@ class BraidWriter(
      * pointing at that input's *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
-     * every input across whole, commits included, with their shas intact — that is what a fetch
-     * moves. All that was missing is a ref of the output's own that outlives
+     * across everything the refs that were read reach, commits included, with their shas intact —
+     * that is what a fetch moves. All that was missing is a ref of the output's own that outlives
      * [TargetRepository.dropFetchRefs], and that is what this writes.
      *
      * Tags are covered as well as branches because a great many commits hang off them and nothing

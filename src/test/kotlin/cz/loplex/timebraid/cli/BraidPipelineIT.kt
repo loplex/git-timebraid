@@ -143,8 +143,8 @@ class BraidPipelineIT {
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/tags/v2.0"))
 
         // The originals are complete, not just their tips: rev-list cannot count a history whose
-        // parent is missing, and `--objects` cannot list one whose trees are missing — which is the
-        // point, because those trees were never transferred, only reused where the braid put them.
+        // parent is missing, and `--objects` cannot list one whose trees are missing — and they are
+        // there, because the fetch brought each original commit across with its trees.
         assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
         assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
         GitCli.run(out, "rev-list", "--objects", "--remotes")
