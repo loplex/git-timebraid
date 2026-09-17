@@ -108,7 +108,10 @@ class TargetRepository private constructor(
      * and the refs the output keeps are the braid's own, written by `BraidWriter`.\
      * What deleting them leaves behind is the inputs' original commits, unreferenced in the pack —
      * 3 MB of the 97 on the corpus above,
-     * which `git gc --prune=now` reclaims and which `git fsck` reports as `dangling commit` until it does.
+     * which `git gc --prune=now` reclaims and whose tips `git fsck` reports as `dangling commit` until it does —
+     * but for those a `--keep-remotes` mirror under `refs/remotes/` still reaches.\
+     * Each annotated tag's original object is left unreferenced either way, and reported as `dangling tag`:
+     * the writer tags the braided commit afresh.
      */
     fun dropFetchRefs(): Int {
         val fetched = repository.refDatabase.getRefsByPrefix(FETCH_NAMESPACE)
