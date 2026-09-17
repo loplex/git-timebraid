@@ -170,8 +170,8 @@ class MergeCommandDryRunTest {
     @Test
     fun `a location the platform cannot spell as a path is a usage error`() {
         // A NUL is the one character no filesystem here accepts; Windows also rejects a colon
-        // outside a drive letter, which is how `a::b` gets in. Either way the report is the user's
-        // typo, not an exception out of the parser.
+        // outside a drive letter, which is how `a::b::` gets in. Either way the report is the
+        // user's typo, not an exception out of the parser.
         val result = MergeCommand().test(listOf("--dry-run", "no\u0000such"))
 
         assertEquals(1, result.statusCode, result.output)
