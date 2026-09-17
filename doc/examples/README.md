@@ -68,9 +68,8 @@ for it; a bare star matches every ref and therefore reproduces a pass over the w
 far end of one mechanism rather than a second algorithm — with nothing opted in, the same code reduces
 to a k-way merge of the mainline chains, which is the default.
 
-This used to need a temporary JUnit test and a hand-rolled topological order. It does not any more,
-which is worth noting because it is the same seam twice: the braid is a parameter, and the write order
-is derived from the braided graph rather than supplied alongside it.
+Neither output needs code of its own, and that is the same seam twice: the braid is a parameter, and
+the write order is derived from the braided graph rather than supplied alongside it.
 
 ## The examples
 
