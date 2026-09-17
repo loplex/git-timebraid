@@ -161,7 +161,8 @@ Name and placement are set separately:
 - `repo.git::name` is the repository's **identity** —
   the tag prefix, the provenance label, what `--root-repo` matches, and what has to be unique.\
   It is how two inputs whose directories happen to share a name are told apart.
-- `repo.git=subdir` only says **where the content lands**.
+- `repo.git=subdir` says **where the content lands**,
+  and under the default `--subject-prefix` it also heads the subject of each commit from that repository.
 - One repository may be placed at the root instead, with `--root-repo <name>`.
 
 **All branches**, recreated at the corresponding new commits (restrict with `-b`):
