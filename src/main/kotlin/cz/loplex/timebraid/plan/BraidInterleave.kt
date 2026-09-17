@@ -36,6 +36,9 @@ package cz.loplex.timebraid.plan
  * Property 3 is a scheduling decision, not a correctness one, which is why it can be opted out of.\
  * Naming a ref through `--interleave-ref` puts its ancestors in scope, so a merge that merges that ref in waits for it,
  * and the merge can then land later than its own timestamp — the trade the caller is choosing.\
+ * Property 2 goes with it:
+ * a merge waiting on a side branch in scope is not in the ready set when its predecessor is taken,
+ * which is how it comes to follow a younger commit of another repository.\
  * Naming every ref reproduces a plain pass over the whole graph,
  * which is what this tool did before the braid and the write order were separated.
  *

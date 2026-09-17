@@ -42,7 +42,7 @@ internal interface IndexedGraph<T : Any> : Graph<T> {
 
     /**
      * Where [node] sits.\
-     * Refuses a node of another graph rather than answering for it.
+     * Whether a node of another graph is refused here or further on is the implementation's to say.
      */
     fun indexOf(node: T): Int
 }
