@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * ```
  *
  * Braided by committer time the mainline is a1, b1, a2, b2, a3, so `a3` — already a merge at home —
- * is the three-parent case the README makes so much of.
+ * is the three-parent case doc/how-it-works.md makes so much of.
  */
 class BraidWriterTest {
 
@@ -332,10 +332,10 @@ class BraidWriterTest {
     /**
      * Runs `git fsck --strict` and returns its output; the test is skipped when git is absent.
      *
-     * `--no-dangling` because a braided output is expected to hold unreferenced objects: the inputs
-     * arrive whole, their own commits included, and the braid points no ref at those — see
-     * [TargetRepository.dropFetchRefs]. `git gc --prune=now` reclaims them; corruption is what this
-     * is looking for.
+     * `--no-dangling` because a braided output is expected to hold unreferenced objects: the
+     * inputs' own commits come in with the fetch, and so does each annotated tag's original object,
+     * and the braid points no ref at either — see [TargetRepository.dropFetchRefs].
+     * `git gc --prune=now` reclaims them; corruption is what this is looking for.
      */
     private fun fsck(dir: Path): String {
         val process = try {

@@ -23,8 +23,7 @@ import kotlin.io.path.listDirectoryEntries
  *
  * The synthetic fixtures in [BraidPipelineIT] pin the behaviour; this one only checks that the same
  * pipeline survives contact with fourteen thousand real commits: it fscks clean, every provenance
- * edge is present, and the two defects the rewrite exists to fix (three-parent commits, tags) show
- * up in the output.
+ * edge is present, and three-parent commits and tags both show up in the output.
  */
 @EnabledIfSystemProperty(named = "timebraid.corpus", matches = ".+")
 class CorpusSmokeIT {
@@ -54,8 +53,8 @@ class CorpusSmokeIT {
         // Every original parent edge is present in the rewrite.
         OutputRepo.assertEveryOriginalEdgePreserved(out)
 
-        // A three-parent commit — a merge that also sits on the braid — is exactly what the prototype
-        // could never produce.
+        // A three-parent commit is a merge that also sits on the braid, and a corpus this size
+        // holds one.
         val threeParent = GitCli.run(out, "rev-list", "--all", "--parents")
             .lineSequence().count { it.trim().split(" ").size - 1 == 3 }
         assertTrue(threeParent > 0, "expected at least one three-parent commit")

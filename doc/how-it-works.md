@@ -1,8 +1,9 @@
 # How the braid is built
 
 git-timebraid recreates every commit of every input repository in one output repository, each input
-under its own subdirectory, and adds artificial parent edges that chain commits *across* repositories
-in chronological order. The resulting first-parent chain is called **the braid**.
+under its own subdirectory, or one of them at the root, and adds artificial parent edges that chain
+commits *across* repositories in chronological order. The resulting first-parent chain is called
+**the braid**.
 
 This document is the specification of that construction: which parents each commit ends up with,
 which tree, what happens to branches, and where the "state of the world at that moment" guarantee
@@ -11,7 +12,8 @@ stops holding. For what the tool is for and how to run it, see the [README](../R
 Vocabulary used throughout:
 
 - **input repository** — one of the repositories being merged; contributes one subdirectory to the
-  output
+  output, or, for the one `--root-repo` input, its top-level entries at the root beside the other
+  inputs' subdirectories
 - **mainline** — the branch treated as each input's main line of development (`--mainline-branch`)
 - **ordering timestamp** — the timestamp the interleaving compares: the committer date, or the author
   date with `--order-by author`. It is settled once when the input is read.
@@ -47,9 +49,15 @@ The arithmetic follows:
 
 | commit in its original repo | predecessor on the braid            | parents in the braid                         |
 |-----------------------------|-------------------------------------|----------------------------------------------|
+| root commit                 | none, as the braid's first commit   | **0** — unchanged                            |
+| root commit                 | a different repo                    | **1** — the braided edge alone               |
 | ordinary commit             | same repo (i.e. already its parent) | **1** — unchanged                            |
 | ordinary commit             | a different repo                    | **2** — braided edge + original parent       |
-| merge commit                | a different repo                    | **3** — braided edge + both original parents |
+| two-parent merge            | same repo (i.e. its first parent)   | **2** — unchanged                            |
+| two-parent merge            | a different repo                    | **3** — braided edge + both original parents |
+
+A merge of more parents goes the same way: it keeps them all, and gains the braided edge only
+where its predecessor comes from a different repo.
 
 ### Why three parents
 
@@ -77,7 +85,11 @@ A commit's tree in the braid is derived from its first parent:
 > **tree'(c)** = the tree of `parents'(c)[0]`, with the entry for `c`'s own subdirectory replaced by
 > `c`'s original tree.
 
-For the very first commit on the braid there is no parent, so the tree is just that one subdirectory.
+For the very first commit on the braid there is no parent, so its tree is built from that commit
+alone: its subdirectory, or its top-level entries for the `--root-repo` input.
+
+The input at the root (`--root-repo`) holds no subdirectory: its top-level entries stand in the
+root tree beside the other inputs' subdirectories, and its commits replace those entries.
 
 Because the first parent is the time predecessor, the map of *subdirectory → content* accumulates as
 you walk forward:
@@ -104,14 +116,19 @@ file the braid writes for itself:
 The gitlink entries need no help; they ride along in their input's tree like any other entry, and the
 commit a gitlink names is fetched from the submodule's own url rather than from this repository.
 
-```
-$ git ls-tree -r HEAD
-100644 blob fa14b89…    .gitmodules          <- written by the braid
-100644 blob c70678b…    backend/.gitmodules  <- the input's own, carried along, now inert
-100644 blob 7898192…    backend/a.txt
-160000 commit 4196d3c…  backend/vendor/lib   <- the gitlink, untouched
+An input placed at `backend/`, holding `a.txt` and a submodule at `vendor/lib`, and the only input
+with content yet, gives a tree holding:
 
-$ git show HEAD:.gitmodules
+| Entry                 | Kind              | Where it came from                     |
+|-----------------------|-------------------|----------------------------------------|
+| `.gitmodules`         | blob              | written by the braid                   |
+| `backend/.gitmodules` | blob              | the input's — carried along, now inert |
+| `backend/a.txt`       | blob              | the input's                            |
+| `backend/vendor/lib`  | gitlink, `160000` | the input's, untouched                 |
+
+and the `.gitmodules` the braid writes for itself reads:
+
+```ini
 [submodule "backend/vendor/lib"]
 	path = backend/vendor/lib
 	url = https://example.com/lib.git
@@ -139,17 +156,15 @@ Branches need no special handling, which is worth explaining because it looks li
   already carries the accumulated content of every repository.
 
 The consequence is that a branch which exists in **one** input repository still gives you a working
-checkout of the whole system:
+checkout of the whole system. Checking out `esbuild-experiment`, a branch that only ever existed
+in `webui`:
 
-```
-$ git ls-tree esbuild-experiment      # a branch that only ever existed in webui
-040000 tree a11ce09…    codegen
-040000 tree 7f3d2b8…    backend
-040000 tree e90b7a3…    webui
-```
+| Directory              | Holds                                      |
+|------------------------|--------------------------------------------|
+| `codegen/`, `backend/` | whatever they were when the branch was cut |
+| `webui/`               | whatever the branch itself reached         |
 
-`codegen/` and `backend/` are frozen at whatever they were when the branch was cut, and `webui/`
-follows the branch. Which is exactly what you want, and it costs no configuration.
+Which is exactly what you want, and it costs no configuration.
 
 ---
 
@@ -174,8 +189,8 @@ This one is sharper:
 - Nothing about braiding changes that tree, and every later commit inherits it forward — the ordinary
   accumulation rule, not a choice this tool makes — so those commits show that same "future" content
   too.
-- This is a fact about the input history — a branch merged back in later than it was last committed
-  to, the everyday case — not something any interleaving of the braid can undo.
+- This is a fact about the input history — a merge dated before the branch it takes in — not
+  something any interleaving of the braid can undo.
 
 The braid itself adds nothing to this. Every braid edge — the artificial one this tool inserts — runs
 from a commit back to one **no younger than itself**:
@@ -185,9 +200,10 @@ from a commit back to one **no younger than itself**:
   there at all.
 
 So suppose `backend`'s `m` merges in a long-lived feature branch whose last commit is timestamped
-after `m` itself. Checking out `m` shows `webui/` as of a moment at or before `m`'s own — the braid
-places nothing later beside it. What you see from the future is only what `m`'s own tree already
-carried, and what any later commit inherits from it.
+after `m` itself. As long as the mainlines run forward in time up to `m`, checking out `m` shows
+`webui/` as of a moment at or before `m`'s own — the braid places nothing later beside it. What you
+see from the future is only what `m`'s own tree already carried, and what any later commit inherits
+from it.
 
 "The state of the world at this moment" is exact precisely when every commit's timestamp is
 consistent with all of its parents', not only its first one.
@@ -203,6 +219,6 @@ That guarantee is the default's, and `--interleave-ref` is how you give it up de
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
 
-[Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a five-commit
-history you can build and inspect: one input, braided both ways, with the merge landing before the
+[Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a six-commit
+history you can build and inspect: two inputs, braided both ways, with the merge landing before the
 other repository's last commit by default and after it once every ref is opted in.

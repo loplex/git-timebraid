@@ -20,9 +20,10 @@ import kotlin.io.path.createDirectories
  * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command
  * line, one fixture per behaviour that has to hold end to end. Every fixture is built by
  * [TestRepoBuilder] with fixed idents and a controlled clock, so its output is byte-identical on
- * every run; where git is on `PATH` each output is run through `git fsck --strict`.
+ * every run. A test that also wants git's own verdict on its output runs `git fsck --strict` over
+ * it through `GitCli.fsck`, which needs git on `PATH`.
  *
- * The reference model is the README's two-strand example:
+ * The reference model is the README's two-strand example, with a side branch `f1` merged at `a3`:
  *
  * ```
  * backend   a1 09:00 ── a2 11:00 ── a3 15:00 (merge of f1)
@@ -94,7 +95,7 @@ class BraidPipelineIT {
         OutputRepo.assertEveryOriginalEdgePreserved(out)
         if (GitCli.available) {
             GitCli.fsck(out)
-            // First parent of the braid tip is the previous commit in time, whichever strand it is.
+            // Every commit, whichever strand it came from, is reachable from the braid tip.
             assertEquals(3, GitCli.run(out, "rev-list", "--count", "main").toInt())
         }
 
@@ -142,8 +143,8 @@ class BraidPipelineIT {
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/tags/v2.0"))
 
         // The originals are complete, not just their tips: rev-list cannot count a history whose
-        // parent is missing, and `--objects` cannot list one whose trees are missing — which is the
-        // point, because those trees were never transferred, only reused where the braid put them.
+        // parent is missing, and `--objects` cannot list one whose trees are missing — and they are
+        // there, because the fetch brought each original commit across with its trees.
         assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
         assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
         GitCli.run(out, "rev-list", "--objects", "--remotes")
@@ -563,7 +564,7 @@ class BraidPipelineIT {
     }
 
     @Test
-    fun `an input with no common branch is rejected before anything is written`() {
+    fun `an input with no common branch is rejected before the output is created`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r -> r.branch("main", r.commit("a1")) }
         // webui has commits but no branch at all — an "empty" repo as far as refs go.
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { r -> r.commit("b1") }
@@ -573,7 +574,7 @@ class BraidPipelineIT {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("--mainline-branch"), result.output)
-        assertTrue(!out.toFile().exists(), "nothing should have been written")
+        assertTrue(!out.toFile().exists(), "the output should not have been created")
     }
 
     @Test
@@ -585,9 +586,9 @@ class BraidPipelineIT {
         val inside = tmp.resolve("webui/sub").createDirectories()
         val out = tmp.resolve("out.git")
 
-        // The name-collision check cannot catch this on its own: "sub" and "webui" are different
-        // names, so an enclosing repository would come in a second time as a strand of its own and
-        // be braided against itself.
+        // The name-collision check cannot catch this on its own: opened by walking up, "webui/sub"
+        // would be the enclosing webui under the name "sub", and given beside webui itself the two
+        // names differ, so the same repository would be braided against itself.
         val result = MergeCommand().test(listOf("-o", out.toString(), path("backend.git"), inside.toString()))
 
         assertEquals(1, result.statusCode, result.output)

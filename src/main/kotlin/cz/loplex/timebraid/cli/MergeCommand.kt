@@ -37,10 +37,10 @@ import kotlin.io.path.writeText
 class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     /**
-     * An input is written `<path-or-url>[::<name>][=<subdir>]`, and an absolute path (or a URL) is
-     * a token that
-     * clikt would otherwise try to read as a long option. Routing unknown option-shaped tokens to
-     * the arguments instead lets the positional parser see the whole spec; [run] rejects a real stray
+     * An input is written `<path-or-url>[::<name>][=<subdir>]`, and clikt reads a token that opens
+     * with `/` and holds a `=`, an absolute path with a subdirectory, as a long option with its
+     * value attached, and refuses it as unknown. Routing unknown option-shaped tokens to the
+     * arguments instead lets the positional parser see the whole spec; [run] rejects a real stray
      * `-`/`--` token by hand so the usual protection against a mistyped option is kept.
      */
     override val treatUnknownOptionsAsArgs: Boolean = true
@@ -233,8 +233,8 @@ private class RepoSpec(
  * The two are separate because they answer separate questions. The name is the repository's
  * identity — the tag prefix, the provenance label, the qualifier on a branch two inputs share, what
  * `--root-repo` matches — and has to be unique, which is the only way two inputs whose directories
- * happen to share a name can be merged at all. The subdirectory is merely where the content lands,
- * and defaults to the name without being tied to it.
+ * happen to share a name can be merged at all. The subdirectory is where the content lands, and
+ * what the default subject prefix names; it defaults to the name without being tied to it.
  *
  * Each suffix is recognised only when what follows it is a bare word: a `/` or a `:` means the
  * character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
@@ -263,9 +263,10 @@ private fun parseRepoSpec(raw: String): RepoSpec {
 /**
  * [location] as a path, or a usage error naming it.
  *
- * A location the platform cannot spell as a path at all — `a::b` on Windows, where a colon is legal
- * only in a drive letter — is the user's typo, not an internal failure, so it is reported the way
- * every other unusable argument is instead of as an `InvalidPathException` from inside the parser.
+ * A location the platform cannot spell as a path at all — `a::b::` on Windows, where a colon is
+ * legal only in a drive letter — is the user's typo, not an internal failure, so it is reported the
+ * way every other unusable argument is instead of as an `InvalidPathException` from inside the
+ * parser.
  */
 private fun localPath(location: String, raw: String): Path =
     try {

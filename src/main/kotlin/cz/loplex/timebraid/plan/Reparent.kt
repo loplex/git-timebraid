@@ -13,9 +13,9 @@ package cz.loplex.timebraid.plan
  * The rule **adds**, it never replaces. The braided edge is prepended, so it becomes the first
  * parent and `git log --first-parent` walks the braid, while every original edge stays exactly where
  * it was. An ordinary commit whose predecessor comes from another repository therefore ends up with
- * two parents, and a commit that was already a merge in its own repository ends up with three. That
- * third parent is the price of the guarantee: drop it and `git merge-base` and every "when did this
- * diverge" question start lying.
+ * two parents, and a commit that was already a two-parent merge in its own repository ends up with
+ * three. That third parent is the price of the guarantee: drop it and `git merge-base` and every
+ * "when did this diverge" question start lying.
  *
  * When `pred` is already a parent — the common case of two consecutive commits from the same
  * repository — nothing is added, which is also what keeps a parent from being listed twice.

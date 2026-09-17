@@ -89,19 +89,8 @@ Three rules, in short:
   A subdirectory entry *is* the input's own tree object, so no blob is copied — the one file the braid
   writes for itself is the root `.gitmodules`, which git reads from nowhere else.
 
-```
-$ git ls-tree HEAD                    # today
-040000 tree a11ce09…    codegen
-040000 tree 7f3d2b8…    backend
-040000 tree c4e5a10…    webui
-
-$ git ls-tree HEAD~5000               # before webui was started
-040000 tree a11ce09…    codegen
-040000 tree 2d81f4c…    backend
-```
-
-That last part is the mechanism behind the whole promise: "the state of every repository at that
-moment" is not computed on demand, it is simply what the commit's tree contains.
+Which is where the promise at the top of this page comes from: that state is not computed when you
+ask for it, it is what the commit already holds.
 
 [**doc/how-it-works.md**](doc/how-it-works.md) works the construction out properly — the exact parent
 rule, why a merge on the braid can end up with three parents, and what happens to side branches.
@@ -123,30 +112,34 @@ you have to decide by hand which `webui` commit was current at the time, check t
 hope you paired them correctly. Six bisect steps, and every one of them needs that pairing rebuilt by
 hand.
 
-In the braid it is the ordinary command:
+In the braid it is the ordinary command, run in a clone of the output, since the output itself is
+bare unless written with `--no-bare` and bisect wants a working tree to build in:
 
 ```bash
-git bisect start friday-commit tuesday-commit
+git bisect start --first-parent friday-commit tuesday-commit
 # build and run the integration test at each step
 git bisect run ./ci/integration-test.sh
 ```
 
-Every commit git offers you is a real historical state of the whole system: `backend/` holds whatever
-backend had last committed at that instant, `webui/` likewise. Not an approximation and not a
-reconstruction — that combination is what existed. The pairing is no longer something you maintain,
-and the commit bisect lands on tells you both *which repository* and *which change*.
+Every commit git offers you along the first parent, which is the braid, is a real historical state of
+the whole system: `backend/` holds whatever backend had last committed at that instant, `webui/`
+likewise. Not an approximation and not a reconstruction — that combination is what existed. The
+pairing is no longer something you maintain, and the commit bisect lands on tells you both *which
+repository* and *which change*. A commit on a side branch is not such a state: it holds what its
+fork point held plus the branch, which is why the bisect keeps to the first parent (git 2.29 or
+later).
 
 The same property answers the other questions of that shape without any tooling at all:
 
 ```bash
 # what did webui ship on a given day
-git show "$(git rev-list -n1 --before=2024-03-15 main)":webui/package.json
+git show "$(git rev-list --first-parent -n1 --before=2024-03-15 main)":webui/package.json
 
 # everything everyone did, as one timeline
 git log --first-parent --since=2024-03-01
 
 # what changed in the backend between two releases
-git diff release-2.1 release-2.2 -- backend/
+git diff backend/release-2.1 backend/release-2.2 -- backend/
 ```
 
 **Two limits on reading that literally.** "That instant" means the *mainline* branches as dated by
@@ -164,7 +157,8 @@ the last segment of its path. Name and placement are set separately:
 - `repo.git::name` is the repository's **identity** — the tag prefix, the provenance label, what
   `--root-repo` matches, and what has to be unique. It is how two inputs whose directories happen to
   share a name are told apart.
-- `repo.git=subdir` only says **where the content lands**.
+- `repo.git=subdir` says **where the content lands**, and under the default `--subject-prefix` it
+  also heads the subject of each commit from that repository.
 - One repository may be placed at the root instead, with `--root-repo <name>`.
 
 **All branches**, recreated at the corresponding new commits (restrict with `-b`):
@@ -179,12 +173,12 @@ so tags from different repositories cannot collide. An annotated tag stays annot
 tagger and its message.
 
 **The original commits**, with their own shas intact, next to the rewritten ones. The output is
-filled by fetching each input into it whole — that is what puts the inputs' trees and blobs there,
-which the braid then reuses — and a fetch cannot leave the commits out. Nothing points at them by
-default, so they are invisible to `git log` and `git gc --prune=now` reclaims them; `--keep-remotes`
-points `refs/remotes/<repo>/*` at every branch and — under `tags/` — every tag of each input
-instead, which reaches all of them, so the originals stay one `git log` away. Either way the fetch
-covers the refs that were read, so `-b` narrows what arrives, too.
+filled by fetching into it everything the refs that were read reach — that is what puts the inputs'
+trees and blobs there, which the braid then reuses — and a fetch cannot leave the commits out.
+Nothing points at them by default, so they are invisible to `git log` and `git gc --prune=now`
+reclaims them; `--keep-remotes` points `refs/remotes/<name>/*` at every branch `-b` took and — under
+`tags/` — every tag of each input instead, so the originals those reach stay one `git log` away.
+Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
 
 **A provenance trailer** on every commit message:
 
@@ -205,7 +199,8 @@ it off with `--no-provenance`.
 ### Requirements
 
 - Java 17 or newer
-- `git` on `PATH` — only to clone a remote input and to check out a `--no-bare` output; reading the
+- `git` on `PATH` — only to clone a remote input and refresh that clone on a later run, to record
+  the inputs as remotes under `--keep-remotes`, and to check out a `--no-bare` output; reading the
   inputs, transferring their objects and writing the braid all happen in-process
 
 ### Install
@@ -214,11 +209,13 @@ Download an archive from [Releases](https://github.com/loplex/git-timebraid/rele
 put its `bin/` on `PATH`:
 
 ```bash
+mkdir -p ~/opt
 tar xzf git-timebraid-<version>.tar.gz -C ~/opt
 export PATH="$HOME/opt/git-timebraid-<version>/bin:$PATH"
 
 git-timebraid --help
-git timebraid --help                 # the same thing: git runs any git-<name> found on PATH
+git timebraid -h                     # the same thing: git runs any git-<name> found on PATH,
+                                     # but takes --help for itself and looks for its own page
 ```
 
 Each release carries a `SHA256SUMS`; `sha256sum --check --ignore-missing SHA256SUMS` verifies what
@@ -265,7 +262,7 @@ mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>
 - It unpacks and runs the same way; the launcher notices `runtime/` beside it and uses that JVM in
   preference to `JAVA_HOME`, which is the point of the archive.
 - `TIMEBRAID_JAVA=/path/to/java` overrides that when you would rather it ran on yours.
-- Roughly 46 MB unpacked against 9 MB for the plain jar.
+- Roughly 55 MB unpacked on Linux, 46 MB of it the runtime, against 9 MB for the plain jar.
 - Unlike the plain archive it only runs on the platform that built it — hence the platform in the
   file name.
 - It is the JDK running Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer; on
@@ -290,7 +287,7 @@ git-timebraid -o /tmp/merged \
     ~/repos/backend.git ~/repos/webui.git=ui ~/repos/codegen.git
 ```
 
-Recreate only two branches, and inspect the plan without writing anything:
+Recreate only two branches, and inspect the plan without writing the output repository:
 
 ```bash
 git-timebraid \
@@ -333,7 +330,7 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
 **Usable from the command line end to end.** Implemented and tested:
 
-- Cloning the inputs — a local path or a URL — reading them, and planning the interleaving.
+- Reading the inputs — a local path in place, a URL through a clone — and planning the interleaving.
 - Writing the output, bare or with a working tree.
 - Recreating every branch and prefixed tag, the provenance trailer, keeping the inputs as remotes,
   and progress on stderr.
@@ -342,9 +339,10 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
 Verification:
 
-- A matrix of end-to-end fixtures — a three-parent merge on the mainline, `--root-repo`, side
-  branches, committer-clock skew, tree dedup, `a.txt` vs `a/` ordering, CRLF and non-ASCII content,
-  the error paths — each run through `git fsck --strict`.
+- A matrix of end-to-end fixtures — a three-parent merge on the mainline, `--root-repo`,
+  committer-clock skew, tree dedup, `a.txt` vs `a/` ordering, CRLF and non-ASCII content, each run
+  through `git fsck --strict` where git is on `PATH`, as in CI — and beside them side branches and
+  the error paths.
 - An opt-in smoke run against a real corpus. On a three-repository history of 14 000 commits the
   result passes `git fsck --strict`, and walking the provenance trailers finds every original parent
   edge present in the output.
@@ -356,8 +354,9 @@ together with the `git-timebraid` launcher, plus, under `-Pbundled-runtime`, a p
 archive with a `jlink` runtime for machines without a JVM (see Install).
 
 Releases are cut by tagging: CI builds the portable archive, the jar, and one archive per platform
-(Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with each one
-to check it runs, and uploads them with a `SHA256SUMS`. What changed between releases is in
+(Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with the
+`.tar.gz` of each archive to check it runs, and uploads them with a `SHA256SUMS`. What changed
+between releases is in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Limitations
@@ -373,11 +372,14 @@ to check it runs, and uploads them with a `SHA256SUMS`. What changed between rel
   heap. This is a batch tool run once per merge, not a daemon.
 - **The output holds the inputs' original commits unreferenced.** They arrive with everything else
   the fetch brings and nothing points at them unless `--keep-remotes` does, so `git fsck` reports
-  them as `dangling commit` until a `git gc --prune=now` reclaims them. On a 139 MB corpus they are
-  3 MB of the 97 the output takes.
+  the tips of that history as `dangling commit`, and an annotated tag's original object as
+  `dangling tag`, until a `git gc --prune=now` reclaims them. `--keep-remotes` gives refs to the
+  commits the branches `-b` took and the tags reach, not to the tag objects.
+  On a 139 MB corpus they are 3 MB of the 97 the output takes.
 - **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
   output gets a root `.gitmodules` whose paths point at where each gitlink landed, so
-  `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
+  `git submodule update --init` works (see
+  [the one exception to the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
   What cannot be rewired is a **relative** url such as `../lib.git`: git resolves those against the
   superproject's own remote, and the output's remote is not the input's. Make them absolute in the
   inputs before merging.

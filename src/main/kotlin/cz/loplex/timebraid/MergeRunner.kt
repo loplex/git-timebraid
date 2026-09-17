@@ -107,10 +107,10 @@ class MergeRunner(
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
 
-            // The one place that can pair the two rather than assume it: these are the repositories
-            // handed to read() above, and it gives back one SourceInputs per repository, each naming
-            // the strand that repository became. Everything downstream looks a repository up by its
-            // Source and never has to know the order again.
+            // The one place that pairs the two: these are the repositories handed to read() above,
+            // and it gives back one SourceInputs per repository in the same order, each naming the
+            // strand that repository became, so they are paired by position here, once. Everything
+            // downstream looks a repository up by its Source and never has to know the order again.
             val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
             val written = writeOutput(output, repoOf, braid, plan)
@@ -126,12 +126,15 @@ class MergeRunner(
     }
 
     /**
-     * Fills the output: every input's objects first, then the braid on top of them.
+     * Fills the output: the objects the refs read from each input reach first, then the braid on
+     * top of them.
      *
-     * The order is the one git forces. A commit cannot be written before the tree it points at
-     * exists, and every tree the braid points at is an input's — so the transfer has to come first
-     * and be complete. What it leaves behind, the refs it needed to name what to fetch, is dropped
-     * once the output has refs of its own.
+     * The trees the braid writes are built from the inputs' trees and blobs, bar the root
+     * `.gitmodules` it writes itself. Nothing checks those are there while the braid is written,
+     * but a ref that reaches an object the repository does not hold leaves it broken — so the
+     * transfer comes first, and is complete before any of the braid's refs is written. What it
+     * leaves behind, the refs parked so that a later input's fetch leaves out the history an
+     * earlier one brought, is dropped once the output has refs of its own.
      */
     private fun writeOutput(
         output: Path,

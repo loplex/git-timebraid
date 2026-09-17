@@ -6,9 +6,10 @@ Real, inspectable git repositories demonstrating how `git-timebraid` interleaves
 repositories into one braid, and the one case where interleaving over the mainline chains alone gives
 a different — better — answer than interleaving over the whole graph.
 
-The interleave is `plan/BraidInterleave.kt`, and it takes a *scope*: the mainline first-parent chains,
-plus the ancestry of any ref opted in with `--interleave-ref`. With nothing opted in — the default —
-the chains are all there is, and the pass reduces to a k-way merge of one queue per repository, always
+The interleave is `src/main/kotlin/cz/loplex/timebraid/plan/BraidInterleave.kt`, and it takes a
+*scope*: the mainline first-parent chains, plus the ancestry of any ref opted in with
+`--interleave-ref`. With nothing opted in — the default — the chains are all there is, and the
+pass reduces to a k-way merge of one queue per repository, always
 taking the queue whose front carries the earliest timestamp. Opt in a ref and a mainline merge that
 merges it in waits for it, so the merge can land later than its own timestamp; opt in every ref and you
 get a pass over the whole graph. These examples contrast the two ends.
@@ -25,9 +26,9 @@ commit hashes quoted throughout these examples can be checked against your own r
 
 - `input/<repo>/` — real, non-bare git repositories with controlled commit timestamps.
 - `output/` — the actual output of the real CLI (`git-timebraid`), unmodified.
-- `output-whole-graph/` — only where the two interleaves actually differ (example 02 alone): what
-  the same input would have produced under a whole-graph pass. Generated with the same production
-  `MergePlan`/`TargetRepository`/`BraidWriter` classes, just handed a different braid — see below.
+- `output-whole-graph/` — in examples 02 and 03: what the same input produces under a whole-graph
+  pass, from the same CLI with every ref opted in — see below. In 02 the two interleaves differ; in
+  03 they agree hash for hash, which is what that example is there to show.
 - `plan.txt` — the deterministic plan dump (`--plan-out`), one line per commit, with parents and the
   accumulated content map spelled out.
 - `README.md` — what this example demonstrates and the exact commands used.
@@ -35,16 +36,18 @@ commit hashes quoted throughout these examples can be checked against your own r
 ## How the inputs were built
 
 `build-inputs.sh` in this directory. Fixture notation `<name>@<n>` (as used in the unit tests, e.g.
-`a1@10 <- a2@30`) maps to real commit timestamps as `BASE_EPOCH + n hours`, so relative order and gaps
+`a1@10 <- a2@30`) maps to real commit timestamps as `BASE + n hours`, so relative order and gaps
 survive and remain readable in `git log`. Rerun with `bash doc/examples/build-inputs.sh` (from the
-repo root) to regenerate all four examples' inputs from scratch.
+repo root) to regenerate all four examples' inputs from scratch. It leaves the `output/` and
+`output-whole-graph/` directories alone, and a run refuses to write into one that is not empty, so
+delete them before replaying an example's commands, or add `--force` to each.
 
 ## How the `output` directories were generated
 
 The real CLI, e.g. for example 01:
 
 ```
-mvn -q exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
     doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B"
 ```
@@ -58,7 +61,7 @@ differ in the paths).
 The same CLI, with every ref opted into the interleave:
 
 ```
-mvn -q exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
     --order-by committer --interleave-ref * \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
@@ -68,9 +71,8 @@ for it; a bare star matches every ref and therefore reproduces a pass over the w
 far end of one mechanism rather than a second algorithm — with nothing opted in, the same code reduces
 to a k-way merge of the mainline chains, which is the default.
 
-This used to need a temporary JUnit test and a hand-rolled topological order. It does not any more,
-which is worth noting because it is the same seam twice: the braid is a parameter, and the write order
-is derived from the braided graph rather than supplied alongside it.
+Neither output needs code of its own, and that is the same seam twice: the braid is a parameter, and
+the write order is derived from the braided graph rather than supplied alongside it.
 
 ## The examples
 

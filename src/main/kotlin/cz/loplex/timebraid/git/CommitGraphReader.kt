@@ -35,10 +35,9 @@ class BraidInputs(
 /** What was read out of one input repository, with every ref resolved to the commit it names. */
 class SourceInputs(
     /**
-     * The strand this repository became. Naming it rather than repeating its name is what lets a
-     * caller pair an open repository with its [Source] once, here, where the two are the same
-     * iteration — and look one up by the other afterwards instead of trusting two lists to have
-     * stayed in step.
+     * The strand this repository became. [BraidInputs.sources] keeps the order the repositories
+     * were given to [CommitGraphReader.read] in, so a caller holding that list pairs each open
+     * repository with its [Source] by position, once, and looks one up by the other afterwards.
      */
     val source: Source,
     val branches: List<BraidRef>,
@@ -64,8 +63,8 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
  * The model is deliberately global: load *every* commit of *every* strand at once — reachable from
  * the branches to be recreated and from all tags — and let the planner reparent only the braid.
  * Off-braid commits keep their original parents, so a branch that exists in one repository still
- * forks off the braid at the right moment with no special handling (see the README's Branches
- * section).
+ * forks off the braid at the right moment with no special handling (see the Branches section of
+ * doc/how-it-works.md).
  */
 object CommitGraphReader {
 

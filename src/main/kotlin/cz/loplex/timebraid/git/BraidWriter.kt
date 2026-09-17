@@ -32,7 +32,7 @@ class WriteSummary(
 /**
  * Turns a [MergePlan] into a real repository.
  *
- * Everything the inputs themselves hold is in [target] before this runs — [TargetRepository.fetchFrom]
+ * What the braid takes from the inputs is in [target] before this runs — [TargetRepository.fetchFrom]
  * put it there — so what is left is what the braid invents, and the order of the two passes is forced
  * by git itself. The commits first, in the plan's write order, which guarantees that a parent already
  * has a new identity by the time its child needs it: the planner works in indices precisely because
@@ -42,16 +42,16 @@ class WriteSummary(
 class BraidWriter(
     private val target: TargetRepository,
     /**
-     * The open repository behind each strand, paired by whoever opened them — see
-     * [CommitGraphReader.read], where a [Source] and the repository it was read from are one
-     * iteration. Every lookup here is by [Source], so nothing in this class has to know what order
-     * anything arrived in, or be trusted to get it right.
+     * The open repository behind each strand, paired by whoever opened them, by position against
+     * [BraidInputs.sources], which keeps the order the repositories were given to
+     * [CommitGraphReader.read] in. Every lookup here is by [Source], so nothing in this class has
+     * to know what order anything arrived in, or be trusted to get it right.
      */
     private val repoOf: Map<Source, SourceRepository>,
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
-    /** Whether to mirror the inputs under `refs/remotes/<repo>/<branch>` — see [mirrorInputs]. */
+    /** Whether to mirror the branches `-b` took and the tags — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
 ) {
 
@@ -211,8 +211,8 @@ class BraidWriter(
      * The mainline collapses: every input contributed its mainline to one braid, so the output gets
      * one branch of that name, at the braid's tip. Every other branch keeps its own name where that
      * name belongs to a single repository, and is qualified with the repository name where two
-     * inputs happen to have used it. Tags are always qualified, because release names collide across
-     * repositories as a matter of course rather than by accident.
+     * inputs happen to have used it. Tags carry `--tag-prefix`, `{repo}/` by default, because
+     * release names collide across repositories as a matter of course rather than by accident.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -254,19 +254,21 @@ class BraidWriter(
     }
 
     /**
-     * Adds a ref under `refs/remotes/<repo>/` for every branch and every tag of every input, each
-     * pointing at that input's *original* commit.
+     * Adds a ref under `refs/remotes/<name>/` for every branch `-b` took and every tag of every
+     * input, each pointing at that input's *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
-     * every input across whole, commits included, with their shas intact — that is what a fetch
-     * moves. All that was missing is a ref of the output's own that outlives
+     * across everything the refs that were read reach, commits included, with their shas intact —
+     * that is what a fetch moves. All that was missing is a ref of the output's own that outlives
      * [TargetRepository.dropFetchRefs], and that is what this writes.
      *
      * Tags are covered as well as branches because a great many commits hang off them and nothing
-     * else: on a three-repository history of 14 387 commits, 929 of them were reachable in their
-     * input from a tag alone, and mirroring only the branches left every one of those originals
-     * with no ref pointing at it — present in the output, but unreachable, and swept away by the
-     * first `git gc`. They go under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
+     * else: on a three-repository history of 14 387 commits, a corpus outside this
+     * tree, 929 of them were reachable in their input from a tag alone, and
+     * mirroring only the branches left every one of those originals with no ref
+     * pointing at it — present in the output, but unreachable, and pruned by the first `git gc`
+     * once git's grace period for unreachable objects, two weeks by default, has passed. They go
+     * under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
      * input do not land on the same name.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
@@ -329,9 +331,11 @@ class BraidWriter(
 
         /**
          * Refs are paths, so `refs/heads/a` and `refs/heads/a/b` cannot both exist — git would have
-         * to store a file and a directory under the same name. Detecting that here, before anything
-         * is written, turns a half-populated repository and an opaque lock error into one message
-         * naming both refs.
+         * to store a file and a directory under the same name. Detecting that here, before any of
+         * the braid's refs is written, turns a lock error half way through them into one message
+         * naming both refs. The output is not untouched: the fetch has run by then, so it holds the
+         * history of every ref the run read, still parked under `refs/timebraid-fetch/`, which this
+         * refusal leaves in place.
          */
         fun checkRefNames(names: Collection<String>) {
             val all = names.toSet()

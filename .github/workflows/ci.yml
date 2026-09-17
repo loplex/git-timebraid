@@ -15,8 +15,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         java: ["17", "21"]
         # jlink spells its compression differently across these two: `zip-6` needs JDK 21, and a
-        # JDK 17 build has to ask for the older numeric form. Both spellings are on the release
-        # path, so both are exercised rather than only whichever one the release happens to use.
+        # JDK 17 build has to ask for the older numeric form. A release only ever uses 21's, and the
+        # numeric one is what a JDK 17 build from source needs, so both are exercised.
         include:
           - java: "17"
             jlink_compress: "2"
@@ -33,8 +33,9 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
-      # The integration tests shell out to `git` for fsck and log --graph; it is
-      # preinstalled on the GitHub-hosted runners, this just records the version.
+      # The tests run `git`: for fsck, log --graph and the other commands that read what the output
+      # holds, and through the program for a clone, --keep-remotes and --no-bare. It is preinstalled
+      # on the GitHub-hosted runners; this just records the version.
       - name: Show git version
         run: git --version
 
@@ -44,7 +45,8 @@ jobs:
       # The bundled-runtime profile is the part of the build most likely to fail on a platform
       # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
       # and links a hand-written module list. Building it in the same matrix that runs the tests
-      # means the archive a release uploads is one that has been built on every supported platform.
+      # means the archives a release uploads for Linux and Windows x64 have been built on their
+      # platform already; the macOS and aarch64 archives are built only by the release workflow.
       #
       # The quotes around the property are load-bearing on Windows, where the default shell is
       # PowerShell: it ends a parameter name at a dot, so a bare -Djlink.compress=2 reaches Maven

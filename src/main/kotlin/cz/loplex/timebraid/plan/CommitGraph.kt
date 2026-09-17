@@ -1,7 +1,8 @@
 package cz.loplex.timebraid.plan
 
 /**
- * One input repository — one *strand*, in the vocabulary of the README.
+ * One input repository, which the code calls a *strand*; the README keeps that word for the
+ * repository's mainline first-parent chain.
  *
  * Belongs to the [CommitGraph] built from it, and there is exactly one instance per repository, so
  * two sources are the same repository precisely when they are the same object.
@@ -45,8 +46,9 @@ class Commit internal constructor(
      *
      * The dense numbering every pass of this package needs, derived where the commits are already in
      * their final order and shared from there, so a pass indexes an array instead of hashing a key.
-     * Meaningful only against the graph that assigned it, which is why every reader checks the
-     * commit it finds at that position is the one it asked about.
+     * Meaningful only against the graph that assigned it, which is why the readers in a position to
+     * notice cheaply check that the commit at that position is the one they asked about; see
+     * [CommitGraph.indexOf].
      */
     internal var position: Int = -1
         private set

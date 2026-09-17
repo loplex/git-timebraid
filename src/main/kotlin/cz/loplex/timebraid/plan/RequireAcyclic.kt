@@ -10,8 +10,9 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * This runs in production, not only in tests. Reparenting adds an edge from each braid commit to its
  * predecessor in the braid sequence; as long as that sequence is a valid topological order, no cycle
  * can arise. So a cycle here means the ordering contradicted ancestry, and the only safe response is
- * to fail loudly before a single object is written. The graph checked is not always the commits' own
- * — reparenting checks the braided edges it has just derived, before anything is written from them.
+ * to fail loudly before a single object is written into the output. The graph checked is not always
+ * the commits' own — reparenting checks the braided edges it has just derived, before anything is
+ * written from them.
  *
  * Iterative depth-first search — the first-parent chain of a real repository is tens of thousands of
  * commits deep, which recursion would not survive. Colouring nodes and unwinding a stack wants flat

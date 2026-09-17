@@ -50,17 +50,18 @@ class TargetRepository private constructor(
      * Fetches everything reachable from [refs] in [source] into this repository, parking the refs
      * themselves under [FETCH_NAMESPACE].
      *
-     * This is how the output gets the inputs' objects — all of them, in one transfer per input.
+     * This is how the output gets the inputs' objects — everything [refs] reach, in one transfer
+     * per input.
      * The trees and blobs come across because the braid's new root trees point straight at them; the
      * commits come across because a fetch cannot leave them out, and because moving their bytes is
      * the only way an original sha survives, which is what `--keep-remotes` points its
-     * `refs/remotes/<repo>/<branch>` at.
+     * `refs/remotes/<name>/` refs at.
      *
      * A fetch rather than an object-by-object copy for two reasons that were measured on a
-     * three-repository history of 14 387 commits and 139 MB of inputs: it is roughly 2.5x faster
-     * than walking the inputs and feeding every tree and blob to an [ObjectInserter], and the
-     * sending side deltifies what it sends, where the inserter can only store each object whole —
-     * 97 MB against 221 MB for the same content.
+     * three-repository history of 14 387 commits and 139 MB of inputs, a corpus outside this
+     * tree: it is roughly 2.5x faster than walking the inputs and feeding every tree and
+     * blob to an [ObjectInserter], and the sending side deltifies what it sends, where the
+     * inserter can only store each object whole — 97 MB against 221 MB for the same content.
      *
      * [refs] narrows the transfer to exactly the refs the graph was read from, so `-b` keeps out
      * history this run never meant to include; a ref pointing at an object that is not there is a
@@ -101,11 +102,18 @@ class TargetRepository private constructor(
     /**
      * Deletes the refs [fetchFrom] parked and returns how many.
      *
-     * They are a handle for the transfer and nothing more: git has no way to ask for objects without
-     * naming refs, and the refs the output keeps are the braid's own, written by `BraidWriter`.
-     * What deleting them leaves behind is the inputs' original commits, unreferenced in the pack —
-     * 3 MB of the 97 on the corpus above, which `git gc --prune=now` reclaims and which `git fsck`
-     * reports as `dangling commit` until it does.
+     * A fetch with no destination would bring the objects as well. The refs are parked because a
+     * fetch tells the sending side which commits it already has by the refs it holds, and the refs
+     * an earlier input parked are what lets the next input's fetch leave out the history the two
+     * share: a clone of a repository braided beside a fork of it one commit ahead took 1.1 MB with
+     * them and 2.2 MB without, the shared history sent twice. The refs the output keeps are the
+     * braid's own, written by `BraidWriter`.
+     * Deleting the parked refs leaves the inputs' original commits unreferenced in the pack —
+     * 3 MB of the 97 on the corpus [fetchFrom] was measured on, which `git gc --prune=now` reclaims
+     * and whose tips `git fsck` reports as `dangling commit` until it does — but for those a
+     * `--keep-remotes` mirror under `refs/remotes/` still reaches.
+     * Each annotated tag's original object is left unreferenced either way, and reported as
+     * `dangling tag`: the writer tags the braided commit afresh.
      */
     fun dropFetchRefs(): Int {
         val fetched = repository.refDatabase.getRefsByPrefix(FETCH_NAMESPACE)
@@ -120,10 +128,11 @@ class TargetRepository private constructor(
     /**
      * Writes [text] as a blob and returns its id.
      *
-     * The output's content is otherwise copied from the inputs object for object, so this exists for
-     * the one file the braid has to invent: the root `.gitmodules` of [SubmoduleWiring]. Git stores a
-     * blob as bytes and this one is text, so the encoding is settled here rather than at the call
-     * site — UTF-8, which is what git itself assumes of a `.gitmodules`.
+     * The output's content is otherwise the inputs' own objects, brought over by [fetchFrom], so
+     * this exists for the one file the braid has to invent: the root `.gitmodules` of
+     * [SubmoduleWiring]. Git stores a blob as bytes and this one is text, so the encoding is
+     * settled here rather than at the call site — UTF-8, which is what git itself assumes of a
+     * `.gitmodules`.
      */
     fun writeBlob(text: String): ObjectId =
         inserter.insert(Constants.OBJ_BLOB, text.toByteArray(Charsets.UTF_8))

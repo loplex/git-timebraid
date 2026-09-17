@@ -25,14 +25,21 @@ import java.nio.file.Path
  * them across itself, by fetching from [location] (see [TargetRepository.fetchFrom]).
  */
 class SourceRepository private constructor(
-    /** Short name of the repository, used as the default subdirectory and the tag prefix. */
+    /**
+     * Short name of the repository, and its identity in the output: the default subdirectory, and
+     * wherever the output names or labels the input.
+     */
     val name: String,
     /** Where the repository was opened from, for diagnostics. */
     val location: Path,
     private val repository: Repository,
 ) : AutoCloseable {
 
-    /** Kept open for the whole life of the handle: [topLevelEntries] is called once per commit. */
+    /**
+     * Kept open for the whole life of the handle: every tree and blob read goes through it. The
+     * [RevWalk]s below are the exception, each opening a reader of its own and closing it with the
+     * walk.
+     */
     private var reader: ObjectReader? = null
 
     /** Local branches (under `refs/heads/`), sorted by their short name. */
@@ -107,7 +114,8 @@ class SourceRepository private constructor(
      *
      * Only a regular file counts. A `.gitmodules` stored as a symlink is one git itself refuses to
      * follow, and a tree of that name describes no submodule, so either is passed through as
-     * ordinary content rather than being read as configuration.
+     * ordinary content rather than being read as configuration. At the output root it is dropped
+     * wherever the braid writes a `.gitmodules` of its own there.
      */
     fun gitmodules(tree: ObjectId): String? {
         val parser = CanonicalTreeParser(null, reader(), tree)

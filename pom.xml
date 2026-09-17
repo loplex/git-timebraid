@@ -374,7 +374,7 @@
 
             jlink, not GraalVM native-image: the bundle is a real JVM, so no reflection metadata has
             to be maintained for JGit, and nothing can fail at a user's machine that did not already
-            fail here. The cost is size (~46 MB against ~9 MB) and one build per platform.
+            fail here. The cost is size (~55 MB unpacked against ~9 MB) and one build per platform.
         -->
         <profile>
             <id>bundled-runtime</id>

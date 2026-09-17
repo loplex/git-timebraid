@@ -10,7 +10,10 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.readText
 
-/** The CLI paths that stop short of writing: `--dry-run`, `--plan-out`, and the option checks. */
+/**
+ * The CLI paths up to the write: `--dry-run`, `--plan-out`, the option and input checks, and what a
+ * plain `-o` run reports.
+ */
 class MergeCommandDryRunTest {
 
     @TempDir
@@ -167,8 +170,8 @@ class MergeCommandDryRunTest {
     @Test
     fun `a location the platform cannot spell as a path is a usage error`() {
         // A NUL is the one character no filesystem here accepts; Windows also rejects a colon
-        // outside a drive letter, which is how `a::b` gets in. Either way the report is the user's
-        // typo, not an exception out of the parser.
+        // outside a drive letter, which is how `a::b::` gets in. Either way the report is the
+        // user's typo, not an exception out of the parser.
         val result = MergeCommand().test(listOf("--dry-run", "no\u0000such"))
 
         assertEquals(1, result.statusCode, result.output)

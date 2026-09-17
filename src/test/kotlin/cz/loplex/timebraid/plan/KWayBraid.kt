@@ -1,8 +1,7 @@
 package cz.loplex.timebraid.plan
 
 /**
- * A k-way merge of one queue per repository — the mechanism the June 2021 prototype used, written out
- * independently of production code.
+ * A k-way merge of one queue per repository, written out independently of production code.
  *
  * [BraidInterleave] with no opted-in refs is supposed to *reduce* to this: its scope is then the
  * mainline chains alone, which are disjoint paths, so its ready set holds each chain's front and the

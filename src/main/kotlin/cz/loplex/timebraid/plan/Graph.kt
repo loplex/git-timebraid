@@ -31,7 +31,10 @@ internal interface IndexedGraph<T : Any> : Graph<T> {
     /** Exclusive upper bound on [indexOf]. Equal to `nodes.size` unless this graph is a part. */
     val indexSpace: Int
 
-    /** Where [node] sits. Refuses a node of another graph rather than answering for it. */
+    /**
+     * Where [node] sits. Whether a node of another graph is refused here or further on is the
+     * implementation's to say.
+     */
     fun indexOf(node: T): Int
 }
 
