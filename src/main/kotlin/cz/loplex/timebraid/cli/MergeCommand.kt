@@ -233,8 +233,8 @@ private class RepoSpec(
  * The two are separate because they answer separate questions. The name is the repository's
  * identity — the tag prefix, the provenance label, the qualifier on a branch two inputs share, what
  * `--root-repo` matches — and has to be unique, which is the only way two inputs whose directories
- * happen to share a name can be merged at all. The subdirectory is merely where the content lands,
- * and defaults to the name without being tied to it.
+ * happen to share a name can be merged at all. The subdirectory is where the content lands, and
+ * what the default subject prefix names; it defaults to the name without being tied to it.
  *
  * Each suffix is recognised only when what follows it is a bare word: a `/` or a `:` means the
  * character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
