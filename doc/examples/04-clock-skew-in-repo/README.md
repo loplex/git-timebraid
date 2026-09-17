@@ -45,7 +45,7 @@ both track first-parent ancestry within one repository *by construction*.
 so `a1` and `a2` can never swap regardless of what their timestamps say;
 Kahn's algorithm over the whole graph gets the same result from the other direction,
 by never emitting a commit before its parents.\
-The ordering this case actually broke was a global comparator sort over the whole graph,
-which compares a commit only against its *direct* parent and lets time decide everything else —
-it placed a commit before its own grandparent.\
-That approach was measured, found defective and removed, so there is nothing left in the tool to reproduce it with.
+A comparator sort over the whole graph that compares a commit only against its *direct* parent,
+and lets time decide everything else, can get a case like this wrong and place a commit before its own parent:
+such a comparator is not transitive, so the sort need never compare `a2` with `a1` at all.
+Neither of the two is built that way.
