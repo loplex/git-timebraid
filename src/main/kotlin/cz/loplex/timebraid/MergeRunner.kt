@@ -107,10 +107,10 @@ class MergeRunner(
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
 
-            // The one place that can pair the two rather than assume it: these are the repositories
-            // handed to read() above, and it gives back one SourceInputs per repository, each naming
-            // the strand that repository became. Everything downstream looks a repository up by its
-            // Source and never has to know the order again.
+            // The one place that pairs the two: these are the repositories handed to read() above,
+            // and it gives back one SourceInputs per repository in the same order, each naming the
+            // strand that repository became, so they are paired by position here, once. Everything
+            // downstream looks a repository up by its Source and never has to know the order again.
             val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
             val written = writeOutput(output, repoOf, braid, plan)
