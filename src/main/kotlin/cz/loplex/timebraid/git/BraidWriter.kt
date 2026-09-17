@@ -49,8 +49,8 @@ class WriteSummary(
 class BraidWriter(
     private val target: TargetRepository,
     /**
-     * The open repository behind each strand, paired by whoever opened them —
-     * see [CommitGraphReader.read], where a [Source] and the repository it was read from are one iteration.\
+     * The open repository behind each strand, paired by whoever opened them, by position against [BraidInputs.sources],
+     * which keeps the order the repositories were given to [CommitGraphReader.read] in.\
      * Every lookup here is by [Source],
      * so nothing in this class has to know what order anything arrived in, or be trusted to get it right.
      */
