@@ -55,7 +55,7 @@ class TargetRepository private constructor(
      * The trees and blobs come across because the braid's new root trees point straight at them; the
      * commits come across because a fetch cannot leave them out, and because moving their bytes is
      * the only way an original sha survives, which is what `--keep-remotes` points its
-     * `refs/remotes/<repo>/<branch>` at.
+     * `refs/remotes/<name>/` refs at.
      *
      * A fetch rather than an object-by-object copy for two reasons that were measured on a
      * three-repository history of 14 387 commits and 139 MB of inputs, a corpus outside this

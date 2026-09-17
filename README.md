@@ -176,9 +176,9 @@ tagger and its message.
 filled by fetching into it everything the refs that were read reach — that is what puts the inputs'
 trees and blobs there, which the braid then reuses — and a fetch cannot leave the commits out.
 Nothing points at them by default, so they are invisible to `git log` and `git gc --prune=now`
-reclaims them; `--keep-remotes` points `refs/remotes/<repo>/*` at every branch and — under `tags/` —
-every tag of each input instead, which reaches all of them, so the originals stay one `git log`
-away. Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
+reclaims them; `--keep-remotes` points `refs/remotes/<name>/*` at every branch `-b` took and — under
+`tags/` — every tag of each input instead, so the originals those reach stay one `git log` away.
+Either way the fetch covers the refs that were read, so `-b` narrows what arrives, too.
 
 **A provenance trailer** on every commit message:
 
@@ -373,7 +373,8 @@ between releases is in
 - **The output holds the inputs' original commits unreferenced.** They arrive with everything else
   the fetch brings and nothing points at them unless `--keep-remotes` does, so `git fsck` reports
   the tips of that history as `dangling commit`, and an annotated tag's original object as
-  `dangling tag`, until a `git gc --prune=now` reclaims them.
+  `dangling tag`, until a `git gc --prune=now` reclaims them. `--keep-remotes` gives refs to the
+  commits the branches `-b` took and the tags reach, not to the tag objects.
   On a 139 MB corpus they are 3 MB of the 97 the output takes.
 - **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
   output gets a root `.gitmodules` whose paths point at where each gitlink landed, so

@@ -51,7 +51,7 @@ class BraidWriter(
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
-    /** Whether to mirror the inputs under `refs/remotes/<repo>/<branch>` — see [mirrorInputs]. */
+    /** Whether to mirror the branches `-b` took and the tags — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
 ) {
 
@@ -211,8 +211,8 @@ class BraidWriter(
      * The mainline collapses: every input contributed its mainline to one braid, so the output gets
      * one branch of that name, at the braid's tip. Every other branch keeps its own name where that
      * name belongs to a single repository, and is qualified with the repository name where two
-     * inputs happen to have used it. Tags are always qualified, because release names collide across
-     * repositories as a matter of course rather than by accident.
+     * inputs happen to have used it. Tags carry `--tag-prefix`, `{repo}/` by default, because
+     * release names collide across repositories as a matter of course rather than by accident.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -254,8 +254,8 @@ class BraidWriter(
     }
 
     /**
-     * Adds a ref under `refs/remotes/<repo>/` for every branch and every tag of every input, each
-     * pointing at that input's *original* commit.
+     * Adds a ref under `refs/remotes/<name>/` for every branch `-b` took and every tag of every
+     * input, each pointing at that input's *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
      * across everything the refs that were read reach, commits included, with their shas intact —
