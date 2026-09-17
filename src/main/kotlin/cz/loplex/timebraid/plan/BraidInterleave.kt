@@ -36,6 +36,9 @@ package cz.loplex.timebraid.plan
  * Property 3 is a scheduling decision, not a correctness one, which is why it can be opted out of.\
  * Naming a ref through `--interleave-ref` puts its ancestors in scope, so a merge that merges that ref in waits for it,
  * and the merge can then land later than its own timestamp — the trade the caller is choosing.\
+ * Property 2 goes with it:
+ * a merge waiting on a side branch in scope is not in the ready set when its predecessor is taken,
+ * which is how it comes to follow a younger commit of another repository.\
  * Naming every ref reproduces a plain pass over the whole graph,
  * which is what this tool did before the braid and the write order were separated.
  *
@@ -46,13 +49,9 @@ package cz.loplex.timebraid.plan
  * Every original edge is preserved regardless;
  * ancestry is a property of the *write* order ([topoOrder], run after reparenting), not of the braid.
  *
- * The default mechanism is the one this project's first prototype used in June 2021:
- * each branch read as its own `git log --topo-order`, those logs merged k-way.
- *
  * Note the invariant properties 1 and 2 rest on: **one chain per repository.**
  * A repository contributes exactly one because the mainline resolves to one branch tip per input.\
- * Two divergent-and-reconverging chains of a single repository would break the argument and are out of scope,
- * exactly as they were for the original two-repository-only tool.
+ * Two divergent-and-reconverging chains of a single repository would break the argument and are out of scope.
  */
 internal object BraidInterleave {
 

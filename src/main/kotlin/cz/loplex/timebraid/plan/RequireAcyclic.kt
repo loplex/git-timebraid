@@ -10,7 +10,7 @@ class CyclicGraphException(message: String) : IllegalStateException(message)
  * Reparenting adds an edge from each braid commit to its predecessor in the braid sequence;
  * as long as that sequence is a valid topological order, no cycle can arise.
  * So a cycle here means the ordering contradicted ancestry,
- * and the only safe response is to fail loudly before a single object is written.\
+ * and the only safe response is to fail loudly before a single object is written into the output.\
  * The graph checked is not always the commits' own —
  * reparenting checks the braided edges it has just derived, before anything is written from them.
  *

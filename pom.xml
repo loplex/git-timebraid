@@ -55,7 +55,7 @@
         <!--
             The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of this file).
             Derived from `jdeps` with `print-module-deps` over the shaded jar,
-            minus one module and plus two, each deviation for a reason jdeps cannot see:
+            minus one module and plus two that change the image, each deviation for a reason jdeps cannot see:
 
             - java.desktop is dropped.
               jdeps reports it because com.sun.jna.Native declares methods taking java.awt.Window;
@@ -68,6 +68,11 @@
               without it, anything outside the default charset fails, which on Windows is most of cp1250.
             - jdk.unsupported is added for sun.misc.Unsafe,
               reached reflectively by libraries that probe for it rather than linking against it.
+
+            java.logging is on the list too, though jdeps leaves it out:
+            `print-module-deps` omits a module that another one it prints requires transitively,
+            as java.sql requires java.logging, and jlink adds such a module either way.
+            Naming it changes nothing.
         -->
         <jlink.modules>java.base,java.logging,java.management,java.security.jgss,java.sql,jdk.charsets,jdk.unsupported</jlink.modules>
 
@@ -223,9 +228,9 @@
             <!--
                 The distributable jar.
                 Shade rather than assembly:
-                JGit registers its transports and repository builders through META-INF/services entries,
-                and assembly's jar-with-dependencies overwrites same-named resources instead of merging them,
-                so half the providers would be lost.
+                mordant's three terminal backends each register themselves under one META-INF/services name,
+                and assembly's jar-with-dependencies keeps the first of same-named resources
+                and skips the rest instead of merging them, so two of the three would be lost.
                 ServicesResourceTransformer concatenates them instead.
 
                 The shaded jar replaces the main artifact,
@@ -386,7 +391,7 @@
             jlink, not GraalVM native-image:
             the bundle is a real JVM, so no reflection metadata has to be maintained for JGit,
             and nothing can fail at a user's machine that did not already fail here.
-            The cost is size (~46 MB against ~9 MB) and one build per platform.
+            The cost is size (~55 MB unpacked against ~9 MB) and one build per platform.
         -->
         <profile>
             <id>bundled-runtime</id>

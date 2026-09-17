@@ -11,12 +11,18 @@ import java.util.concurrent.TimeUnit
  * A thin wrapper around the `git` command line,
  * for the integration tests that check the output repository the way a user would —
  * `git fsck`, `git log --graph`, `git rev-list`.\
- * The build never needs git (JGit does the reading and writing),
- * so a machine without it on `PATH` skips these tests rather than failing them.
+ * JGit does the reading and writing, so on a machine without git on `PATH`
+ * a test that needs it only for such a check either leaves the check out or is skipped as a whole.\
+ * Not every test is of that kind:
+ * some run git through the program itself, and those that do not skip themselves fail without it.
  */
 object GitCli {
 
-    /** Whether `git --version` runs at all; an integration test that needs git is skipped otherwise. */
+    /**
+     * Whether `git --version` runs at all.\
+     * A test that needs git guards what needs it with this, or is skipped as a whole through [requireGit];
+     * one that runs git through the program and does neither fails without it.
+     */
     val available: Boolean by lazy {
         try {
             ProcessBuilder("git", "--version").start().waitFor(10, TimeUnit.SECONDS)
@@ -44,10 +50,9 @@ object GitCli {
      * `git fsck --strict` — asserts no corruption in [dir].\
      * `--no-dangling` is passed because a braided output legitimately leaves objects unreferenced,
      * and two things put them there:
-     * the inputs arrive whole,
-     * so their own commits are present with no ref of the output's pointing at them,
-     * and `--root-repo` splices an input's top-level entries into a fresh root tree,
-     * leaving the tree they came from unused.
+     * the inputs' own commits come in with the fetch,
+     * so they are present with no ref of the output's pointing at them;
+     * and each annotated tag's original object arrives with them, and the writer tags the braided commit afresh.
      * Both are bloat `git gc` reclaims, not damage.
      */
     fun fsck(dir: Path) =

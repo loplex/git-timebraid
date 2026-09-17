@@ -153,7 +153,8 @@ class MergeCommandOptionsTest {
 
         // git stores a remote's URL verbatim and resolves it against the repository holding it,
         // so the relative path the caller typed has to be made absolute on the way in.
-        // The run itself no longer fetches, so nothing fails at merge time any more —
+        // The run fetches the inputs from their paths,
+        // not through the remotes it records, so nothing fails at merge time —
         // what a relative path would break is the `git fetch <name>` the remote exists for,
         // later, from a directory that is not the one the caller typed it in.
         FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
@@ -162,7 +163,7 @@ class MergeCommandOptionsTest {
                 assertTrue(Path.of(url).isAbsolute, "remote '$name' recorded a relative url: $url")
                 assertTrue(
                     repo.refDatabase.getRefsByPrefix("refs/remotes/$name/").isNotEmpty(),
-                    "$name refs were not fetched",
+                    "$name refs were not written",
                 )
             }
         }

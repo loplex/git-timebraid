@@ -93,7 +93,7 @@ class BraidInterleaveTest {
         // Ignoring a merge's other parents while *scheduling* it
         // is not the same as dropping those parents from the output.
         // BraidInterleave never touches parents(c) at all — it only returns positions —
-        // so Reparenter sees the same original two parents on m either way and prepends the same third one.
+        // so reparent sees the same original two parents on m either way and prepends the same third one.
         // Which ordering produced the braid only changes *what ends up being* m's braid predecessor
         // (b1 here vs b2 under a whole-graph pass),
         // not whether m still carries all of its original edges plus the braid edge.
@@ -207,7 +207,7 @@ class BraidInterleaveTest {
         // guaranteeing its timestamp is <= this commit's.
         // Same-repository predecessors are exempt from (and irrelevant to) this check:
         // their relative order is forced by ancestry, not decided by time,
-        // and Reparenter treats an already-original-parent predecessor as a no-op,
+        // and reparent treats an already-original-parent predecessor as a no-op,
         // so no new cross-repository fold happens there anyway.
         //
         // This does NOT mean a checkout can never show future-dated content under this ordering.
@@ -216,7 +216,7 @@ class BraidInterleaveTest {
         // (an ordinary, unavoidable consequence of the accumulation rule, nothing this ordering decides)
         // shows that same content too.
         // That is a fact about the input history, not a property either ordering algorithm can fix;
-        // see the README's own caveat.
+        // see the caveat in doc/how-it-works.md.
         for (seed in 1..300) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
             val braid = corpus.graph.braid(corpus.heads).commits
