@@ -262,7 +262,7 @@ mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>
 - It unpacks and runs the same way; the launcher notices `runtime/` beside it and uses that JVM in
   preference to `JAVA_HOME`, which is the point of the archive.
 - `TIMEBRAID_JAVA=/path/to/java` overrides that when you would rather it ran on yours.
-- Roughly 46 MB unpacked against 9 MB for the plain jar.
+- Roughly 55 MB unpacked on Linux, 46 MB of it the runtime, against 9 MB for the plain jar.
 - Unlike the plain archive it only runs on the platform that built it — hence the platform in the
   file name.
 - It is the JDK running Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer; on
@@ -354,8 +354,9 @@ together with the `git-timebraid` launcher, plus, under `-Pbundled-runtime`, a p
 archive with a `jlink` runtime for machines without a JVM (see Install).
 
 Releases are cut by tagging: CI builds the portable archive, the jar, and one archive per platform
-(Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with each one
-to check it runs, and uploads them with a `SHA256SUMS`. What changed between releases is in
+(Linux, macOS and Windows on x64, Linux and macOS on aarch64), merges two repositories with the
+`.tar.gz` of each archive to check it runs, and uploads them with a `SHA256SUMS`. What changed
+between releases is in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Limitations
