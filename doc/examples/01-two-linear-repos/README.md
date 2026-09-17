@@ -15,7 +15,7 @@ Built by `build-inputs.sh`; both repos have a single `main` branch.
 ## Command
 
 ```
-mvn -q exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/01-two-linear-repos/output --no-bare \
     --order-by committer --plan-out doc/examples/01-two-linear-repos/plan.txt \
     doc/examples/01-two-linear-repos/input/A doc/examples/01-two-linear-repos/input/B"
 ```

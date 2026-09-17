@@ -26,7 +26,8 @@ $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
 
 ## Why this diverges
 
-- **`BraidInterleave`** (`plan/BraidInterleave.kt`, what the CLI does): queues hold first-parent
+- **`BraidInterleave`** (`src/main/kotlin/cz/loplex/timebraid/plan/BraidInterleave.kt`, what the CLI
+  does): queues hold first-parent
   chains only. It never looks at `f` at all, so `m` is scheduled purely by its own timestamp (30)
   against `B`'s queue — landing *before* `b2` (35), and after `b1` (25).
 - **A whole-graph pass** (`--interleave-ref` naming every ref): a commit only joins the ready set
@@ -40,7 +41,7 @@ $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
 Production (the real CLI):
 
 ```
-mvn -q exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output --no-bare \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output --no-bare \
     --order-by committer --plan-out doc/examples/02-merge-with-late-branch/plan.txt \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
@@ -48,7 +49,7 @@ mvn -q exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output -
 The whole-graph contrast, from the same CLI with every ref opted in:
 
 ```
-mvn -q exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
+mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/output-whole-graph --no-bare \
     --order-by committer --interleave-ref * \
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
