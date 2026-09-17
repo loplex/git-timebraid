@@ -216,7 +216,7 @@ class BraidInterleaveTest {
         // (an ordinary, unavoidable consequence of the accumulation rule, nothing this ordering decides)
         // shows that same content too.
         // That is a fact about the input history, not a property either ordering algorithm can fix;
-        // see the README's own caveat.
+        // see the caveat in doc/how-it-works.md.
         for (seed in 1..300) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
             val braid = corpus.graph.braid(corpus.heads).commits

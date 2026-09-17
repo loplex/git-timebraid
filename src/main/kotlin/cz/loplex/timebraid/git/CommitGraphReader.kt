@@ -65,7 +65,7 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
  * reachable from the branches to be recreated and from all tags — and let the planner reparent only the braid.
  * Off-braid commits keep their original parents,
  * so a branch that exists in one repository still forks off the braid at the right moment with no special handling
- * (see the README's Branches section).
+ * (see the Branches section of doc/how-it-works.md).
  */
 object CommitGraphReader {
 
