@@ -274,7 +274,8 @@ class BraidWriter(
      * and that is what this writes.
      *
      * Tags are covered as well as branches because a great many commits hang off them and nothing else:
-     * on a three-repository history of 14 387 commits, 929 of them were reachable in their input from a tag alone,
+     * on a three-repository history of 14 387 commits, a corpus outside this tree,
+     * 929 of them were reachable in their input from a tag alone,
      * and mirroring only the branches left every one of those originals with no ref pointing at it —
      * present in the output, but unreachable, and pruned by the first `git gc`
      * once git's grace period for unreachable objects, two weeks by default, has passed.\
