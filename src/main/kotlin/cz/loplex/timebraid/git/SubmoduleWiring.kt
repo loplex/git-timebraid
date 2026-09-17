@@ -33,7 +33,11 @@ class RewiredGitmodules(
  * A section's *name* is prefixed as well, not just its path. The name is what git uses to store a
  * populated submodule under `.git/modules/`, so two inputs whose submodules happen to share a name
  * would otherwise be handed the same directory. Subdirectory names are unique and contain no `/`,
- * which makes `<subdir>/<name>` unique by construction.
+ * which makes `<subdir>/<name>` unique by construction among the inputs placed in a subdirectory.
+ * Two kinds of name go unprefixed and can meet: those of the repository at the output root, whose
+ * `A/lib` can meet input `A`'s `lib`, and a blank one (see [prefixed]). There the uniqueness is not
+ * a property of the names but a refusal in [merge], which names the submodule and the commit
+ * carrying it.
  */
 object SubmoduleWiring {
 
@@ -108,6 +112,11 @@ object SubmoduleWiring {
      *
      * A blank value is left alone: a section with no usable `path` describes nothing git can find,
      * and turning it into `<subdir>/` would invent a path the input never had.
+     *
+     * Called on a section's `path`, which is what that reason is about, and on its *name*, where
+     * the prefix is what keeps two inputs' `.git/modules/` directories apart — see this class's own
+     * KDoc. A blank name is left unprefixed too: JGit reads `[submodule ""]` as a section like any
+     * other, so two inputs that both carry one meet under that one name, and [merge] refuses them.
      */
     private fun prefixed(value: String, subdir: String?): String =
         if (subdir == null || value.isBlank()) value else "$subdir/$value"

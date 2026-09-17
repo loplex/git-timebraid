@@ -148,8 +148,9 @@ class SubmoduleWiringTest {
 
     @Test
     fun `two inputs claiming one submodule name is a named error`() {
-        // Only reachable across the root repository, whose names are not prefixed: a subdirectory
-        // input cannot collide, because subdirectory names are unique and hold no slash.
+        // Reachable across the root repository, whose names are not prefixed, and between two blank
+        // names; otherwise a subdirectory input cannot collide, because subdirectory names are
+        // unique and hold no slash.
         val root = rewire("[submodule \"A/lib\"]\n\tpath = A/lib\n\turl = r\n", subdir = null, repo = "root")
         val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = "A")
 
