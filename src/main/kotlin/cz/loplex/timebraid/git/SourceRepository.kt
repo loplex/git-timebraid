@@ -107,7 +107,8 @@ class SourceRepository private constructor(
      *
      * Only a regular file counts. A `.gitmodules` stored as a symlink is one git itself refuses to
      * follow, and a tree of that name describes no submodule, so either is passed through as
-     * ordinary content rather than being read as configuration.
+     * ordinary content rather than being read as configuration. At the output root it is dropped
+     * wherever the braid writes a `.gitmodules` of its own there.
      */
     fun gitmodules(tree: ObjectId): String? {
         val parser = CanonicalTreeParser(null, reader(), tree)

@@ -18,8 +18,9 @@ class TreeEntry(val name: String, val mode: FileMode, val id: ObjectId)
  * output shares its content objects with the inputs and why writing costs one small tree per commit
  * rather than a copy of the whole worktree.
  *
- * The repository placed at the output root (`--root-repo`) is the one exception: its tree cannot be
- * an entry, so its top-level entries are spliced in beside the subdirectories.
+ * The repository placed at the output root (`--root-repo`) is the one exception among the inputs:
+ * its tree cannot be an entry, so its top-level entries are spliced in beside the subdirectories.
+ * The root `.gitmodules` (see [assemble]) is the one entry that is no input's at all.
  */
 class RootTreeAssembler(private val inserter: ObjectInserter) {
 
@@ -36,7 +37,8 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
      * @param subdirEntries one entry per other repository with content, name = its subdirectory.
      * @param gitmodules the `.gitmodules` [SubmoduleWiring] built for this commit, or `null` when no
      *   input describes a submodule here. It replaces the root repository's own entry of that name
-     *   rather than colliding with it, because it already holds that file's sections.
+     *   rather than colliding with it. Where that entry is a file, this one already holds its
+     *   sections; a symlink or a tree of that name is not read as one, and is dropped.
      * @param at describes the commit being built, used only to make a collision error locatable.
      */
     fun assemble(

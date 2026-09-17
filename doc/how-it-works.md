@@ -1,8 +1,9 @@
 # How the braid is built
 
 git-timebraid recreates every commit of every input repository in one output repository, each input
-under its own subdirectory, and adds artificial parent edges that chain commits *across* repositories
-in chronological order. The resulting first-parent chain is called **the braid**.
+under its own subdirectory, or one of them at the root, and adds artificial parent edges that chain
+commits *across* repositories in chronological order. The resulting first-parent chain is called
+**the braid**.
 
 This document is the specification of that construction: which parents each commit ends up with,
 which tree, what happens to branches, and where the "state of the world at that moment" guarantee
@@ -11,7 +12,8 @@ stops holding. For what the tool is for and how to run it, see the [README](../R
 Vocabulary used throughout:
 
 - **input repository** — one of the repositories being merged; contributes one subdirectory to the
-  output
+  output, or, for the one `--root-repo` input, its top-level entries at the root beside the other
+  inputs' subdirectories
 - **mainline** — the branch treated as each input's main line of development (`--mainline-branch`)
 - **ordering timestamp** — the timestamp the interleaving compares: the committer date, or the author
   date with `--order-by author`. It is settled once when the input is read.
@@ -47,9 +49,15 @@ The arithmetic follows:
 
 | commit in its original repo | predecessor on the braid            | parents in the braid                         |
 |-----------------------------|-------------------------------------|----------------------------------------------|
+| root commit                 | none, as the braid's first commit   | **0** — unchanged                            |
+| root commit                 | a different repo                    | **1** — the braided edge alone               |
 | ordinary commit             | same repo (i.e. already its parent) | **1** — unchanged                            |
 | ordinary commit             | a different repo                    | **2** — braided edge + original parent       |
-| merge commit                | a different repo                    | **3** — braided edge + both original parents |
+| two-parent merge            | same repo (i.e. its first parent)   | **2** — unchanged                            |
+| two-parent merge            | a different repo                    | **3** — braided edge + both original parents |
+
+A merge of more parents goes the same way: it keeps them all, and gains the braided edge only
+where its predecessor comes from a different repo.
 
 ### Why three parents
 
@@ -77,7 +85,11 @@ A commit's tree in the braid is derived from its first parent:
 > **tree'(c)** = the tree of `parents'(c)[0]`, with the entry for `c`'s own subdirectory replaced by
 > `c`'s original tree.
 
-For the very first commit on the braid there is no parent, so the tree is just that one subdirectory.
+For the very first commit on the braid there is no parent, so its tree is built from that commit
+alone: its subdirectory, or its top-level entries for the `--root-repo` input.
+
+The input at the root (`--root-repo`) holds no subdirectory: its top-level entries stand in the
+root tree beside the other inputs' subdirectories, and its commits replace those entries.
 
 Because the first parent is the time predecessor, the map of *subdirectory → content* accumulates as
 you walk forward:
