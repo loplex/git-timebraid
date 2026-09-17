@@ -66,6 +66,21 @@ class CommitGraphReaderTest {
     }
 
     @Test
+    fun `prefers main over master where every repository carries both`() {
+        for (name in listOf("backend.git", "webui.git")) {
+            TestRepoBuilder.create(tmp.resolve(name)).use { repo ->
+                val c = repo.commit("c")
+                repo.branch("main", c)
+                repo.branch("master", c)
+            }
+        }
+
+        open("backend", "webui").useAll { repos ->
+            assertEquals("main", CommitGraphReader.read(repos, OrderBy.COMMITTER).mainlineBranch)
+        }
+    }
+
+    @Test
     fun `rejects an explicit mainline branch that is missing somewhere`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val c = repo.commit("c")
