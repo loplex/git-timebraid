@@ -205,7 +205,8 @@ Turn it off with `--no-provenance`.
 ### Requirements
 
 - Java 17 or newer
-- `git` on `PATH` — only to clone a remote input and to check out a `--no-bare` output;
+- `git` on `PATH` — only to clone a remote input and refresh that clone on a later run,
+  to record the inputs as remotes under `--keep-remotes`, and to check out a `--no-bare` output;
   reading the inputs, transferring their objects and writing the braid all happen in-process
 
 ### Install
@@ -214,11 +215,13 @@ Download an archive from [Releases](https://github.com/loplex/git-timebraid/rele
 and put its `bin/` on `PATH`:
 
 ```bash
+mkdir -p ~/opt
 tar xzf git-timebraid-<version>.tar.gz -C ~/opt
 export PATH="$HOME/opt/git-timebraid-<version>/bin:$PATH"
 
 git-timebraid --help
-git timebraid --help                 # the same thing: git runs any git-<name> found on PATH
+git timebraid -h                     # the same thing: git runs any git-<name> found on PATH,
+                                     # but takes --help for itself and looks for its own page
 ```
 
 Each release carries a `SHA256SUMS`;
@@ -332,7 +335,7 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
 **Usable from the command line end to end.** Implemented and tested:
 
-- Cloning the inputs — a local path or a URL — reading them, and planning the interleaving.
+- Reading the inputs — a local path in place, a URL through a clone — and planning the interleaving.
 - Writing the output, bare or with a working tree.
 - Recreating every branch and prefixed tag,
   the provenance trailer, keeping the inputs as remotes, and progress on stderr.
