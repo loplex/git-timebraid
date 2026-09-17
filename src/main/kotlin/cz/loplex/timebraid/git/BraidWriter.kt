@@ -330,9 +330,11 @@ class BraidWriter(
 
         /**
          * Refs are paths, so `refs/heads/a` and `refs/heads/a/b` cannot both exist — git would have
-         * to store a file and a directory under the same name. Detecting that here, before anything
-         * is written, turns a half-populated repository and an opaque lock error into one message
-         * naming both refs.
+         * to store a file and a directory under the same name. Detecting that here, before any of
+         * the braid's refs is written, turns a lock error half way through them into one message
+         * naming both refs. The output is not untouched: the fetch has run by then, so it holds the
+         * history of every ref the run read, still parked under `refs/timebraid-fetch/`, which this
+         * refusal leaves in place.
          */
         fun checkRefNames(names: Collection<String>) {
             val all = names.toSet()

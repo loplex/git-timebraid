@@ -286,7 +286,7 @@ git-timebraid -o /tmp/merged \
     ~/repos/backend.git ~/repos/webui.git=ui ~/repos/codegen.git
 ```
 
-Recreate only two branches, and inspect the plan without writing anything:
+Recreate only two branches, and inspect the plan without writing the output repository:
 
 ```bash
 git-timebraid \

@@ -564,7 +564,7 @@ class BraidPipelineIT {
     }
 
     @Test
-    fun `an input with no common branch is rejected before anything is written`() {
+    fun `an input with no common branch is rejected before the output is created`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r -> r.branch("main", r.commit("a1")) }
         // webui has commits but no branch at all — an "empty" repo as far as refs go.
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { r -> r.commit("b1") }
@@ -574,7 +574,7 @@ class BraidPipelineIT {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("--mainline-branch"), result.output)
-        assertTrue(!out.toFile().exists(), "nothing should have been written")
+        assertTrue(!out.toFile().exists(), "the output should not have been created")
     }
 
     @Test

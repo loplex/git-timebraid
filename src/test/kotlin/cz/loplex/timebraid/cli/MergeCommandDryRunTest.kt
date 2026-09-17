@@ -10,7 +10,10 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.readText
 
-/** The CLI paths that stop short of writing: `--dry-run`, `--plan-out`, and the option checks. */
+/**
+ * The CLI paths up to the write: `--dry-run`, `--plan-out`, the option and input checks, and what a
+ * plain `-o` run reports.
+ */
 class MergeCommandDryRunTest {
 
     @TempDir
