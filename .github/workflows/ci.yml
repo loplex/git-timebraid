@@ -81,7 +81,7 @@ jobs:
   # No JDK and no build: the checks read tracked files as text, the Kotlin sources included, so the
   # job wants nothing but a checkout, and it finishes in under a second.
   docs:
-    name: doc links resolve, blocks fit
+    name: doc and KDoc links resolve, blocks fit
     runs-on: ubuntu-latest
 
     steps:
@@ -95,3 +95,15 @@ jobs:
       # says neither when it goes red.
       - name: Check every code block fits the width it is shown at
         run: .github/scripts/check-blocks.py
+
+      # One spelling of the punctuation dash, where the spelling is a choice: a comment reaches no
+      # console, so nothing forces the ASCII form there.
+      - name: Check the punctuation dash is written one way
+        run: .github/scripts/check-dashes.py
+
+      # The question check-links.py asks of the documentation, asked of the sources. A KDoc
+      # `[Symbol]` is a link, and the Kotlin compiler does not read it, so one whose target was
+      # deleted goes on compiling and goes on looking authoritative. Java has had
+      # `javadoc -Xdoclint` for this since JDK 8 and Kotlin has no equivalent in the compiler.
+      - name: Check every KDoc link resolves
+        run: .github/scripts/check-kdoc-links.py

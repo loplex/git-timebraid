@@ -14,8 +14,10 @@ Three things are checked:
   * every pointer at a document from a Kotlin comment resolves the same way. A comment saying
     `see doc/how-it-works.md#the-parent-rule` makes exactly the claim a link makes, and rots for
     exactly the same reason, but it is not in a document so nothing above would look at it. Only
-    comments are read, never code: a URL in a string is an external link and those are left alone.
-    Sources other than Kotlin are a gap rather than a decision.
+    comments are read, never code -- cut out by kotlin_source.py's scanner, because a regex over
+    `//` cannot tell a comment from the `//` in a URL literal, and a string holding `// doc/x.md`
+    would then be reported as a broken pointer. Sources other than Kotlin are a gap rather than a
+    decision.
 
 The second is deliberately about the link rather than the heading. Most headings here are titles
 nothing anchors to -- `# 01 — two linear repositories`, `# 04 — a child commit timestamped before
@@ -35,6 +37,8 @@ import re
 import subprocess
 import sys
 
+import kotlin_source
+
 # [text](target). Nested brackets in the text would need a real parser, and a reference-style
 # `[text][label]` needs its definition resolved, so neither is followed here. Both are shapes this
 # cannot check rather than shapes it has checked, so both are reported: the promise is that nothing
@@ -50,11 +54,15 @@ NESTED_LINK = re.compile(r"\[[^\]]*\[[^\]]*\][^\]]*\]\([^)\s]+\)")
 # A backticked span is a quoted token, not prose: a grammar can be written
 # `<repo>[::[<name>][=<subdir>]]`, which is the shape of a reference-style link and is not one.
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)*\1")
-# A document named in a comment, with an anchor when it names a section. Written from the repository
-# root, which is how the comments here already write it.
-POINTER = re.compile(r"(?<![\w/.-])((?:doc/[\w./-]+|[A-Z]+)\.md)(#[\w-]+)?")
-# Comments only. A path inside a string literal is code, not a claim to a reader.
-COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+# A document named in a comment, with an anchor when it names a section. Written from the
+# repository root, which is how the comments here already write it. Any path ending .md, rather
+# than doc/ plus an ALL-CAPS name: that shape is the hand-kept list of where the documentation
+# lives that documents() below refuses to keep, and it cannot see .github/release-notes.md, the
+# file named there as the counterexample.
+POINTER = re.compile(r"(?<![\w/.-])([\w.-]+(?:/[\w.-]+)*\.md)(#[\w-]+)?")
+# An external link is somebody else's page, left alone here as everywhere in this file -- and cut
+# out before a path inside one is read as a pointer at a document of ours.
+URL = re.compile(r"\b[a-z][\w+.-]*://\S*")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$", re.M)
 FENCE = re.compile(r"^ {0,3}(```|~~~)", re.M)
 
@@ -187,8 +195,8 @@ def main() -> int:
     print("== resolving the pointers comments make at documents")
     pointed = 0
     for source in sources():
-        for comment in COMMENT.findall(source.read_text(encoding="utf-8")):
-            for path, fragment in POINTER.findall(comment):
+        for _, comment in kotlin_source.comments(source.read_text(encoding="utf-8")):
+            for path, fragment in POINTER.findall(URL.sub(" ", comment)):
                 resolved = pathlib.Path(path).resolve()
                 pointed += 1
                 if not resolved.exists():

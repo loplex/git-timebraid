@@ -8,6 +8,9 @@ target/
 *.iws
 *.ipr
 
+# Left by the checkers importing kotlin_source.py.
+__pycache__/
+
 # OS
 .DS_Store
 Thumbs.db
