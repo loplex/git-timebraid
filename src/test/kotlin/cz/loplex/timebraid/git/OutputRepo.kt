@@ -50,7 +50,7 @@ object OutputRepo {
     }
 
     /**
-     * The machine check behind the tool's central guarantee: read every commit's `original_parents`
+     * The machine check behind the tool's central guarantee: read every commit's `parents=`
      * from the trailer and assert every one of those edges exists in the rewritten repository. This
      * is the guarantee — 100% of original edges preserved — stated as a test.
      */

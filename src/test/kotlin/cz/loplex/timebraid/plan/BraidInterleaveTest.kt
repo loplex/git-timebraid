@@ -91,7 +91,7 @@ class BraidInterleaveTest {
     fun `still produces a 3-parent commit when reparented, whichever braid it came from`() {
         // Ignoring a merge's other parents while *scheduling* it is not the same as dropping those
         // parents from the output. BraidInterleave never touches parents(c) at all — it only
-        // returns positions — so Reparenter sees the same original two parents on m either way and
+        // returns positions — so reparent sees the same original two parents on m either way and
         // prepends the same third one. Which ordering produced the braid only changes *what ends up
         // being* m's braid predecessor (b1 here vs b2 under a whole-graph pass), not whether m
         // still carries all of its original edges plus the braid edge.
@@ -198,7 +198,7 @@ class BraidInterleaveTest {
         // before a commit from a DIFFERENT repository was, at that moment, competing directly against
         // this commit's own (unchanged) front value and lost — guaranteeing its timestamp is <= this
         // commit's. Same-repository predecessors are exempt from (and irrelevant to) this check: their
-        // relative order is forced by ancestry, not decided by time, and Reparenter treats an
+        // relative order is forced by ancestry, not decided by time, and reparent treats an
         // already-original-parent predecessor as a no-op, so no new cross-repository fold happens
         // there anyway.
         //

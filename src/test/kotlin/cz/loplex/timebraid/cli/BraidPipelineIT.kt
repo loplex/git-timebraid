@@ -23,7 +23,7 @@ import kotlin.io.path.createDirectories
  * every run. A test that also wants git's own verdict on its output runs `git fsck --strict` over
  * it through `GitCli.fsck`, which needs git on `PATH`.
  *
- * The reference model is the README's two-strand example:
+ * The reference model is the README's two-strand example, with a side branch `f1` merged at `a3`:
  *
  * ```
  * backend   a1 09:00 ── a2 11:00 ── a3 15:00 (merge of f1)
@@ -95,7 +95,7 @@ class BraidPipelineIT {
         OutputRepo.assertEveryOriginalEdgePreserved(out)
         if (GitCli.available) {
             GitCli.fsck(out)
-            // First parent of the braid tip is the previous commit in time, whichever strand it is.
+            // Every commit, whichever strand it came from, is reachable from the braid tip.
             assertEquals(3, GitCli.run(out, "rev-list", "--count", "main").toInt())
         }
 
@@ -586,9 +586,9 @@ class BraidPipelineIT {
         val inside = tmp.resolve("webui/sub").createDirectories()
         val out = tmp.resolve("out.git")
 
-        // The name-collision check cannot catch this on its own: "sub" and "webui" are different
-        // names, so an enclosing repository would come in a second time as a strand of its own and
-        // be braided against itself.
+        // The name-collision check cannot catch this on its own: opened by walking up, "webui/sub"
+        // would be the enclosing webui under the name "sub", and given beside webui itself the two
+        // names differ, so the same repository would be braided against itself.
         val result = MergeCommand().test(listOf("-o", out.toString(), path("backend.git"), inside.toString()))
 
         assertEquals(1, result.statusCode, result.output)
