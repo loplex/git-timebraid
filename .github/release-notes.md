@@ -2,7 +2,10 @@
 
 Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) beside
 `lib/git-timebraid.jar`. Unpack it and put `bin/` on `PATH` — `git timebraid …` then works as well as
-`git-timebraid …`, because git runs any `git-<name>` it finds there.
+`git-timebraid …`, because git runs any `git-<name>` it finds there. `--help` is the exception: git
+takes `git timebraid --help` for itself and looks for the command's page in git's documentation, a
+manual page or, where git is set to show HTML help, an HTML one; so the program's own help is
+`git-timebraid --help`.
 
 | Asset                                                 | What it is                                                                                           |
 |-------------------------------------------------------|------------------------------------------------------------------------------------------------------|
@@ -10,7 +13,9 @@ Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) be
 | `git-timebraid-<version>-<os>-<arch>.tar.gz` / `.zip` | Carries its own trimmed JVM, for machines without one. Larger, and only for the platform in its name |
 | `git-timebraid.jar`                                   | The same program as `java -jar`, dependencies shaded in                                              |
 
-`git` has to be on `PATH` either way: it is what clones and fetches the inputs.
+Whichever asset you take, `git` on `PATH` is needed for three jobs only: cloning a remote input and
+refreshing that clone on a later run, recording the inputs as remotes under `--keep-remotes`, and
+checking out a `--no-bare` output.
 
 Verify a download against `SHA256SUMS`:
 

@@ -6,8 +6,9 @@ import java.nio.file.Path
 class GitCommandException(message: String) : RuntimeException(message)
 
 /**
- * The entire subprocess surface of the program: the few git operations that are *not* object
+ * Every git command the program shells out to: the few git operations that are *not* object
  * plumbing — cloning a remote, refreshing a clone, adding a remote, filling in a working tree.
+ * JGit starts `git` on its own besides, to find the system configuration, and not through here.
  *
  * These shell out to the user's own `git` on purpose. It already knows their ssh keys, credential
  * helpers and `url.*.insteadOf` rewrites; JGit's own transport would have to be handed each of them.

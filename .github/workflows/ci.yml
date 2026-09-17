@@ -33,8 +33,9 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
-      # The integration tests shell out to `git` for fsck and log --graph; it is
-      # preinstalled on the GitHub-hosted runners, this just records the version.
+      # The tests run `git`: for fsck, log --graph and the other commands that read what the output
+      # holds, and through the program for a clone, --keep-remotes and --no-bare. It is preinstalled
+      # on the GitHub-hosted runners; this just records the version.
       - name: Show git version
         run: git --version
 
