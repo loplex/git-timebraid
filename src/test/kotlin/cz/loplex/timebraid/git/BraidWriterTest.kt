@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
  * ```
  *
  * Braided by committer time the mainline is a1, b1, a2, b2, a3, so `a3` — already a merge at home —
- * is the three-parent case the README makes so much of.
+ * is the three-parent case doc/how-it-works.md makes so much of.
  */
 class BraidWriterTest {
 

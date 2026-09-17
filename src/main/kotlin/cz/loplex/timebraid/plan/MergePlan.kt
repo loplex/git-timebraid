@@ -178,10 +178,10 @@ class MergePlan private constructor(
          * Walks the plan in write order carrying the content map forward: a commit inherits the map
          * of its first parent and replaces its own repository's entry with itself.
          *
-         * This is where the accumulation the README describes actually happens. Because the first
-         * parent of a braid commit is its predecessor in time, walking forward collects every
-         * repository's latest state; because the first parent of an off-braid commit is its original
-         * parent, a side branch keeps the other repositories frozen at the point it was cut.
+         * This is where the accumulation doc/how-it-works.md describes actually happens. Because
+         * the first parent of a braid commit is its predecessor in time, walking forward collects
+         * every repository's latest state; because the first parent of an off-braid commit is its
+         * original parent, a side branch keeps the other repositories frozen at the point it was cut.
          */
         private fun accumulate(
             graph: CommitGraph,

@@ -13,10 +13,10 @@ class TreeEntry(val name: String, val mode: FileMode, val id: ObjectId)
  * Builds the root tree of a braided commit: one entry per input repository that already has content
  * at this point in the braid, each pointing straight at that repository's own original tree.
  *
- * This is the tree rule of the README made concrete. Nothing is recursed into and no blob is
- * rewritten — a subdirectory entry *is* the original repository's root tree object, which is why the
- * output shares its content objects with the inputs and why writing costs one small tree per commit
- * rather than a copy of the whole worktree.
+ * This is the tree rule of `doc/how-it-works.md` made concrete. Nothing is recursed into and no
+ * blob is rewritten — a subdirectory entry *is* the original repository's root tree object, which
+ * is why the output shares its content objects with the inputs and why writing costs one small tree
+ * per commit rather than a copy of the whole worktree.
  *
  * The repository placed at the output root (`--root-repo`) is the one exception among the inputs:
  * its tree cannot be an entry, so its top-level entries are spliced in beside the subdirectories.

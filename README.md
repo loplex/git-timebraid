@@ -375,7 +375,8 @@ to check it runs, and uploads them with a `SHA256SUMS`. What changed between rel
   On a 139 MB corpus they are 3 MB of the 97 the output takes.
 - **A submodule's relative `url` stops resolving.** Submodules are carried over and rewired — the
   output gets a root `.gitmodules` whose paths point at where each gitlink landed, so
-  `git submodule update --init` works (see [the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
+  `git submodule update --init` works (see
+  [the one exception to the tree rule](doc/how-it-works.md#the-one-exception-gitmodules)).
   What cannot be rewired is a **relative** url such as `../lib.git`: git resolves those against the
   superproject's own remote, and the output's remote is not the input's. Make them absolute in the
   inputs before merging.

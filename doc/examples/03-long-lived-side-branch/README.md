@@ -25,7 +25,8 @@ mvn -q exec:java -Dexec.args="-o doc/examples/03-long-lived-side-branch/output -
     doc/examples/03-long-lived-side-branch/input/A doc/examples/03-long-lived-side-branch/input/B"
 ```
 
-`output-whole-graph` generated the same way as example 02 (see the top-level README).
+`output-whole-graph` is generated the same way as example 02's (see
+[its commands](../02-merge-with-late-branch/README.md#commands)).
 
 ## Result
 

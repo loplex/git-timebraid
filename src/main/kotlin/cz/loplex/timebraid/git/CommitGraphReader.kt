@@ -64,8 +64,8 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
  * The model is deliberately global: load *every* commit of *every* strand at once — reachable from
  * the branches to be recreated and from all tags — and let the planner reparent only the braid.
  * Off-braid commits keep their original parents, so a branch that exists in one repository still
- * forks off the braid at the right moment with no special handling (see the README's Branches
- * section).
+ * forks off the braid at the right moment with no special handling (see the Branches section of
+ * doc/how-it-works.md).
  */
 object CommitGraphReader {
 
