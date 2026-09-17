@@ -176,7 +176,7 @@ so tags from different repositories cannot collide.\
 An annotated tag stays annotated, keeping its tagger and its message.
 
 **The original commits**, with their own shas intact, next to the rewritten ones.
-The output is filled by fetching each input into it whole —
+The output is filled by fetching into it everything the refs that were read reach —
 that is what puts the inputs' trees and blobs there, which the braid then reuses —
 and a fetch cannot leave the commits out.\
 Nothing points at them by default, so they are invisible to `git log` and `git gc --prune=now` reclaims them;
