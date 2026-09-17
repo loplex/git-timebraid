@@ -97,7 +97,7 @@ class MergePlan private constructor(
         return map
     }
 
-    /** Counts, for `--dry-run`. */
+    /** Counts, printed by every run and at the head of the plan dump ([render]). */
     fun summary(): String {
         val histogram = HashMap<Int, Int>()
         for (commit in order) {

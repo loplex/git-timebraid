@@ -23,7 +23,8 @@ import java.util.PriorityQueue
  *
  * [precedence] chooses among the nodes that are ready, and only among those, so it decides which
  * valid order comes out and never whether the order is valid — an inconsistent comparator cannot
- * produce a child before its parent here. Ties break on the index a node carries, which is what makes
+ * produce a child before its parent here. Ties break on [IndexedGraph.indexOf] — a field the node
+ * carries where the graph has one, and the fallback numbering where it does not — which is what makes
  * the result a deterministic function of the input: the same graph gives byte-identical output in
  * this run and in any other, and two distinct nodes can never compare equal and collapse.
  */
