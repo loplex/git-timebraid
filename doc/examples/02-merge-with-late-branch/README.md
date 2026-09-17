@@ -112,7 +112,9 @@ cross-repository braid predecessor is never timestamped later than the commit it
 and `--interleave-ref` is how you give that up on purpose, which is exactly what this second output
 shows.
 
-What neither can fix — and what the README's caveat is about — is content arriving from the future
+What neither can fix — and what
+[doc/how-it-works.md's caveat](../../how-it-works.md#a-merge-can-carry--and-pass-on--a-repositorys-future)
+on a merge carrying a repository's future is about — is content arriving from the future
 through a merge that is already in the *input*: `m`'s own tree contains `f`'s work from 2023-11-18, so
-`B: b2` here, and every later commit inheriting `A/` forward, shows it. That is a property of the input
-history, not of any interleave.
+`m` shows it in both outputs, and so does every later commit inheriting `A/` forward — in `output`,
+`B: b2`. That is a property of the input history, not of any interleave.

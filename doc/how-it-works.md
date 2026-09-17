@@ -189,8 +189,8 @@ This one is sharper:
 - Nothing about braiding changes that tree, and every later commit inherits it forward — the ordinary
   accumulation rule, not a choice this tool makes — so those commits show that same "future" content
   too.
-- This is a fact about the input history — a branch merged back in later than it was last committed
-  to, the everyday case — not something any interleaving of the braid can undo.
+- This is a fact about the input history — a merge dated before the branch it takes in — not
+  something any interleaving of the braid can undo.
 
 The braid itself adds nothing to this. Every braid edge — the artificial one this tool inserts — runs
 from a commit back to one **no younger than itself**:
@@ -200,9 +200,10 @@ from a commit back to one **no younger than itself**:
   there at all.
 
 So suppose `backend`'s `m` merges in a long-lived feature branch whose last commit is timestamped
-after `m` itself. Checking out `m` shows `webui/` as of a moment at or before `m`'s own — the braid
-places nothing later beside it. What you see from the future is only what `m`'s own tree already
-carried, and what any later commit inherits from it.
+after `m` itself. As long as the mainlines run forward in time up to `m`, checking out `m` shows
+`webui/` as of a moment at or before `m`'s own — the braid places nothing later beside it. What you
+see from the future is only what `m`'s own tree already carried, and what any later commit inherits
+from it.
 
 "The state of the world at this moment" is exact precisely when every commit's timestamp is
 consistent with all of its parents', not only its first one.
@@ -218,6 +219,6 @@ That guarantee is the default's, and `--interleave-ref` is how you give it up de
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
 
-[Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a five-commit
-history you can build and inspect: one input, braided both ways, with the merge landing before the
+[Example 02](examples/02-merge-with-late-branch/README.md) is this whole argument on a six-commit
+history you can build and inspect: two inputs, braided both ways, with the merge landing before the
 other repository's last commit by default and after it once every ref is opted in.
