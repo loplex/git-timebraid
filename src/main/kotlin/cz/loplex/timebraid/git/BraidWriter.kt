@@ -31,7 +31,7 @@ class WriteSummary(
     val branches: Int,
     val tags: Int,
     /** Remote-tracking refs written for the inputs, zero unless the inputs were kept as remotes. */
-    val remoteBranches: Int,
+    val remoteRefs: Int,
     val head: String,
 )
 
@@ -111,7 +111,7 @@ class BraidWriter(
             trees = target.trees.treesWritten,
             branches = refs.branches,
             tags = refs.tags,
-            remoteBranches = refs.remoteBranches,
+            remoteRefs = refs.remoteRefs,
             head = inputs.mainlineBranch,
         )
     }
@@ -210,7 +210,7 @@ class BraidWriter(
         val targets: Map<String, ObjectId>,
         val branches: Int,
         val tags: Int,
-        val remoteBranches: Int,
+        val remoteRefs: Int,
     )
 
     /**
@@ -257,10 +257,10 @@ class BraidWriter(
             }
         }
 
-        val remoteBranches = if (mirrorRemotes) mirrorInputs(refs) else 0
+        val remoteRefs = if (mirrorRemotes) mirrorInputs(refs) else 0
 
         checkRefNames(refs.keys)
-        return Refs(refs, branches, tags, remoteBranches)
+        return Refs(refs, branches, tags, remoteRefs)
     }
 
     /**
