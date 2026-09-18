@@ -309,7 +309,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 err = true,
             )
             val remotes =
-                if (summary.remoteBranches > 0) ", ${summary.remoteBranches} remote-tracking" else ""
+                if (summary.remoteRefs > 0) ", ${summary.remoteRefs} remote-tracking" else ""
             echo(
                 "refs: ${summary.branches} branches, ${summary.tags} tags$remotes, " +
                     "HEAD -> ${summary.head}",
