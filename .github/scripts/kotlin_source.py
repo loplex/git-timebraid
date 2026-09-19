@@ -1,8 +1,9 @@
 """Where the comments are in a Kotlin file, for the checkers that read them or read around them.
 
-Three checkers need this and they need it two ways round: check-dashes.py and check-links.py read
-what a comment says, check-kdoc-links.py reads everything a comment is not. Both answers come from
-one question -- where does each comment start and end -- so they are answered in one place.
+Four checkers need this, three ways: check-dashes.py and check-links.py read what a comment says,
+check-kdoc-links.py reads everything a comment is not, and check-doc-comments.py asks only where
+each comment lies, to find one standing on another. Every answer comes from one question -- where
+does each comment start and end -- so they are answered in one place.
 
 Kotlin is scanned rather than searched, because the four openers it reads -- a string, a raw
 string, a `//` and a `/*` -- each hide the other three, and the one that comes first

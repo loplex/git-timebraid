@@ -21,9 +21,9 @@ The delimiter is a run of backticks of any length, so a ``--`` written in a doub
 too.
 
 Kotlin is scanned rather than searched, and the scanner is kotlin_source.py next door, because
-two other checkers ask the same question of the same files: check-links.py reads what a comment
-says, check-kdoc-links.py reads everything a comment is not. That module states why searching for
-the four openers one at a time cannot work.
+three other checkers ask the same question of the same files: check-links.py reads what a comment
+says, check-kdoc-links.py reads everything a comment is not, and check-doc-comments.py where each
+comment lies. That module states why searching for the four openers one at a time cannot work.
 
 src/test is read on the same terms as src/main. It holds no user-facing message, so nothing there
 can be confused with one, and a comment in a test is read in the same editor as any other.

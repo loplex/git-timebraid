@@ -107,3 +107,10 @@ jobs:
       # `javadoc -Xdoclint` for this since JDK 8 and Kotlin has no equivalent in the compiler.
       - name: Check every KDoc link resolves
         run: .github/scripts/check-kdoc-links.py
+
+      # Kotlin binds a KDoc to the declaration after it, so two in a row document one thing and the
+      # first documents nothing. A documented function inserted between an existing KDoc and its
+      # declaration makes exactly that, and compiles; an undocumented one takes the KDoc for itself,
+      # which this does not see.
+      - name: Check no doc comment stands on another
+        run: .github/scripts/check-doc-comments.py
