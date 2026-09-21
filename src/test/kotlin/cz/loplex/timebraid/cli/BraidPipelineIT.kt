@@ -121,7 +121,7 @@ class BraidPipelineIT {
         // Every branch and every tag of both inputs, at its own sha. Tags go under `tags/` so that a
         // branch and a tag of one name cannot land on the same ref, and they are mirrored at all
         // because a commit an input reaches only from a tag would otherwise have no ref pointing at
-        // it -- present in the output but unreachable.
+        // it — present in the output but unreachable.
         assertEquals(
             listOf(
                 "refs/remotes/backend/feature",
@@ -142,7 +142,7 @@ class BraidPipelineIT {
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/tags/v2.0"))
 
         // The originals are complete, not just their tips: rev-list cannot count a history whose
-        // parent is missing, and `--objects` cannot list one whose trees are missing -- which is the
+        // parent is missing, and `--objects` cannot list one whose trees are missing — which is the
         // point, because those trees were never transferred, only reused where the braid put them.
         assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
         assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
@@ -183,7 +183,7 @@ class BraidPipelineIT {
         GitCli.fsck(out)
 
         // -b says which branches are read, and the output is filled by fetching exactly those, so a
-        // commit only that branch could reach is not merely unreferenced -- its object is not there.
+        // commit only that branch could reach is not merely unreferenced — its object is not there.
         // The check is on the *original* sha: a rewritten x1 would be a different object, and the
         // originals do arrive, which is what makes this worth asserting rather than assuming.
         assertEquals(
@@ -268,7 +268,7 @@ class BraidPipelineIT {
     }
 
     /**
-     * `backend`'s `m` (12:00) merges in `f`, timestamped 20:00 -- a slow review, or a clock skewed the
+     * `backend`'s `m` (12:00) merges in `f`, timestamped 20:00 — a slow review, or a clock skewed the
      * other way. `webui` has commits at 11:00 and 13:00, so whether `f` is allowed to delay `m`
      * decides which of them becomes `m`'s braid predecessor.
      */
@@ -296,7 +296,7 @@ class BraidPipelineIT {
     fun `a merge whose merged-in branch is timestamped late still lands at its own time`() {
         // Only the mainlines decide where the strands interleave, so m takes its place by its own
         // 12:00, between b1 (11:00) and b2 (13:00). Waiting for f as well would push m past b2 and
-        // give it a braid predecessor timestamped after itself -- which the checkout would then show
+        // give it a braid predecessor timestamped after itself — which the checkout would then show
         // as webui/ at 13:00 under a commit recorded at 12:00.
         val ids = lateMergeFixture()
         val out = tmp.resolve("merged.git")
@@ -324,7 +324,7 @@ class BraidPipelineIT {
     @Test
     fun `--interleave-ref lets that branch delay the merge that brings it in`() {
         // The same fixture with f opted in: m now waits for f, so it lands after webui's whole
-        // history and its braid predecessor becomes b2 -- later than m's own timestamp. That is the
+        // history and its braid predecessor becomes b2 — later than m's own timestamp. That is the
         // trade the option exists to make available, and it is the behaviour the tool had before the
         // braid and the write order were separated.
         val ids = lateMergeFixture()

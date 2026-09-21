@@ -58,7 +58,7 @@ class BraidInterleaveTest {
     fun `never reorders a repository's own chain, even where its timestamps run backwards`() {
         // A's own chain runs backwards in time. A k-way merge only ever pops from the front of A's
         // own queue, so nothing can move a1/a2 relative to each other regardless of what their
-        // timestamps say -- ancestry within one repository holds no matter how its timestamps behave.
+        // timestamps say — ancestry within one repository holds no matter how its timestamps behave.
         val spec = GraphSpec.parse("A: a1@50 <- a2@10 | B: b1@20 <- b2@40")
         val heads = spec.commits("a2", "b2")
 
@@ -69,12 +69,12 @@ class BraidInterleaveTest {
 
     @Test
     fun `does not track a merge's other parents, unlike a whole-graph pass`() {
-        // f is a side branch merged into the mainline at m, timestamped *after* m itself -- a slow
+        // f is a side branch merged into the mainline at m, timestamped *after* m itself — a slow
         // review or clock skew can produce exactly this. A whole-graph pass holds m back until f has
         // been emitted, since Kahn's algorithm requires every parent, not only the first, to be
         // ready before a commit joins the ready set. A k-way merge over first-parent chains never
         // looks at f at all, so it places m purely by its own timestamp, one queue advancing
-        // independently of the other -- and m's own time (30) is well before b2's (35), while
+        // independently of the other — and m's own time (30) is well before b2's (35), while
         // a whole-graph pass cannot emit m until f's chain (up to time 90) has drained, pushing m
         // past b2.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
@@ -90,8 +90,8 @@ class BraidInterleaveTest {
     @Test
     fun `still produces a 3-parent commit when reparented, whichever braid it came from`() {
         // Ignoring a merge's other parents while *scheduling* it is not the same as dropping those
-        // parents from the output. BraidInterleave never touches parents(c) at all -- it only
-        // returns positions -- so Reparenter sees the same original two parents on m either way and
+        // parents from the output. BraidInterleave never touches parents(c) at all — it only
+        // returns positions — so Reparenter sees the same original two parents on m either way and
         // prepends the same third one. Which ordering produced the braid only changes *what ends up
         // being* m's braid predecessor (b1 here vs b2 under a whole-graph pass), not whether m
         // still carries all of its original edges plus the braid edge.
@@ -113,7 +113,7 @@ class BraidInterleaveTest {
     fun `agrees with a whole-graph interleave over a fuzz corpus of ordinary histories`() {
         // On a history where no commit is older than any of its parents (including a merge's second
         // parent), plain ascending time is already a valid topological order of the whole graph, so
-        // a whole-graph ready-set never has to override time -- and a k-way merge, which only
+        // a whole-graph ready-set never has to override time — and a k-way merge, which only
         // compares queue fronts by time, reduces to the same thing restricted to the braid. Both
         // reasons converge on the same order; this corpus is where that is expected to hold.
         for (seed in 1..100) {
@@ -129,7 +129,7 @@ class BraidInterleaveTest {
     @Test
     fun `reduces to a k-way merge of the mainline chains when no ref is opted in`() {
         // The default scope is the chains alone, and those are disjoint paths, so the ready set holds
-        // each chain's front and the earliest wins -- which is a k-way merge, spelled out
+        // each chain's front and the earliest wins — which is a k-way merge, spelled out
         // independently in KWayBraid. This is the reduction the class's first two properties are
         // argued from, so it is asserted rather than trusted, on ordinary and skewed histories alike.
         for (seed in 1..100) {
@@ -147,7 +147,7 @@ class BraidInterleaveTest {
     @Test
     fun `matches a whole-graph pass when every commit is opted in`() {
         // The far end of the scope: put everything in, and the braid has to agree with a plain
-        // topological pass over the whole graph -- the behaviour this tool had before the braid and
+        // topological pass over the whole graph — the behaviour this tool had before the braid and
         // the write order were separated, and what `--interleave-ref '*'` asks for.
         for (seed in 1..100) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
@@ -164,7 +164,7 @@ class BraidInterleaveTest {
     fun `an opted-in ref delays the merge that merges it in`() {
         // The middle of the spectrum, and the whole point of the option: f is timestamped after the
         // merge m that brings it in. By default m lands by its own time (30), before b2 (35). Opt f
-        // in and m has to wait for it, which pushes m past B's history -- the caller trading the
+        // in and m has to wait for it, which pushes m past B's history — the caller trading the
         // no-future-edge property for having that branch's time taken into account.
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
         val heads = spec.commits("m", "b2")
@@ -192,11 +192,11 @@ class BraidInterleaveTest {
     @Test
     fun `never gives a commit a cross-repository predecessor timestamped later than itself`() {
         // This is one specific, narrower property than "checking out a commit never shows you
-        // another repository's future" -- it is only about the artificial braid EDGE this ordering
+        // another repository's future" — it is only about the artificial braid EDGE this ordering
         // adds, not about everything a checkout can end up displaying. A k-way merge always dequeues
         // the current global minimum across all queue fronts, so whatever is dequeued immediately
         // before a commit from a DIFFERENT repository was, at that moment, competing directly against
-        // this commit's own (unchanged) front value and lost -- guaranteeing its timestamp is <= this
+        // this commit's own (unchanged) front value and lost — guaranteeing its timestamp is <= this
         // commit's. Same-repository predecessors are exempt from (and irrelevant to) this check: their
         // relative order is forced by ancestry, not decided by time, and Reparenter treats an
         // already-original-parent predecessor as a no-op, so no new cross-repository fold happens
@@ -204,7 +204,7 @@ class BraidInterleaveTest {
         //
         // This does NOT mean a checkout can never show future-dated content under this ordering.
         // A merge commit can already, in the *input*, carry content from a branch timestamped after
-        // the merge itself -- and once that merge sits on the braid, every later commit that inherits
+        // the merge itself — and once that merge sits on the braid, every later commit that inherits
         // its subtree forward (an ordinary, unavoidable consequence of the accumulation rule, nothing
         // this ordering decides) shows that same content too. That is a fact about the input history,
         // not a property either ordering algorithm can fix; see the README's own caveat.
@@ -227,7 +227,7 @@ class BraidInterleaveTest {
         }
     }
 
-    /** Ancestry restricted to first-parent edges only -- the one relation a k-way merge tracks. */
+    /** Ancestry restricted to first-parent edges only — the one relation a k-way merge tracks. */
     private fun respectsFirstParentAncestry(order: List<Commit>): Boolean {
         val position = HashMap<Commit, Int>()
         for ((index, commit) in order.withIndex()) position[commit] = index

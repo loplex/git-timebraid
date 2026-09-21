@@ -94,7 +94,7 @@ class MergeCommandOptionsTest {
         )
 
         // The inputs arrive by one fetch each and the braid is written on top, so the output holds
-        // the union of the inputs' objects plus what the braid invented -- and holds each of them
+        // the union of the inputs' objects plus what the braid invented — and holds each of them
         // once. A second copy is the failure this pins: it is what an object-by-object import
         // followed by a fetch produced, and what a fetch of something already imported would produce
         // again. Counting is enough to see it, because every object here is reachable from a ref of
@@ -152,7 +152,7 @@ class MergeCommandOptionsTest {
 
         // git stores a remote's URL verbatim and resolves it against the repository holding it, so
         // the relative path the caller typed has to be made absolute on the way in. The run itself
-        // no longer fetches, so nothing fails at merge time any more -- what a relative path would
+        // no longer fetches, so nothing fails at merge time any more — what a relative path would
         // break is the `git fetch <name>` the remote exists for, later, from a directory that is
         // not the one the caller typed it in.
         FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
