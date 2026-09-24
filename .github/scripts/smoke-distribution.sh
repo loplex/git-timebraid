@@ -8,7 +8,8 @@
 #   * a commit message outside ASCII, which needs `jdk.charsets` in the bundled runtime (charsets
 #     arrive through ServiceLoader, so jdeps never sees them and the module is on the list by hand);
 #   * running `git` as a subprocess, which on Linux needs `lib/jspawnhelper` to have kept its
-#     executable bit through the assembly;
+#     executable bit through the assembly. That is why the run is `--no-bare`: its checkout is a git
+#     that has to start, where the calls JGit makes to git of its own accord only log a warning;
 #   * the launcher's own JVM lookup and its jar-relative path resolution.
 #
 # Usage: smoke-distribution.sh [archive.tar.gz]
@@ -64,7 +65,7 @@ case "$(uname -s)" in
 esac
 
 timebraid --version
-timebraid -o "$work/out" "$work/alpha" "$work/beta"
+timebraid --no-bare -o "$work/out" "$work/alpha" "$work/beta"
 
 # --no-dangling because the inputs' own commits come in with the fetch and the braid points no ref
 # at those; `git gc --prune=now` reclaims them. Corruption is what this checks.
