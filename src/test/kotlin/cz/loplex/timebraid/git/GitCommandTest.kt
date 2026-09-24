@@ -108,4 +108,18 @@ class GitCommandTest {
         assertTrue(lines.first().contains("clone --mirror"), failure.message)
         assertTrue(lines.drop(1).any { it.isNotBlank() }, failure.message)
     }
+
+    @Test
+    fun `a git that cannot be started throws the same exception, naming the command`() {
+        // start() fails alike for a missing git and for a missing working directory, and only the
+        // second can be arranged from inside a test: the JVM looks git up on its own PATH.
+        val failure = assertThrows<GitCommandException> {
+            git.checkout(tmp.resolve("does-not-exist"), "main")
+        }
+        assertTrue(failure.message!!.startsWith("`git checkout "), failure.message)
+        assertTrue(
+            failure.message!!.contains("` could not be started -- is git on PATH? ("),
+            failure.message,
+        )
+    }
 }

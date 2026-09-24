@@ -1,8 +1,12 @@
 package cz.loplex.timebraid.git
 
+import java.io.IOException
 import java.nio.file.Path
 
-/** Thrown when a `git` subprocess exits non-zero; carries the tail of its output. */
+/**
+ * Thrown when a `git` subprocess exits non-zero, carrying the tail of its output, or cannot be
+ * started at all.
+ */
 class GitCommandException(message: String) : RuntimeException(message)
 
 /**
@@ -61,7 +65,18 @@ class GitCommand(private val log: (String) -> Unit = {}) {
             .apply { cwd?.let { directory(it.toFile()) } }
             .redirectErrorStream(true)
         dropRedirectingVariables(builder.environment())
-        val process = builder.start()
+        val process = try {
+            builder.start()
+        } catch (e: IOException) {
+            // No git on PATH is the likely cause, and not the only one: a working directory that is
+            // not there fails start() the same way, so the message asks rather than says, and the
+            // JVM's own reason follows it. MergeCommand reports this exception as a message; the
+            // IOException itself would reach the user as a stack trace.
+            throw GitCommandException(
+                "`${command.joinToString(" ")}` could not be started -- is git on PATH? " +
+                    "(${e.message})"
+            )
+        }
         val output = process.inputStream.bufferedReader().useLines { lines ->
             lines.onEach(log).toList()
         }
