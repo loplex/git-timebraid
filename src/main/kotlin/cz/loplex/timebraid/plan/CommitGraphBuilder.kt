@@ -6,8 +6,9 @@ package cz.loplex.timebraid.plan
  * A commit may name parents that have not been added yet — a repository log is usually walked
  * newest first, so forward references are the normal case, not the exception. Each one becomes a
  * [Commit] straight away and is filled in when its own turn comes; one that never gets a turn is an
- * error reported by [build], which is exactly the shape a shallow or partial clone has, and the
- * tool needs the whole graph.
+ * error reported by [build], since the tool needs the whole graph. A shallow or partial clone is
+ * not what produces one: JGit reads a shallow clone's boundary commits as roots, and
+ * `SourceRepository.open` refuses both kinds of clone before anything is read.
  *
  * Parent references are resolved **within the same repository**. Original parent edges never cross
  * repository boundaries — the inputs are independent histories, and the edges that do cross are
@@ -69,7 +70,7 @@ internal class CommitGraphBuilder {
             val listed = missing.take(10).joinToString(", ")
             val more = if (missing.size > 10) ", ... (${missing.size} in total)" else ""
             "referenced as a parent but never added: $listed$more" +
-                " -- the input history is incomplete (a shallow or partial clone?)"
+                " -- the input history is incomplete"
         }
 
         return CommitGraph(sources.keys.toList(), commits.toList())

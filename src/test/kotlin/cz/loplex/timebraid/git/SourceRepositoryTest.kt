@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.eclipse.jgit.util.SystemReader
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
@@ -103,6 +105,72 @@ class SourceRepositoryTest {
     }
 
     @Test
+    fun `a redirecting variable in the environment cannot stand in for an input`() {
+        val elsewhere = TestRepoBuilder.create(tmp.resolve("elsewhere.git"))
+        elsewhere.branch("main", elsewhere.commit("only commit"))
+        elsewhere.close()
+        val webui = TestRepoBuilder.create(tmp.resolve("webui.git"))
+        val b1 = webui.commit("b1")
+        webui.branch("main", b1)
+        webui.close()
+        val api = TestRepoBuilder.create(tmp.resolve("api"), bare = false)
+        val c1 = api.commit("c1")
+        api.branch("main", c1)
+        api.close()
+        val plain = tmp.resolve("plain").createDirectories()
+
+        withEnvironment(
+            "GIT_DIR" to tmp.resolve("elsewhere.git").toString(),
+            "GIT_OBJECT_DIRECTORY" to tmp.resolve("elsewhere.git/objects").toString(),
+        ) {
+            // The premise first: if JGit ever stops reading the environment through SystemReader,
+            // everything below would pass without testing anything at all.
+            assertEquals(
+                tmp.resolve("elsewhere.git").toFile(),
+                FileRepositoryBuilder().readEnvironment().gitDir,
+                "the environment override no longer reaches JGit, so this test proves nothing",
+            )
+
+            // GIT_DIR alone used to satisfy the builder, so a directory that is no repository
+            // opened as whatever the variable named — under the name of the path that was written.
+            val refused = assertThrows<IllegalArgumentException> { SourceRepository.open(plain) }
+            assertTrue(refused.message!!.contains("no git repository"), refused.message)
+
+            // And a bare input is read from its own objects. For an input that is itself a git
+            // directory, as this one is, setGitDir used to override GIT_DIR, but nothing overrode
+            // the object-directory variables, so they reached even such an input.
+            SourceRepository.open(tmp.resolve("webui.git")).use { repo ->
+                assertEquals(b1, repo.resolveBranch("main"))
+                assertEquals(listOf("b1"), repo.readReachable(listOf(b1)).map { it.message.trim() })
+            }
+
+            // An input named by its working tree most of all, the common case: GIT_DIR stood in for
+            // every location that was not itself a git directory, so this one read elsewhere's refs.
+            SourceRepository.open(tmp.resolve("api")).use { repo ->
+                assertEquals(c1, repo.resolveBranch("main"))
+            }
+        }
+    }
+
+    /**
+     * Runs [block] with [vars] added to the environment JGit reads, restoring the reader afterwards.
+     * A test JVM cannot alter its own environment, so the reader is swapped instead — which is the
+     * same thing from `readEnvironment()`'s point of view, and is asserted to be so above.
+     */
+    private fun <R> withEnvironment(vararg vars: Pair<String, String>, block: () -> R): R {
+        val previous = SystemReader.getInstance()
+        val overrides = vars.toMap()
+        SystemReader.setInstance(object : SystemReader.Delegate(previous) {
+            override fun getenv(variable: String): String? = overrides[variable] ?: super.getenv(variable)
+        })
+        return try {
+            block()
+        } finally {
+            SystemReader.setInstance(previous)
+        }
+    }
+
+    @Test
     fun `a working tree named by its own dot-git directory keeps the working tree's name`() {
         val built = TestRepoBuilder.create(tmp.resolve("webui"), bare = false)
         val only = built.commit("only commit")
@@ -132,4 +200,64 @@ class SourceRepositoryTest {
             SourceRepository.defaultName(Path.of(".")),
         )
     }
+
+    @Test
+    fun `a shallow clone is refused, saying where its history stops and how to complete it`() {
+        val built = TestRepoBuilder.create(tmp.resolve("backend.git"))
+        val first = built.commit("first")
+        val second = built.commit("second", parents = listOf(first))
+        built.branch("main", second)
+        built.close()
+        // What `git clone --depth 1` leaves: the tip is kept and its parents are not. JGit reads
+        // the boundary as a root, so nothing downstream of open would ever see a parent go missing.
+        edit(tmp.resolve("backend.git")) { it.objectDatabase.shallowCommits = setOf(second) }
+
+        val refused = assertThrows<IllegalArgumentException> {
+            SourceRepository.open(tmp.resolve("backend.git"))
+        }
+
+        val message = refused.message!!
+        assertTrue(message.startsWith("'backend' at ${tmp.resolve("backend.git")} "), message)
+        assertTrue(message.contains("shallow clone: its history stops at 1 commit "), message)
+        assertTrue(message.contains("fetch --unshallow"), message)
+    }
+
+    @Test
+    fun `a partial clone is refused, by either mark git leaves on one`() {
+        val marks = mapOf<String, (org.eclipse.jgit.lib.StoredConfig) -> Unit>(
+            "extensions.partialClone" to
+                { it.setString("extensions", null, "partialClone", "origin") },
+            // Not origin: a clone made with `-o upstream` marks the remote of that name.
+            "remote.upstream.promisor" to { it.setBoolean("remote", "upstream", "promisor", true) },
+        )
+        for ((mark, set) in marks) {
+            val dir = tmp.resolve("$mark.git")
+            TestRepoBuilder.create(dir).use { it.branch("main", it.commit("only commit")) }
+            edit(dir) { repo -> set(repo.config); repo.config.save() }
+
+            val refused =
+                assertThrows<IllegalArgumentException>(mark) { SourceRepository.open(dir) }
+
+            assertTrue(refused.message!!.contains("is a partial clone"), refused.message)
+            assertTrue(refused.message!!.contains("without --filter"), refused.message)
+        }
+    }
+
+    @Test
+    fun `a remote that is no promisor leaves a repository complete, and it opens`() {
+        val dir = tmp.resolve("webui.git")
+        TestRepoBuilder.create(dir).use { it.branch("main", it.commit("only commit")) }
+        edit(dir) { repo ->
+            repo.config.setString("remote", "origin", "url", "https://example.com/webui.git")
+            repo.config.setBoolean("remote", "upstream", "promisor", false)
+            repo.config.save()
+        }
+
+        SourceRepository.open(dir).use { assertEquals("webui", it.name) }
+    }
+
+    /** Applies [change] to the repository at [dir] through a handle of its own, closed afterwards. */
+    private fun edit(dir: Path, change: (org.eclipse.jgit.lib.Repository) -> Unit) =
+        org.eclipse.jgit.storage.file.FileRepositoryBuilder().setGitDir(dir.toFile()).build()
+            .use(change)
 }
