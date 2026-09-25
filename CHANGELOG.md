@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Ten changes alter what a command line written for 0.1.0 does:
+Eleven changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -58,6 +58,10 @@ Ten changes alter what a command line written for 0.1.0 does:
   `--mainline-branch backend/x`.\
   0.1.0 wrote input backend's `x` over the braid's branch, so the output's mainline could point at
   that `x` rather than at the braid; leave that branch out with `-b`.
+
+- `--interleave-ref` brings the whole ancestry of what it names into scope.\
+  A ref sitting on a mainline is no longer a no-op, and one off the mainlines reaches past the first
+  mainline commit it meets; either can move the braid.
 
 ### Fixed
 
@@ -168,6 +172,15 @@ Ten changes alter what a command line written for 0.1.0 does:
   mainline's own name: `backend/x` for backend's `x` beside a `--mainline-branch backend/x`.\
   The branch was written over the braid's, so the output's mainline could point at backend's `x`.\
   The refusal names the braid and the input, and says to leave that branch out with `-b`.
+
+- **`--interleave-ref` brings the whole ancestry of what it names into scope.**\
+  A ref sitting on a mainline was skipped whole, so naming a mainline branch, or a release tag on
+  one, did nothing.\
+  From any other ref the walk stopped where it met a mainline, leaving out what the earlier merges
+  on that mainline had merged, so a bare star was not the pass over the whole graph it was
+  documented to be, as it now is while `-b` leaves none of the mainlines out.\
+  A side branch timestamped after the merge that took it in can now hold that merge back, and the
+  mainline after it, whenever a ref above the merge is opted in: that is what opting in asks for.
 
 ## [0.1.0] - 2026-09-08
 

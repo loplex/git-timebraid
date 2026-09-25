@@ -172,7 +172,7 @@ object CommitGraphReader {
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
      * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
      * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
-     * and a bare star is every ref — which puts the whole loaded graph in scope.
+     * and a bare star is every ref — which puts the whole graph they reach in scope.
      */
     private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {
         if (patterns.isEmpty()) return emptyList()
