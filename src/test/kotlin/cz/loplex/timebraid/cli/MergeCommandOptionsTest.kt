@@ -83,8 +83,14 @@ class MergeCommandOptionsTest {
     }
 
     @Test
-    fun `every object of every input is transferred exactly once`() {
+    fun `every input object arrives, and nothing is written but the braid's own`() {
         corpus()
+        // A side branch: the only input objects the mainline does not reach, so a transfer narrowed
+        // to the mainline's ref would leave its commit, its tree and its blob behind.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.repository.resolve("refs/heads/main~1")
+            repo.branch("side", repo.commit("s1", parents = listOf(a1), at = Instant.parse("2021-01-01T12:00:00Z")))
+        }
         val out = tmp.resolve("merged.git")
 
         run(
@@ -94,21 +100,21 @@ class MergeCommandOptionsTest {
         )
 
         // The inputs arrive by one fetch each and the braid is written on top, so the output holds
-        // the union of the inputs' objects plus what the braid invented — and holds each of them
-        // once. A second copy is the failure this pins: it is what an object-by-object import
-        // followed by a fetch produced, and what a fetch of something already imported would produce
-        // again. Counting is enough to see it, because every object here is reachable from a ref of
-        // the output's: --keep-remotes puts the inputs' own commits under refs/remotes.
+        // the union of the inputs' objects plus what the braid invented. What the count pins is
+        // that nothing extra was written and nothing went missing — a byte-identical second copy
+        // has the same id and collapses into the set, so it is not this assertion that would catch
+        // one.
         val inputObjects = listOf("backend.git", "webui.git")
             .flatMap { objectIdsOf(tmp.resolve(it)) }
             .toSet()
-        // Three braid commits over three root trees; every blob and subtree came from an input.
-        val invented = 3 + 3
+        // Four commits over four root trees, the side branch's rewritten onto its rewritten parent
+        // as the braid's three are; every blob and subtree came from an input.
+        val invented = 4 + 4
 
         assertEquals(
             inputObjects.size + invented,
             objectIdsOf(out).size,
-            "the output should hold every input object once, plus the braid's own",
+            "the output should hold every input object, the braid's own, and nothing else",
         )
         assertTrue(
             objectIdsOf(out).containsAll(inputObjects),
@@ -121,7 +127,8 @@ class MergeCommandOptionsTest {
      *
      * Both halves are needed and neither is optional: a fixture built object by object is loose,
      * where a fetch and the braid's own inserter both write packs. Counting the union is what makes
-     * "exactly once" a statement about objects rather than about pack files.
+     * the count one of objects rather than of pack files: an object gone missing, or one nobody
+     * asked for, shows whether it is loose or packed.
      */
     private fun objectIdsOf(dir: Path): Set<String> {
         val objects = dir.resolve("objects")
