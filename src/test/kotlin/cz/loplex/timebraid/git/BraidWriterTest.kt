@@ -234,6 +234,26 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `{subdir} in the subject prefix is the destination, and the name at the root`() {
+        // backend lands in server/, so its name and its destination differ, which is what tells
+        // the two placeholders apart; webui is the root repository, which has no subdirectory.
+        corpus()
+        val out = tmp.resolve("merged.git")
+        braid(
+            out,
+            rootRepo = "webui",
+            subdirs = mapOf("backend" to "server"),
+            options = WriteOptions(subjectPrefix = "{repo} in {subdir}: ", provenance = false),
+        )
+
+        SourceRepository.open(out).use { repo ->
+            val messages = repo.readReachable(listOf(repo.resolveBranch("main")!!)).map { it.message }
+            assertTrue(messages.contains("backend in server: a1"), messages.toString())
+            assertTrue(messages.contains("webui in webui: b1"), messages.toString())
+        }
+    }
+
+    @Test
     fun `provenance and the subject prefix can be turned off`() {
         corpus()
         val out = tmp.resolve("plain.git")
