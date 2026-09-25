@@ -75,7 +75,17 @@ class MergeRunner(
 
     private val git = GitCommand { progress.detail(it) }
 
-    fun run(): MergeResult {
+    /** The directory [cloneRoot] made when there was no output to put the clones beside. */
+    private var temporaryClones: Path? = null
+
+    fun run(): MergeResult =
+        try {
+            merge()
+        } finally {
+            removeTemporaryClones()
+        }
+
+    private fun merge(): MergeResult {
         val locations = resolveInputs()
         // Opened inside the try, so that an input refused on opening closes the ones before it.
         val sources = ArrayList<SourceRepository>(locations.size)
@@ -194,7 +204,8 @@ class MergeRunner(
      * Every input as a local path. A remote input is cloned next to the output under
      * `.timebraid-clones/`, and a clone that is already there is refreshed rather than remade, so a
      * second run over the same URLs does not pay the download again. When there is no output to sit
-     * beside (`--dry-run` with no `-o`), the clones go to a temporary directory instead.
+     * beside (`--dry-run` with no `-o`), the clones go to a temporary directory instead, which the
+     * run removes when it ends.
      */
     private fun resolveInputs(): List<LocalInput> {
         if (request.inputs.none { it.isRemote }) {
@@ -245,7 +256,19 @@ class MergeRunner(
 
     private fun cloneRoot(): Path =
         request.output?.toAbsolutePath()?.parent?.resolve(CLONE_DIR)
-            ?: Files.createTempDirectory("timebraid-clones-")
+            ?: Files.createTempDirectory("timebraid-clones-").also { temporaryClones = it }
+
+    /**
+     * Deletes the clones a run made in a temporary directory. Nothing would ever reuse them: the
+     * next run without an output makes a directory of its own, so each such run would leave a full
+     * copy of every remote input behind.
+     */
+    private fun removeTemporaryClones() {
+        val root = temporaryClones ?: return
+        if (!root.toFile().deleteRecursively()) {
+            progress.step("could not remove every clone under $root")
+        }
+    }
 
     /** An input resolved to a local repository, plus the location to record if `--keep-remotes`. */
     private class LocalInput(val path: Path, val name: String, val remote: String)

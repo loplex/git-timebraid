@@ -186,6 +186,9 @@ Eleven changes alter what a command line written for 0.1.0 does:
   0.1.0 printed "2 refs opted into the interleave" for three refs on two commits: the count is of
   the commits the matched refs name, each once.
 
+- **A dry run without `-o` removes the clones it made.**\
+  Each such run cloned every URL input into a new temporary directory and left it there.
+
 ## [0.1.0] - 2026-09-08
 
 First release.
