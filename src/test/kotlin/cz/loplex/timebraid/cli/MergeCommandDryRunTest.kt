@@ -12,6 +12,7 @@ import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 
 /**
@@ -443,6 +444,24 @@ class MergeCommandDryRunTest {
         assertEquals(0, named.statusCode, named.output)
         assertTrue(named.output.contains("proj-a -> proj-a/"), named.output)
         assertTrue(named.output.contains("proj-b -> proj-b/"), named.output)
+    }
+
+    @Test
+    fun `two inputs of one name are refused naming both locations`() {
+        val first = tmp.resolve("libs/core")
+        val second = tmp.resolve("tools/core")
+        first.createDirectories()
+        second.createDirectories()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", "-o", tmp.resolve("out").toString(), first.toString(), second.toString()),
+        )
+
+        // The name alone leaves the reader to work out which two inputs derived it.
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("the same repository name 'core'"), result.output)
+        assertTrue(printed.contains("$first and $second"), result.output)
     }
 
     @Test
