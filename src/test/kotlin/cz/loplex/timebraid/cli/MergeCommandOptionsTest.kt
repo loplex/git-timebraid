@@ -216,6 +216,32 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a branch and a tag of one input meeting on one mirror name are refused`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            repo.branch("main", a1)
+            // A branch literally named `tags/v1.0` mirrors to the name the tag `v1.0` mirrors to,
+            // which is the meeting BraidWriter.mirrorInputs documents and refuses.
+            repo.branch("tags/v1.0", a1)
+            repo.lightweightTag("v1.0", a1)
+        }
+        val out = tmp.resolve("collide.git")
+
+        val result = MergeCommand().test(
+            listOf("-o", out.toString(), "--keep-remotes", tmp.resolve("backend.git").toString())
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(
+            result.output.contains(
+                "the branch 'tags/v1.0' and the tag 'v1.0' of 'backend' would both be mirrored as " +
+                    "'refs/remotes/backend/tags/v1.0'"
+            ),
+            result.output,
+        )
+    }
+
+    @Test
     fun `a file URL input is cloned next to the output`() {
         corpus()
         val out = tmp.resolve("merged.git")

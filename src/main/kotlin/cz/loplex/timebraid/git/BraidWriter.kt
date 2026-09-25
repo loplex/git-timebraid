@@ -25,7 +25,7 @@ class WriteSummary(
     val branches: Int,
     val tags: Int,
     /** Remote-tracking refs written for the inputs, zero unless the inputs were kept as remotes. */
-    val remoteBranches: Int,
+    val remoteRefs: Int,
     val head: String,
 )
 
@@ -51,7 +51,7 @@ class BraidWriter(
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
-    /** Whether to mirror the branches `-b` took and the tags — see [mirrorInputs]. */
+    /** Whether to mirror the refs carried over and each input's mainline — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
 ) {
 
@@ -104,7 +104,7 @@ class BraidWriter(
             trees = target.trees.treesWritten,
             branches = refs.branches,
             tags = refs.tags,
-            remoteBranches = refs.remoteBranches,
+            remoteRefs = refs.remoteRefs,
             head = inputs.mainlineBranch,
         )
     }
@@ -201,7 +201,7 @@ class BraidWriter(
         val targets: Map<String, ObjectId>,
         val branches: Int,
         val tags: Int,
-        val remoteBranches: Int,
+        val remoteRefs: Int,
     )
 
     /**
@@ -247,15 +247,16 @@ class BraidWriter(
             }
         }
 
-        val remoteBranches = if (mirrorRemotes) mirrorInputs(refs) else 0
+        val remoteRefs = if (mirrorRemotes) mirrorInputs(refs) else 0
 
         checkRefNames(refs.keys)
-        return Refs(refs, branches, tags, remoteBranches)
+        return Refs(refs, branches, tags, remoteRefs)
     }
 
     /**
      * Adds a ref under `refs/remotes/<name>/` for every branch `-b` took and every tag of every
-     * input, each pointing at that input's *original* commit.
+     * input, and for each input's mainline whether `-b` took it or not, each pointing at that
+     * input's *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
      * across everything the refs that were read reach, commits included, with their shas intact —
@@ -269,7 +270,10 @@ class BraidWriter(
      * pointing at it — present in the output, but unreachable, and pruned by the first `git gc`
      * once git's grace period for unreachable objects, two weeks by default, has passed. They go
      * under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
-     * input do not land on the same name.
+     * input do not land on the same name. That keeps the usual pair apart, and not every pair git
+     * accepts: a branch `-b` took that is literally named `tags/v1.0` still meets the tag `v1.0`
+     * here, and that is refused, since either write winning would leave the other ref's originals
+     * with no mirror.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
      * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its
@@ -277,22 +281,35 @@ class BraidWriter(
      *
      * The mirror covers the refs that were read, so `-b` narrows it the same way it narrows the
      * output, and for the same reason: the fetch was narrowed to those refs too, and a ref pointing
-     * at an object that is not there is a broken repository.
+     * at an object that is not there is a broken repository. The mainline is among them whatever
+     * `-b` says, since the braid is built along it: its commits are fetched and rewritten either
+     * way, and without a mirror of its own a run that never selected it would leave its originals in
+     * the output with nothing naming them.
      *
      * @return how many remote-tracking refs were added.
      */
     private fun mirrorInputs(refs: MutableMap<String, ObjectId>): Int {
         var added = 0
-        for (input in inputs.sources) {
+        for ((input, head) in inputs.sources.zip(inputs.heads)) {
             val prefix = Constants.R_REMOTES + input.source.name + "/"
             for (branch in input.branches) {
                 refs[prefix + branch.name] = originalOf(branch.commit).id
                 added++
             }
             for (tag in input.tags) {
-                refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
+                val name = prefix + "tags/" + tag.name
+                // A branch literally named `tags/v1.0` mirrors to the name the tag `v1.0` does.
+                require(name !in refs) {
+                    "the branch 'tags/${tag.name}' and the tag '${tag.name}' of '${input.source.name}' " +
+                        "would both be mirrored as '$name'; rename one of them in the input, leave " +
+                        "the branch out with -b, or drop --keep-remotes"
+                }
+                refs[name] = originalOf(tag.commit).id
                 added++
             }
+            // Counted only where it is new: a selection that took the mainline wrote it above.
+            val mainline = prefix + inputs.mainlineBranch
+            if (refs.putIfAbsent(mainline, originalOf(head).id) == null) added++
         }
         return added
     }
