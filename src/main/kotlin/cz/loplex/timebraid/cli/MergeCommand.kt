@@ -3,10 +3,13 @@ package cz.loplex.timebraid.cli
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.MissingArgument
+import com.github.ajalt.clikt.core.NoSuchOption
 import com.github.ajalt.clikt.core.UsageError
+import com.github.ajalt.clikt.parameters.arguments.ArgumentTransformContext
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.help
-import com.github.ajalt.clikt.parameters.arguments.multiple
+import com.github.ajalt.clikt.parameters.arguments.transformAll
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.help
@@ -34,6 +37,7 @@ import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.writeText
 
 /**
@@ -47,10 +51,19 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * An input is written `<path-or-url>[::<name>][=<subdir>]`, and clikt reads a token that opens
      * with `/` and holds a `=`, an absolute path with a subdirectory, as a long option with its
      * value attached, and refuses it as unknown. Routing unknown option-shaped tokens to the
-     * arguments instead lets the positional parser see the whole spec; [run] rejects a real stray
-     * `-`/`--` token by hand so the usual protection against a mistyped option is kept.
+     * arguments instead lets the positional parser see the whole spec; [inputs] then refuses, as
+     * clikt would, a token opening with `-` that stood before any `--`.
      */
     override val treatUnknownOptionsAsArgs: Boolean = true
+
+    /**
+     * `--` followed by [END_OF_OPTIONS], which is how [inputs] learns where the options ended.
+     *
+     * clikt still reads the `--` itself as the end of the options, so the marker after it lands
+     * among the arguments. It holds a NUL, which no command line can pass, so it cannot be an
+     * input.
+     */
+    override fun aliases(): Map<String, List<String>> = mapOf("--" to listOf("--", END_OF_OPTIONS))
 
     init {
         versionOption(version()) { "git-timebraid version $it" }
@@ -132,15 +145,12 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 "identity (tag prefix, provenance, --root-repo) and defaults to the last segment " +
                 "of the path; the subdirectory is where its content lands and defaults to the name.",
         )
-        .multiple(required = true)
+        .transformAll(nvalues = -1, required = true) { tokens -> afterOptions(tokens) }
 
     override fun help(context: Context): String =
         "Merge several independent git repositories into one, braided together along the time axis."
 
     override fun run() {
-        inputs.firstOrNull { it.startsWith("-") }?.let {
-            throw UsageError("unknown option '$it' (put options before the input repositories)")
-        }
         if (quiet && verbose) throw UsageError("--quiet and --verbose cannot be combined")
         if (output == null && !dryRun) {
             throw UsageError("-o/--output is required unless --dry-run is given")
@@ -158,9 +168,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         val specs = inputs.map(::parseRepoSpec)
         val names = specs.map { it.name }
-        if (names.toSet().size != names.size) {
-            throw UsageError("two inputs resolve to the same repository name: ${names.sorted()}")
-        }
+        if (names.toSet().size != names.size) throw duplicateNames(specs)
         rootRepo?.let { root ->
             if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
         }
@@ -181,6 +189,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             // After the inputs, so that one of them being the output is said as that.
             TargetRepository.refusal(out, force, bare)?.let { throw CliktError(it) }
         }
+        for ((spec, raw) in specs.zip(inputs)) checkSplit(spec, raw)
 
         val request = MergeRequest(
             inputs = specs.map { spec ->
@@ -215,6 +224,62 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
         report(result)
+    }
+
+    /**
+     * Inputs sharing a name, naming every location that derived it.
+     *
+     * The name alone leaves the reader to work out which inputs derived it, and a name derived from
+     * the last segment of a location is one nobody typed. Naming an input is how the clash is
+     * settled, so the refusal says that as well.
+     */
+    private fun duplicateNames(specs: List<RepoSpec>): UsageError {
+        val clashes = specs.groupBy { it.name }.filterValues { it.size > 1 }.toSortedMap()
+        val described = clashes.map { (name, sharing) ->
+            val where = sharing.map { it.location }
+            val listed = where.dropLast(1).joinToString(", ") + " and " + where.last()
+            // Spelled out as far as the refusals around it spell things out, and a digit past that.
+            val count = when (sharing.size) {
+                2 -> "two"
+                3 -> "three"
+                else -> sharing.size.toString()
+            }
+            "$count inputs resolve to the same repository name '$name': $listed"
+        }
+        return UsageError(
+            described.joinToString("; ") + " -- give one of them a name with <repo>::<name>"
+        )
+    }
+
+    /**
+     * A location that is not there, reported with the suffix that was read off its end.
+     *
+     * `<location>[::<name>][=<subdir>]` is read by cutting each suffix off the end, so a location
+     * whose own last segment ends in `::<word>` or `=<word>` is read as a shorter location and a name
+     * or a subdirectory. When nothing is at the shorter location either, opening it fails with "no
+     * git repository at <the location, cut short>", which never mentions the part that was taken.
+     * The run is going to fail whichever reading was meant, so the only question is whether the
+     * failure says what was cut, and it costs nothing to say it here.
+     *
+     * What is on disk never changes the reading — this only refuses to go on.
+     */
+    private fun checkSplit(spec: RepoSpec, raw: String) {
+        if (spec.isRemote || spec.location == raw) return
+        val location = try {
+            Path.of(spec.location)
+        } catch (e: InvalidPathException) {
+            return
+        }
+        if (location.exists()) return
+        val cut = raw.substring(spec.location.length)
+        val read = listOfNotNull(
+            "name".takeIf { cut.startsWith("::") },
+            "subdirectory".takeIf { spec.subdir != null },
+        )
+        throw UsageError(
+            "there is nothing at '${spec.location}', which is '$raw' with '$cut' read off its end " +
+                "as the ${read.joinToString(" and ")}"
+        )
     }
 
     private fun report(result: MergeResult) {
@@ -270,6 +335,24 @@ private class RepoSpec(
     /** Explicit `=<subdir>`, or `null` to place the repository under its own name. */
     val subdir: String?,
 )
+
+private const val END_OF_OPTIONS = "\u0000--"
+
+/**
+ * The inputs among [tokens], which are the `repo` arguments with [END_OF_OPTIONS] wherever a `--`
+ * stood: a token opening with `-` before the first marker is an option nobody defined, and is
+ * refused the way clikt refuses one, with its suggestion of the option probably meant.
+ */
+private fun ArgumentTransformContext.afterOptions(tokens: List<String>): List<String> {
+    val end = tokens.indexOf(END_OF_OPTIONS).let { if (it < 0) tokens.size else it }
+    tokens.take(end).firstOrNull { it.startsWith("-") }?.let { token ->
+        val name = token.substringBefore("=")
+        val known = context.command.registeredOptions().filterNot { it.hidden }
+            .flatMap { it.names + it.secondaryNames }
+        throw NoSuchOption(name, context.suggestTypoCorrection(name, known))
+    }
+    return tokens.filter { it != END_OF_OPTIONS }.ifEmpty { throw MissingArgument(argument) }
+}
 
 /**
  * Splits `<path-or-url>[::<name>][=<subdir>]`.

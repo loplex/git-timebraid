@@ -12,6 +12,7 @@ import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 
 /**
@@ -71,6 +72,61 @@ class MergeCommandDryRunTest {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("-o/--output is required"), result.output)
+    }
+
+    @Test
+    fun `an unknown option is refused wherever it stands, with a suggestion`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run",
+                tmp.resolve("backend.git").toString(),
+                "--dryrun",
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no such option --dryrun"), result.output)
+        assertTrue(result.output.contains("Did you mean --dry-run?"), result.output)
+
+        // A short one too, which is no more an input than a long one is.
+        val short = MergeCommand().test(listOf("--dry-run", tmp.resolve("backend.git").toString(), "-x"))
+        assertEquals(1, short.statusCode, short.output)
+        assertTrue(short.output.contains("no such option -x"), short.output)
+    }
+
+    @Test
+    fun `a mistyped off switch is suggested as itself`() {
+        // An off switch is a flag's secondary name, and clikt suggests from those as well: the
+        // switch meant comes first, ahead of the flag it turns off.
+        val result = MergeCommand().test(listOf("--dry-run", "--no-bar", "backend.git"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no such option --no-bar"), result.output)
+        assertTrue(result.output.contains("(Possible options: --no-bare,"), result.output)
+    }
+
+    @Test
+    fun `an input after -- is read as an input, a leading dash and all`() {
+        // No repository is at -dash, so the run is refused; what matters is what for.
+        val after = MergeCommand().test(listOf("--dry-run", "--", "-dash"))
+        assertEquals(1, after.statusCode, after.output)
+        assertTrue(after.output.contains("-dash"), after.output)
+        assertTrue("option" !in after.output, after.output)
+
+        val before = MergeCommand().test(listOf("--dry-run", "--dryrun", "--", "-dash"))
+        assertEquals(1, before.statusCode, before.output)
+        assertTrue(before.output.contains("no such option --dryrun"), before.output)
+    }
+
+    @Test
+    fun `a -- with no input after it still asks for one`() {
+        val result = MergeCommand().test(listOf("--dry-run", "--"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("missing argument <repo>"), result.output)
     }
 
     @Test
@@ -391,6 +447,24 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `two inputs of one name are refused naming both locations`() {
+        val first = tmp.resolve("libs/core")
+        val second = tmp.resolve("tools/core")
+        first.createDirectories()
+        second.createDirectories()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", "-o", tmp.resolve("out").toString(), first.toString(), second.toString()),
+        )
+
+        // The name alone leaves the reader to work out which two inputs derived it.
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("the same repository name 'core'"), result.output)
+        assertTrue(printed.contains("$first and $second"), result.output)
+    }
+
+    @Test
     fun `a separator that belongs to the location is left there`() {
         // Both suffixes are recognised only before a bare word, so a path that happens to contain
         // one is not split behind the user's back. Refused as a location: one that is not there,
@@ -408,6 +482,19 @@ class MergeCommandDryRunTest {
                 result.output,
             )
             assertTrue(result.output.contains(segment), result.output)
+        }
+    }
+
+    @Test
+    fun `a location that is not there names the suffix read off its end`() {
+        // Each suffix is read before a bare word, so a missing location written with one is
+        // reported cut short. Nothing is at either spelling, and the refusal says what was taken.
+        for ((suffix, read) in listOf("::libs" to "the name", "=libs" to "the subdirectory")) {
+            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/path$suffix"))
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("nothing at '/nonexistent/path'"), result.output)
+            assertTrue(result.output.contains("'$suffix' read off its end as $read"), result.output)
         }
     }
 

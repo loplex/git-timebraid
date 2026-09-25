@@ -45,6 +45,12 @@ Five changes alter what a command line written for 0.1.0 does:
   `--force` or without.\
   The refusal names the path, and the file is left as it was.
 
+- **A mistyped option is refused with the option probably meant, and `--` ends the options.**\
+  0.1.0 answered `--dryrun` with "put options before the input repositories", though an option may
+  stand anywhere, and refused an input opening with `-` even after `--`.\
+  The refusal now reads "no such option --dryrun. Did you mean --dry-run?", and in `-- -dash` the
+  `-dash` is an input.
+
 - **`.git` is refused as a destination.**\
   0.1.0 accepted `repo=.git`, and wrote a tree that git will not check out and `git fsck` warns
   about.\
@@ -95,6 +101,15 @@ Five changes alter what a command line written for 0.1.0 does:
   `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare
   input as well: nothing overrode them, so they read its refs or its objects from another
   repository.
+
+- **A missing location now names the suffix read off its end.**\
+  `/some/path::libs` used to report only `/some/path` when nothing is there, and so did
+  `/some/path=libs`.\
+  The reading is unchanged, and which one was meant is still not guessed at.\
+  The run fails on the location either way, so the refusal says what it cut off.
+
+- **A repository name two inputs derive is refused naming every location that derives it.**\
+  The refusal listed every input's name, the repeated one among them, and located none of them.
 
 - **A logged subprocess names the repository it ran in.**\
   `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same
