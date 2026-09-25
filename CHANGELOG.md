@@ -13,10 +13,14 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Three changes alter what a command line written for 0.1.0 does:
+Four changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
+
+- A shallow or a partial clone is refused as an input, on a dry run too.\
+  0.1.0 planned either on a dry run, and braided a shallow one given last, or alone, as the part
+  of its history it held.
 
 - An input that is the output, as in `-o merged.git merged.git …`, is refused, and so is an
   `-o x/.git` inside a bare input `x`.\
@@ -45,6 +49,14 @@ Three changes alter what a command line written for 0.1.0 does:
 - **User-facing messages are ASCII.**\
   Six of them wrote an em dash.\
   A Windows console's code page cannot encode it, so they write `--` now.
+
+- **Shallow and partial clones are refused, as the README said they were.**\
+  0.1.0 planned either without complaint.\
+  A shallow input then broke the fetch of another input, or, given after it, was braided as the
+  part of its history it held; a partial clone broke the fetch. Either could leave a half-written
+  output directory behind.\
+  An input is now refused when it is opened, before the output is created, and the refusal says how
+  to complete it.
 
 - **An `-o` that cannot be created, and a `--plan-out` that cannot be written, are reported as
   messages.**\

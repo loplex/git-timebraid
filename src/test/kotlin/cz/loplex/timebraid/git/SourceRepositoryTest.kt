@@ -132,4 +132,64 @@ class SourceRepositoryTest {
             SourceRepository.defaultName(Path.of(".")),
         )
     }
+
+    @Test
+    fun `a shallow clone is refused, saying where its history stops and how to complete it`() {
+        val built = TestRepoBuilder.create(tmp.resolve("backend.git"))
+        val first = built.commit("first")
+        val second = built.commit("second", parents = listOf(first))
+        built.branch("main", second)
+        built.close()
+        // What `git clone --depth 1` leaves: the tip is kept and its parents are not. JGit reads
+        // the boundary as a root, so nothing downstream of open would ever see a parent go missing.
+        edit(tmp.resolve("backend.git")) { it.objectDatabase.shallowCommits = setOf(second) }
+
+        val refused = assertThrows<IllegalArgumentException> {
+            SourceRepository.open(tmp.resolve("backend.git"))
+        }
+
+        val message = refused.message!!
+        assertTrue(message.startsWith("'backend' at ${tmp.resolve("backend.git")} "), message)
+        assertTrue(message.contains("shallow clone: its history stops at 1 commit "), message)
+        assertTrue(message.contains("fetch --unshallow"), message)
+    }
+
+    @Test
+    fun `a partial clone is refused, by either mark git leaves on one`() {
+        val marks = mapOf<String, (org.eclipse.jgit.lib.StoredConfig) -> Unit>(
+            "extensions.partialClone" to
+                { it.setString("extensions", null, "partialClone", "origin") },
+            // Not origin: a clone made with `-o upstream` marks the remote of that name.
+            "remote.upstream.promisor" to { it.setBoolean("remote", "upstream", "promisor", true) },
+        )
+        for ((mark, set) in marks) {
+            val dir = tmp.resolve("$mark.git")
+            TestRepoBuilder.create(dir).use { it.branch("main", it.commit("only commit")) }
+            edit(dir) { repo -> set(repo.config); repo.config.save() }
+
+            val refused =
+                assertThrows<IllegalArgumentException>(mark) { SourceRepository.open(dir) }
+
+            assertTrue(refused.message!!.contains("is a partial clone"), refused.message)
+            assertTrue(refused.message!!.contains("without --filter"), refused.message)
+        }
+    }
+
+    @Test
+    fun `a remote that is no promisor leaves a repository complete, and it opens`() {
+        val dir = tmp.resolve("webui.git")
+        TestRepoBuilder.create(dir).use { it.branch("main", it.commit("only commit")) }
+        edit(dir) { repo ->
+            repo.config.setString("remote", "origin", "url", "https://example.com/webui.git")
+            repo.config.setBoolean("remote", "upstream", "promisor", false)
+            repo.config.save()
+        }
+
+        SourceRepository.open(dir).use { assertEquals("webui", it.name) }
+    }
+
+    /** Applies [change] to the repository at [dir] through a handle of its own, closed afterwards. */
+    private fun edit(dir: Path, change: (org.eclipse.jgit.lib.Repository) -> Unit) =
+        org.eclipse.jgit.storage.file.FileRepositoryBuilder().setGitDir(dir.toFile()).build()
+            .use(change)
 }

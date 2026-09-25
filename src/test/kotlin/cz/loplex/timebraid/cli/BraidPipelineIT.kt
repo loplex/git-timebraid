@@ -597,6 +597,33 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `a shallow clone is refused before the output is created, on a dry run as well`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { r -> r.branch("main", r.commit("a1")) }
+        val b2 = TestRepoBuilder.create(tmp.resolve("webui.git")).use { r ->
+            r.commit("b2", parents = listOf(r.commit("b1"))).also { r.branch("main", it) }
+        }
+        org.eclipse.jgit.storage.file.FileRepositoryBuilder()
+            .setGitDir(tmp.resolve("webui.git").toFile()).build()
+            .use { it.objectDatabase.shallowCommits = setOf(b2) }
+        val out = tmp.resolve("out.git")
+
+        // The shallow input comes second on purpose. Given first, it broke the fetch of the input
+        // after it; given second, the run went through and braided the one commit the clone held.
+        for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+            val result = MergeCommand().test(
+                dryRun + listOf("-o", out.toString(), path("backend.git"), path("webui.git"))
+            )
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(
+                result.output.contains("'webui' at ${path("webui.git")} is a shallow clone"),
+                result.output,
+            )
+            assertTrue(!out.toFile().exists(), "the output should not have been created")
+        }
+    }
+
+    @Test
     fun `an input written as its dot-git directory lands under the working tree's name`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             r.branch("main", r.commit("a1", at = at("09:00")))

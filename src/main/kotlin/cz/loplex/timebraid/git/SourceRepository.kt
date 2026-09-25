@@ -176,7 +176,44 @@ class SourceRepository private constructor(
                 builder.findGitDir(dir)
             }
             require(builder.gitDir != null) { "no git repository at $location" }
-            return SourceRepository(name, location, builder.build())
+            val repository = builder.build()
+            try {
+                refuseIncomplete(repository, name, location)
+            } catch (e: IllegalArgumentException) {
+                repository.close()
+                throw e
+            }
+            return SourceRepository(name, location, repository)
+        }
+
+        /**
+         * Refuses a repository holding only part of its history, before anything is read from it.
+         *
+         * A shallow clone stops at commits whose parents it does not have, and JGit reads those as
+         * roots: the graph looks whole, only smaller, and the history left out surfaces once the
+         * output fetches it, as a missing object of whichever input comes next. A partial clone has
+         * every commit but leaves objects out to be fetched on demand, which nothing here does.
+         * Either would be braided as a different history from the one the repository stands for.
+         *
+         * JGit has no notion of a partial clone, so that half reads the config git writes for one:
+         * `extensions.partialClone`, and a remote marked as a promisor.
+         */
+        private fun refuseIncomplete(repository: Repository, name: String, location: Path) {
+            val shallow = repository.objectDatabase.shallowCommits
+            require(shallow.isEmpty()) {
+                val commits = if (shallow.size == 1) "1 commit" else "${shallow.size} commits"
+                "'$name' at $location is a shallow clone: its history stops at $commits whose " +
+                    "parents it does not have. Complete it with: git -C $location fetch --unshallow"
+            }
+            val config = repository.config
+            val partial = config.getString("extensions", null, "partialClone") != null ||
+                config.getSubsections("remote").any { remote ->
+                    config.getBoolean("remote", remote, "promisor", false)
+                }
+            require(!partial) {
+                "'$name' at $location is a partial clone, which leaves out objects to fetch on " +
+                    "demand. Clone it again without --filter"
+            }
         }
 
         /**
