@@ -168,9 +168,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         val specs = inputs.map(::parseRepoSpec)
         val names = specs.map { it.name }
-        if (names.toSet().size != names.size) {
-            throw UsageError("two inputs resolve to the same repository name: ${names.sorted()}")
-        }
+        if (names.toSet().size != names.size) throw duplicateNames(specs)
         rootRepo?.let { root ->
             if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
         }
@@ -226,6 +224,31 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
         report(result)
+    }
+
+    /**
+     * Inputs sharing a name, naming every location that derived it.
+     *
+     * The name alone leaves the reader to work out which inputs derived it, and a name derived from
+     * the last segment of a location is one nobody typed. Naming an input is how the clash is
+     * settled, so the refusal says that as well.
+     */
+    private fun duplicateNames(specs: List<RepoSpec>): UsageError {
+        val clashes = specs.groupBy { it.name }.filterValues { it.size > 1 }.toSortedMap()
+        val described = clashes.map { (name, sharing) ->
+            val where = sharing.map { it.location }
+            val listed = where.dropLast(1).joinToString(", ") + " and " + where.last()
+            // Spelled out as far as the refusals around it spell things out, and a digit past that.
+            val count = when (sharing.size) {
+                2 -> "two"
+                3 -> "three"
+                else -> sharing.size.toString()
+            }
+            "$count inputs resolve to the same repository name '$name': $listed"
+        }
+        return UsageError(
+            described.joinToString("; ") + " -- give one of them a name with <repo>::<name>"
+        )
     }
 
     /**

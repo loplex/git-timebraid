@@ -108,6 +108,9 @@ Five changes alter what a command line written for 0.1.0 does:
   The reading is unchanged, and which one was meant is still not guessed at.\
   The run fails on the location either way, so the refusal says what it cut off.
 
+- **A repository name two inputs derive is refused naming every location that derives it.**\
+  The refusal listed every input's name, the repeated one among them, and located none of them.
+
 - **A logged subprocess names the repository it ran in.**\
   `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same
   way.\
