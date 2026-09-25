@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Five changes alter what a command line written for 0.1.0 does:
+Six changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -37,6 +37,9 @@ Five changes alter what a command line written for 0.1.0 does:
 - `GIT_DIR` and its kin no longer decide which repository an input is read from.\
   0.1.0 read an input named by its working tree, or by a path holding no repository, from the one
   `GIT_DIR` named.
+
+- `--keep-remotes` beside a `-b` that leaves the mainline out mirrors each input's mainline too.\
+  0.1.0 wrote a remote-tracking ref only for the branches `-b` took, beside every tag.
 
 ### Fixed
 
@@ -110,6 +113,12 @@ Five changes alter what a command line written for 0.1.0 does:
 
 - **A repository name two inputs derive is refused naming every location that derives it.**\
   The refusal listed every input's name, the repeated one among them, and located none of them.
+
+- **`--keep-remotes` mirrors each input's mainline whether `-b` took it or not.**\
+  A run narrowed away from the mainline, `-b feature` for one, left its original commits in the
+  output with nothing naming them.\
+  They were fetched and rewritten under the output's own branch, and `git gc` pruned them once
+  they were older than its grace period for unreachable objects, two weeks by default.
 
 - **A logged subprocess names the repository it ran in.**\
   `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same

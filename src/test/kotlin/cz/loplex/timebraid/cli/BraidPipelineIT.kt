@@ -162,6 +162,34 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `--keep-remotes mirrors a mainline -b never took`() {
+        val ids = reference()
+        val out = tmp.resolve("narrowed.git")
+
+        // Only backend's feature is selected, so neither mainline is among the branches carried
+        // over. Both are read regardless — that is what the braid is built from — so their commits
+        // are in the output, and without a mirrored ref they would be there unreachable.
+        braid(
+            "-o", out.toString(), "--keep-remotes", "-b", "feature",
+            path("backend.git"), path("webui.git"),
+        )
+
+        GitCli.requireGit()
+        assertEquals(
+            listOf(
+                "refs/remotes/backend/feature",
+                "refs/remotes/backend/main",
+                "refs/remotes/backend/tags/v1.0",
+                "refs/remotes/webui/main",
+                "refs/remotes/webui/tags/v2.0",
+            ),
+            GitCli.run(out, "for-each-ref", "--format=%(refname)", "refs/remotes").lines().sorted(),
+        )
+        assertEquals(ids.getValue("a3").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/main"))
+        assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/main"))
+    }
+
+    @Test
     fun `-b keeps the objects of an unselected branch out of the output entirely`() {
         val ids = HashMap<String, ObjectId>()
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->

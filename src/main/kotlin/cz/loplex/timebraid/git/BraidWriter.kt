@@ -51,7 +51,7 @@ class BraidWriter(
     private val inputs: BraidInputs,
     private val plan: MergePlan,
     private val options: WriteOptions = WriteOptions(),
-    /** Whether to mirror the branches `-b` took and the tags — see [mirrorInputs]. */
+    /** Whether to mirror the refs carried over and each input's mainline — see [mirrorInputs]. */
     private val mirrorRemotes: Boolean = false,
 ) {
 
@@ -255,7 +255,8 @@ class BraidWriter(
 
     /**
      * Adds a ref under `refs/remotes/<name>/` for every branch `-b` took and every tag of every
-     * input, each pointing at that input's *original* commit.
+     * input, and for each input's mainline whether `-b` took it or not, each pointing at that
+     * input's *original* commit.
      *
      * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
      * across everything the refs that were read reach, commits included, with their shas intact —
@@ -277,13 +278,16 @@ class BraidWriter(
      *
      * The mirror covers the refs that were read, so `-b` narrows it the same way it narrows the
      * output, and for the same reason: the fetch was narrowed to those refs too, and a ref pointing
-     * at an object that is not there is a broken repository.
+     * at an object that is not there is a broken repository. The mainline is among them whatever
+     * `-b` says, since the braid is built along it: its commits are fetched and rewritten either
+     * way, and without a mirror of its own a run that never selected it would leave its originals in
+     * the output with nothing naming them.
      *
      * @return how many remote-tracking refs were added.
      */
     private fun mirrorInputs(refs: MutableMap<String, ObjectId>): Int {
         var added = 0
-        for (input in inputs.sources) {
+        for ((input, head) in inputs.sources.zip(inputs.heads)) {
             val prefix = Constants.R_REMOTES + input.source.name + "/"
             for (branch in input.branches) {
                 refs[prefix + branch.name] = originalOf(branch.commit).id
@@ -293,6 +297,9 @@ class BraidWriter(
                 refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
                 added++
             }
+            // Counted only where it is new: a selection that took the mainline wrote it above.
+            val mainline = prefix + inputs.mainlineBranch
+            if (refs.putIfAbsent(mainline, originalOf(head).id) == null) added++
         }
         return added
     }
