@@ -19,8 +19,9 @@ get a pass over the whole graph. These examples contrast the two ends.
 git-ignored, absent from a fresh clone, and rebuilt by the commands below. Nothing is lost by
 deleting them.
 
-Every timestamp, name and address the generator uses is pinned, so a rebuild is byte-identical: the
-commit hashes quoted throughout these examples can be checked against your own run.
+Every timestamp, name and address the generator uses is pinned, and it reads neither your global
+nor your system git configuration, so a rebuild writes the same commits, hash for hash: the commit
+hashes quoted throughout these examples can be checked against your own run.
 
 ## Layout, per example
 

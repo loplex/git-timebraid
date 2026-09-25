@@ -4,8 +4,8 @@
 # Timestamps map directly to the "@n" notation the example READMEs use for a commit's ordering
 # timestamp: offset n -> BASE + n hours, so relative order and gaps are preserved and stay
 # readable in `git log`. Every date, name and address is pinned, so the repositories this builds
-# are byte-identical on every machine -- which is why the commit hashes quoted in those READMEs
-# can be checked against a fresh run.
+# hold the same commits, hash for hash, on every machine -- which is why the commit hashes quoted
+# in those READMEs can be checked against a fresh run.
 #
 # The repositories it writes are generated output and are not tracked by git; rerun freely.
 set -euo pipefail
@@ -13,6 +13,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE=1700000000 # 2023-11-14 22:13:20 UTC, arbitrary fixed reference
 HOUR=3600
+
+# Pinning the dates and the idents is not enough while the machine's own configuration applies: a
+# commit-msg hook under a global core.hooksPath rewrites every message, commit.gpgsign signs every
+# commit, and either changes every hash. So neither the global nor the system configuration is
+# read (GIT_CONFIG_GLOBAL needs git 2.32 or later), and each repository sets its own ident below.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
+# The environment can bring the same settings back, and a different repository with them:
+# GIT_CONFIG_PARAMETERS, which `git -c` hands down, and GIT_CONFIG_COUNT carry configuration,
+# GIT_DIR sends every write into the repository it names, and GIT_OBJECT_DIRECTORY every object.
+# `git rev-parse --local-env-vars` lists every variable git treats as local to a repository. Two
+# that `git init` reads besides can change every hash as well: GIT_TEMPLATE_DIR, for the hooks it
+# copies in, and GIT_DEFAULT_HASH, for the object format.
+unset $(git rev-parse --local-env-vars) GIT_TEMPLATE_DIR GIT_DEFAULT_HASH
+
+# The environment outranks any configuration, and GIT_AUTHOR_NAME or GIT_COMMITTER_EMAIL exported
+# by the caller would change every commit too, so the same ident is set there as well.
+export GIT_AUTHOR_NAME="Timebraid Example" GIT_AUTHOR_EMAIL="example@timebraid.test"
+export GIT_COMMITTER_NAME="Timebraid Example" GIT_COMMITTER_EMAIL="example@timebraid.test"
 
 ts() { echo $((BASE + $1 * HOUR)); }
 
