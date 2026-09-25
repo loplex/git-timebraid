@@ -37,6 +37,7 @@ import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.writeText
 
 /**
@@ -190,6 +191,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             // After the inputs, so that one of them being the output is said as that.
             TargetRepository.refusal(out, force, bare)?.let { throw CliktError(it) }
         }
+        for ((spec, raw) in specs.zip(inputs)) checkSplit(spec, raw)
 
         val request = MergeRequest(
             inputs = specs.map { spec ->
@@ -224,6 +226,37 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
         report(result)
+    }
+
+    /**
+     * A location that is not there, reported with the suffix that was read off its end.
+     *
+     * `<location>[::<name>][=<subdir>]` is read by cutting each suffix off the end, so a location
+     * whose own last segment ends in `::<word>` or `=<word>` is read as a shorter location and a name
+     * or a subdirectory. When nothing is at the shorter location either, opening it fails with "no
+     * git repository at <the location, cut short>", which never mentions the part that was taken.
+     * The run is going to fail whichever reading was meant, so the only question is whether the
+     * failure says what was cut, and it costs nothing to say it here.
+     *
+     * What is on disk never changes the reading — this only refuses to go on.
+     */
+    private fun checkSplit(spec: RepoSpec, raw: String) {
+        if (spec.isRemote || spec.location == raw) return
+        val location = try {
+            Path.of(spec.location)
+        } catch (e: InvalidPathException) {
+            return
+        }
+        if (location.exists()) return
+        val cut = raw.substring(spec.location.length)
+        val read = listOfNotNull(
+            "name".takeIf { cut.startsWith("::") },
+            "subdirectory".takeIf { spec.subdir != null },
+        )
+        throw UsageError(
+            "there is nothing at '${spec.location}', which is '$raw' with '$cut' read off its end " +
+                "as the ${read.joinToString(" and ")}"
+        )
     }
 
     private fun report(result: MergeResult) {

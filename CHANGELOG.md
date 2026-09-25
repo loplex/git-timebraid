@@ -102,6 +102,12 @@ Five changes alter what a command line written for 0.1.0 does:
   input as well: nothing overrode them, so they read its refs or its objects from another
   repository.
 
+- **A missing location now names the suffix read off its end.**\
+  `/some/path::libs` used to report only `/some/path` when nothing is there, and so did
+  `/some/path=libs`.\
+  The reading is unchanged, and which one was meant is still not guessed at.\
+  The run fails on the location either way, so the refusal says what it cut off.
+
 - **A logged subprocess names the repository it ran in.**\
   `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same
   way.\

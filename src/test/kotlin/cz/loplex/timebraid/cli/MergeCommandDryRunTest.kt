@@ -467,6 +467,19 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a location that is not there names the suffix read off its end`() {
+        // Each suffix is read before a bare word, so a missing location written with one is
+        // reported cut short. Nothing is at either spelling, and the refusal says what was taken.
+        for ((suffix, read) in listOf("::libs" to "the name", "=libs" to "the subdirectory")) {
+            val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/path$suffix"))
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("nothing at '/nonexistent/path'"), result.output)
+            assertTrue(result.output.contains("'$suffix' read off its end as $read"), result.output)
+        }
+    }
+
+    @Test
     fun `a file scheme over a Windows path is still named by its last segment`() {
         // Concatenating `file://` with an absolute path is how a caller spells a local repository as
         // a URL, and on Windows the result carries a drive letter and backslashes. The name is the
