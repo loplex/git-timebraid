@@ -77,8 +77,10 @@ class MergeRunner(
 
     fun run(): MergeResult {
         val locations = resolveInputs()
-        val sources = locations.map { SourceRepository.open(it.path, it.name) }
+        // Opened inside the try, so that an input refused on opening closes the ones before it.
+        val sources = ArrayList<SourceRepository>(locations.size)
         try {
+            locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
             progress.step("reading ${sources.size} repositories")
             val braid = CommitGraphReader.read(
                 repositories = sources,
