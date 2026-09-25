@@ -398,6 +398,28 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `two inputs' tags meeting under a prefix without {repo} are refused, not written over`() {
+        corpus()
+
+        // Apart, the plain names are what an empty prefix asks for.
+        val plain = tmp.resolve("plain.git")
+        braid(plain, options = WriteOptions(tagPrefix = ""))
+        SourceRepository.open(plain).use { repo ->
+            assertEquals(listOf("v1.0", "v2.0"), repo.tags().map { it.name }.sorted())
+        }
+
+        // Meeting, neither input's v1.0 may quietly win the name.
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { it.lightweightTag("v1.0", original.getValue("b1")) }
+        val error = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("collided.git"), options = WriteOptions(tagPrefix = ""))
+        }
+        val message = error.message!!
+        assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
+        assertTrue(message.contains("refs/tags/v1.0"), message)
+        assertTrue(message.contains("--tag-prefix"), message)
+    }
+
+    @Test
     fun `refusing to overwrite an existing output, unless forced`() {
         corpus()
         val out = tmp.resolve("merged.git")

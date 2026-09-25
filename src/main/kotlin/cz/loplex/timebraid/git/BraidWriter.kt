@@ -212,7 +212,11 @@ class BraidWriter(
      * one branch of that name, at the braid's tip. Every other branch keeps its own name where that
      * name belongs to a single repository, and is qualified with the repository name where two
      * inputs happen to have used it. Tags carry `--tag-prefix`, `{repo}/` by default, because
-     * release names collide across repositories as a matter of course rather than by accident.
+     * release names collide across repositories as a matter of course rather than by accident. A
+     * prefix that does not keep `{repo}` apart from the tag name lets two inputs' tags meet on one
+     * name, and that is refused rather than resolved: the two point at different commits, so
+     * keeping either would publish one input's release under a name the other input's reader
+     * would look up.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -231,6 +235,7 @@ class BraidWriter(
         }
 
         var tags = 0
+        val tagOwner = HashMap<String, String>()
         for (input in inputs.sources) {
             for (branch in input.branches) {
                 if (branch.name == inputs.mainlineBranch) continue
@@ -242,6 +247,13 @@ class BraidWriter(
             }
             for (tag in input.tags) {
                 val name = options.tagPrefix.replace("{repo}", input.source.name) + tag.name
+                tagOwner.put(name, input.source.name)?.let { first ->
+                    throw IllegalArgumentException(
+                        "'$first' and '${input.source.name}' would both write '${Constants.R_TAGS}$name'; " +
+                            "give --tag-prefix a template that keeps {repo} apart from the name, " +
+                            "as {repo}/ does"
+                    )
+                }
                 refs[Constants.R_TAGS + name] = tagTarget(name, tag)
                 tags++
             }
