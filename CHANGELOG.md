@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Eight changes alter what a command line written for 0.1.0 does:
+Nine changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -40,6 +40,11 @@ Eight changes alter what a command line written for 0.1.0 does:
 
 - `--keep-remotes` refuses to mirror both a branch `tags/<name>` that `-b` took and a tag `<name>` of one input.\
   0.1.0 mirrored both to one name, and kept the tag's.
+
+- A `--tag-prefix` that does not keep `{repo}` apart from the tag name, `''` and any without `{repo}` among them,
+  refuses two inputs whose tags meet on a name.\
+  0.1.0 kept the tag of whichever input came last;
+  a template that keeps `{repo}` apart from the tag name, as `{repo}/` does, keeps both.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -133,6 +138,13 @@ Eight changes alter what a command line written for 0.1.0 does:
 - **A logged subprocess names the repository it ran in.**\
   `git fetch --prune origin` left out which clone it refreshed, and a failure reported it the same way.\
   Both are written with the `-C` the command would need to run anywhere else.
+
+- **Two inputs' tags meeting on one name are refused, not resolved by whichever came last.**\
+  A `--tag-prefix` that does not keep `{repo}` apart from the tag name, `''` and any without `{repo}` among them,
+  let one tag name from two inputs meet.\
+  The output kept the tag of the input given last, and the closing report counted both.\
+  The refusal names both inputs and the tag;
+  a template that keeps `{repo}` apart from the tag name, as `{repo}/` does, keeps both.
 
 ## [0.1.0] - 2026-09-08
 
