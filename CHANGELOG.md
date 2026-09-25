@@ -13,10 +13,13 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Four changes alter what a command line written for 0.1.0 does:
+Six changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
+
+- A shallow or a partial clone is refused as an input, on a dry run too.\
+  0.1.0 planned either on a dry run, and braided a shallow one given last, or alone, as the part of its history it held.
 
 - An input that is the output, as in `-o merged.git merged.git …`, is refused,
   and so is an `-o x/.git` inside a bare input `x`.\
@@ -28,6 +31,9 @@ Four changes alter what a command line written for 0.1.0 does:
   0.1.0's dry run passed it, and the run stopped on it only once the inputs were read and the braid planned.\
   Beside a remote input, one that could not be created stopped a dry run and a run alike,
   earlier, on the directory for the clones.
+
+- `GIT_DIR` and its kin no longer decide which repository an input is read from.\
+  0.1.0 read an input named by its working tree, or by a path holding no repository, from the one `GIT_DIR` named.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -57,6 +63,13 @@ Four changes alter what a command line written for 0.1.0 does:
   Six of them wrote an em dash.\
   A Windows console's code page cannot encode it, so they write `--` now.
 
+- **Shallow and partial clones are refused, as the README said they were.**\
+  0.1.0 planned either without complaint.\
+  A shallow input then broke the fetch of another input,
+  or, given after it, was braided as the part of its history it held; a partial clone broke the fetch.\
+  Either could leave a half-written output directory behind.\
+  An input is now refused when it is opened, before the output is created, and the refusal says how to complete it.
+
 - **An `-o` that cannot be created, and a `--plan-out` that cannot be written, are reported as messages.**\
   In 0.1.0 either ended in a Java stack trace,
   the second only once the output was written, so a run that had written its braid still exited 1.\
@@ -76,6 +89,12 @@ Four changes alter what a command line written for 0.1.0 does:
 
 - **Two inputs that both describe a submodule with a blank name are refused with advice that fits.**\
   0.1.0 said to give one of them another subdirectory, which does not part them: a blank name is never prefixed.
+
+- **The environment no longer stands in for an input repository.**\
+  `GIT_DIR` replaced every input that was not itself a git directory, a working tree included.\
+  A path that was no repository at all passed the `no git repository at` check because of it.\
+  `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES` reached a bare input as well:
+  nothing overrode them, so they read its refs or its objects from another repository.
 
 ## [0.1.0] - 2026-09-08
 

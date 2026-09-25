@@ -375,7 +375,7 @@ What changed between releases is in [CHANGELOG.md](CHANGELOG.md).
 - **GPG signatures do not survive.** A signature covers the parent list, so rewriting parents invalidates it.\
   Signatures are dropped rather than kept in an invalid state.
 - **Inputs must be complete clones.**
-  Shallow clones and partial clones are rejected — the tool needs the entire commit graph.
+  Shallow clones and partial clones are rejected — the tool needs every commit and every object behind it.
 - **Subdirectory names must not collide** with entries of the `--root-repo` at its top level.
 - **The whole commit graph is held in memory.** Hundreds of thousands of commits will want a larger heap.\
   This is a batch tool run once per merge, not a daemon.

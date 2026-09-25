@@ -72,7 +72,7 @@ class CommitGraphBuilderTest {
         val failure = assertThrows<IllegalStateException> { builder.build() }
 
         assertTrue(failure.message!!.contains("A/a1"))
-        assertTrue(failure.message!!.contains("shallow"))
+        assertTrue(failure.message!!.contains("the input history is incomplete"))
     }
 
     @Test
