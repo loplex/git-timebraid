@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     What both distribution archives carry regardless of whether a JVM is bundled: the two launchers,
-    the files that have to travel with the program for legal reasons, and CHANGELOG.md, which
-    README.md links to.
+    the files that have to travel with the program for legal reasons, and the documents README.md
+    links to, so that its links resolve in the unpacked archive as they do in the repository.
 
     Kept apart from the descriptors that include it so the portable and the platform-specific archive
     cannot drift into laying these out differently — the launcher's mode in particular, which is what
@@ -40,6 +40,18 @@
                 <include>LICENSE</include>
                 <include>NOTICE</include>
             </includes>
+            <fileMode>0644</fileMode>
+        </fileSet>
+        <!-- The examples' input/ and output*/ are what build-inputs.sh and a replay leave behind in a
+             working tree; they are git-ignored, and an archive built from that tree would ship them. -->
+        <fileSet>
+            <directory>${project.basedir}/doc</directory>
+            <outputDirectory>doc</outputDirectory>
+            <excludes>
+                <exclude>examples/*/input/**</exclude>
+                <exclude>examples/*/output/**</exclude>
+                <exclude>examples/*/output-*/**</exclude>
+            </excludes>
             <fileMode>0644</fileMode>
         </fileSet>
     </fileSets>

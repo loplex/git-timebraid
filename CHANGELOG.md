@@ -198,6 +198,9 @@ Seventeen changes alter what a command line written for 0.1.0 does:
   The branch was written over the braid's, so the output's mainline could point at backend's `x`.\
   The refusal names the braid and the input, and says to leave that branch out with `-b`.
 
+- **The archives carry the documents README.md links to.**\
+  Its links into `doc/` led nowhere once an archive was unpacked.
+
 - **`--interleave-ref` brings the whole ancestry of what it names into scope.**\
   A ref sitting on a mainline was skipped whole, so naming a mainline branch, or a release tag on
   one, did nothing.\

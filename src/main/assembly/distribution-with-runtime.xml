@@ -8,6 +8,7 @@
             bin/git-timebraid.bat
             lib/git-timebraid.jar
             runtime/                 the jlink image; bin/java is what the launcher runs
+            doc/
             README.md CHANGELOG.md LICENSE NOTICE
 
     Platform-specific by construction, which is why the name says which platform it is for.
