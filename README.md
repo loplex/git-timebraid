@@ -302,8 +302,9 @@ git-timebraid \
 ```
 git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
 
-  -o, --output DIR              output repository (must not exist unless --force)
-      --force                   write into an existing output directory (deletes nothing)
+  -o, --output DIR              output repository (must not exist, or must be an empty
+                                directory; --force also takes a non-empty one)
+      --force                   write into a non-empty output directory (deletes nothing)
       --root-repo REPO          repository whose content lands at the repository root
       --mainline-branch NAME    branch treated as the mainline in every input
                                 (default: first of main/master/develop present in all)

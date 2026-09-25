@@ -56,10 +56,13 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     private val output by option("-o", "--output").path()
-        .help("Output repository (must not exist unless --force).")
+        .help(
+            "Output repository (must not exist, or must be an empty directory; --force also takes a " +
+                "non-empty one).",
+        )
 
     private val force by option("--force").flag()
-        .help("Write into an existing output directory instead of refusing it (deletes nothing).")
+        .help("Write into a non-empty output directory instead of refusing it (deletes nothing).")
 
     private val rootRepo by option("--root-repo")
         .help(
