@@ -133,13 +133,20 @@ class MergeCommandDryRunTest {
     @Test
     fun `a separator that belongs to the location is left there`() {
         // Both suffixes are recognised only before a bare word, so a path that happens to contain
-        // one is not split behind the user's back. The segment carrying it is what the report is
-        // read for: the rest of the location reaches the message as a path, and its separators are
-        // then the platform's rather than the ones written here.
+        // one is not split behind the user's back. Refused as a location: one that is not there,
+        // or on Windows, whose paths cannot hold a ':', one that is no path at all. A refusal of
+        // a suffix quotes the argument too, so the segment turning up in the message
+        // would not tell one reading from another on its own. The segment is still what the report
+        // is read for: the rest of the location reaches the message as a path, and its separators
+        // are then the platform's rather than the ones written here.
         for (segment in listOf("a=b", "a::b")) {
             val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/$segment/c"))
 
             assertEquals(1, result.statusCode, result.output)
+            assertTrue(
+                result.output.contains("no git repository") || result.output.contains("is not a usable path"),
+                result.output,
+            )
             assertTrue(result.output.contains(segment), result.output)
         }
     }
