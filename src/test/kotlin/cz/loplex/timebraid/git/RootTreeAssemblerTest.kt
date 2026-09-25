@@ -69,8 +69,9 @@ class RootTreeAssemblerTest {
 
     @Test
     fun `entries come out in git's order, where a directory sorts as if it ended in a slash`() {
-        // The pair that catches a naive sort: '.' (0x2E) precedes '/' (0x2F), so the file wins,
-        // but a plain name comparison would put the directory first.
+        // The pairs that catch a naive sort: '-' (0x2D) and '.' (0x2E) both precede '/' (0x2F), so
+        // `a-` and `a.txt` each come before the directory `a`, where a plain name comparison would
+        // put the directory first.
         val tree = assembler.assemble(
             rootEntries = listOf(
                 TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
@@ -85,7 +86,12 @@ class RootTreeAssemblerTest {
     }
 
     @Test
-    fun `a file and a directory of the same name sort file first`() {
+    fun `a shorter name sorts before one that extends it`() {
+        // Not the slash rule: `x` runs out before `x-dir/` does, so it wins on length whatever the
+        // directory's key ends in. The pairs that turn on the slash are `a-` and `a.txt` against the
+        // directory `a`, above. A file and a directory of one name never reach the sort together:
+        // the assembler keys entries by name, so such a pair is refused as a collision, or, for a
+        // root `.gitmodules`, replaced by the one the braid writes.
         val tree = assembler.assemble(
             rootEntries = listOf(TreeEntry("x", FileMode.REGULAR_FILE, blob("x"))),
             subdirEntries = listOf(TreeEntry("x-dir", FileMode.TREE, emptyTree())),
