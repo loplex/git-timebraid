@@ -270,7 +270,10 @@ class BraidWriter(
      * pointing at it — present in the output, but unreachable, and pruned by the first `git gc`
      * once git's grace period for unreachable objects, two weeks by default, has passed. They go
      * under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
-     * input do not land on the same name.
+     * input do not land on the same name. That keeps the usual pair apart, and not every pair git
+     * accepts: a branch `-b` took that is literally named `tags/v1.0` still meets the tag `v1.0`
+     * here, and that is refused, since either write winning would leave the other ref's originals
+     * with no mirror.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
      * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its
@@ -294,7 +297,14 @@ class BraidWriter(
                 added++
             }
             for (tag in input.tags) {
-                refs[prefix + "tags/" + tag.name] = originalOf(tag.commit).id
+                val name = prefix + "tags/" + tag.name
+                // A branch literally named `tags/v1.0` mirrors to the name the tag `v1.0` does.
+                require(name !in refs) {
+                    "the branch 'tags/${tag.name}' and the tag '${tag.name}' of '${input.source.name}' " +
+                        "would both be mirrored as '$name'; rename one of them in the input, leave " +
+                        "the branch out with -b, or drop --keep-remotes"
+                }
+                refs[name] = originalOf(tag.commit).id
                 added++
             }
             // Counted only where it is new: a selection that took the mainline wrote it above.
