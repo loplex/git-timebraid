@@ -319,9 +319,9 @@ git-timebraid -o <dir> [OPTIONS] <repo>[::<name>][=<subdir>]...
       --subject-prefix FMT      default "{subdir}: "
       --[no-]provenance         provenance trailer (default: on)
       --bare / --no-bare        default: bare
-      --keep-remotes            add inputs as remotes, their branches at their original
-                                commits under refs/remotes/<name>/*, each mainline among
-                                them whether -b took it or not
+      --keep-remotes            add inputs as remotes, their branches and (under tags/) their
+                                tags at their original commits under refs/remotes/<name>/*,
+                                each mainline among the branches whether -b took it or not
       --dry-run                 compute and summarize the plan, write no output
       --plan-out FILE           dump the deterministic plan as text
   -q, --quiet / -v, --verbose
