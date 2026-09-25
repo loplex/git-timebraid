@@ -7,6 +7,7 @@
             bin/git-timebraid.bat
             lib/git-timebraid.jar    the program; its manifest names the jars beside it
             lib/*.jar                every runtime dependency, unmodified
+            doc/                     what README.md links to
             doc/legal/               the license texts and the library list NOTICE points at
             README.md CHANGELOG.md LICENSE NOTICE
 
