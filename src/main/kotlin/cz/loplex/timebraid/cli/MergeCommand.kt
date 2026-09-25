@@ -124,7 +124,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     private val keepRemotes by option("--keep-remotes").flag()
         .help(
             "Add each input as a remote of the output, its branches under refs/remotes/<name>/* " +
-                "pointing at the original commits, its mainline among them whether -b took it or not."
+                "and its tags under refs/remotes/<name>/tags/*, pointing at the original commits, its " +
+                "mainline among the branches whether -b took it or not."
         )
 
     private val dryRun by option("--dry-run").flag()
