@@ -236,7 +236,8 @@ class TargetRepository private constructor(
          *
          * Without [force] the location must not exist, or must be an empty directory: overwriting
          * refs in a repository somebody else is using is not something to do by accident. Nothing is
-         * ever deleted here — [force] only permits writing *into* what is already there.
+         * ever deleted here — [force] only permits writing *into* what is already there, so a
+         * location that exists and is not a directory is refused with or without it.
          *
          * When [bare] is `false`, [location] becomes the working tree and its `.git` the git
          * directory; the working tree is left empty here — the caller checks the mainline out through
@@ -251,6 +252,7 @@ class TargetRepository private constructor(
             val gitDir = if (bare) location.toFile() else location.resolve(Constants.DOT_GIT).toFile()
             val existingRepository = RepositoryCache.FileKey.isGitRepository(gitDir, FS.DETECTED)
             if (location.toFile().exists()) {
+                require(location.toFile().isDirectory) { "$location exists and is not a directory" }
                 val occupied = existingRepository || (location.toFile().list()?.isNotEmpty() ?: false)
                 require(!occupied || force) {
                     "$location already exists and is not empty; pass --force to write into it"

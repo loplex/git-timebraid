@@ -427,6 +427,30 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `an output location that is a file is refused, forced or not`() {
+        val out = tmp.resolve("merged.git")
+        out.toFile().writeText("not a repository")
+
+        for (force in listOf(false, true)) {
+            val error = assertThrows<IllegalArgumentException> {
+                TargetRepository.create(out, "main", force = force).close()
+            }
+            assertTrue(error.message!!.contains("$out exists and is not a directory"), error.message)
+        }
+        assertEquals("not a repository", out.toFile().readText())
+    }
+
+    @Test
+    fun `an empty directory is accepted as the output without --force`() {
+        val out = tmp.resolve("merged.git")
+        assertTrue(out.toFile().mkdir())
+
+        TargetRepository.create(out, "main").close()
+
+        assertTrue(out.resolve("HEAD").toFile().isFile, "no repository was created in the directory")
+    }
+
+    @Test
     fun `git itself accepts the result`() {
         corpus()
         val out = tmp.resolve("merged.git")
