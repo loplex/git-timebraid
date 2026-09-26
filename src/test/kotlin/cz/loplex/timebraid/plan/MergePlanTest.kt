@@ -103,6 +103,21 @@ class MergePlanTest {
     }
 
     @Test
+    fun `rejects git's own directory as a subdirectory, and only that name`() {
+        val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
+
+        for (subdir in listOf(".git", ".GIT", ".Git")) {
+            assertThrows<IllegalArgumentException>("'$subdir' should not be a usable subdirectory") {
+                spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(subdir, "B"))
+            }
+        }
+        for (subdir in listOf("git", ".github", ".gitx")) {
+            val plan = spec.graph.braid(spec.commits("a1", "b1")).plan(spec.subdirs(subdir, "B"))
+            assertEquals(subdir, plan.subdirOf(spec.commit("a1")))
+        }
+    }
+
+    @Test
     fun `rejects a set of subdirectories that does not cover the repositories`() {
         val spec = GraphSpec.parse("A: a1@10 | B: b1@20")
 

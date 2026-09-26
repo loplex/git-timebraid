@@ -225,7 +225,7 @@ class MergePlan private constructor(
             val seen = HashSet<String>()
             for ((source, subdir) in subdirs) {
                 if (subdir == null) continue
-                require(subdir.isNotBlank() && !subdir.contains('/') && subdir != "." && subdir != "..") {
+                require(isUsableSubdir(subdir)) {
                     "'$subdir' is not a usable subdirectory name for $source"
                 }
                 require(seen.add(subdir)) {
@@ -233,5 +233,21 @@ class MergePlan private constructor(
                 }
             }
         }
+
+        /**
+         * Whether [subdir] is a name the output can hold: a single directory name git will both
+         * store and check out.
+         *
+         * `.git` is refused, and not only as a matter of taste: a tree carrying an entry of that
+         * name is one git declines to check out and `git fsck` reports, so the entry would be
+         * written and then be unusable. The exotic spellings git also guards against — `.git.`,
+         * `git~1`, unicode look-alikes — are not covered here.
+         */
+        private fun isUsableSubdir(subdir: String): Boolean =
+            subdir.isNotBlank() &&
+                !subdir.contains('/') &&
+                subdir != "." &&
+                subdir != ".." &&
+                !subdir.equals(".git", ignoreCase = true)
     }
 }
