@@ -13,7 +13,10 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-One change alters what a command line written for 0.1.0 does:
+Two changes alter what a command line written for 0.1.0 does:
+
+- `.git` as a destination, `repo=.git`, is refused.\
+  0.1.0 accepted it, and wrote a tree that git will not check out.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -28,6 +31,12 @@ One change alters what a command line written for 0.1.0 does:
   and every jar keeps the license files its project shipped in it.\
   `doc/legal/` lists each library with the license it is used under, beside the texts of those licenses;
   NOTICE points there.
+
+### Fixed
+
+- **`.git` is refused as a destination.**\
+  0.1.0 accepted `repo=.git`, and wrote a tree that git will not check out and `git fsck` warns about.\
+  Still not covered: `.git.`, `git~1`, and the unicode look-alikes git also guards against.
 
 ## [0.1.0] - 2026-09-08
 
