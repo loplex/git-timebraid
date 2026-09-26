@@ -45,6 +45,12 @@ Five changes alter what a command line written for 0.1.0 does:
   `--force` or without.\
   The refusal names the path, and the file is left as it was.
 
+- **A mistyped option is refused with the option probably meant, and `--` ends the options.**\
+  0.1.0 answered `--dryrun` with "put options before the input repositories", though an option may
+  stand anywhere, and refused an input opening with `-` even after `--`.\
+  The refusal now reads "no such option --dryrun. Did you mean --dry-run?", and in `-- -dash` the
+  `-dash` is an input.
+
 - **`.git` is refused as a destination.**\
   0.1.0 accepted `repo=.git`, and wrote a tree that git will not check out and `git fsck` warns
   about.\

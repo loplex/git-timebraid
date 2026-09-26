@@ -74,6 +74,61 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `an unknown option is refused wherever it stands, with a suggestion`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run",
+                tmp.resolve("backend.git").toString(),
+                "--dryrun",
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no such option --dryrun"), result.output)
+        assertTrue(result.output.contains("Did you mean --dry-run?"), result.output)
+
+        // A short one too, which is no more an input than a long one is.
+        val short = MergeCommand().test(listOf("--dry-run", tmp.resolve("backend.git").toString(), "-x"))
+        assertEquals(1, short.statusCode, short.output)
+        assertTrue(short.output.contains("no such option -x"), short.output)
+    }
+
+    @Test
+    fun `a mistyped off switch is suggested as itself`() {
+        // An off switch is a flag's secondary name, and clikt suggests from those as well: the
+        // switch meant comes first, ahead of the flag it turns off.
+        val result = MergeCommand().test(listOf("--dry-run", "--no-bar", "backend.git"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no such option --no-bar"), result.output)
+        assertTrue(result.output.contains("(Possible options: --no-bare,"), result.output)
+    }
+
+    @Test
+    fun `an input after -- is read as an input, a leading dash and all`() {
+        // No repository is at -dash, so the run is refused; what matters is what for.
+        val after = MergeCommand().test(listOf("--dry-run", "--", "-dash"))
+        assertEquals(1, after.statusCode, after.output)
+        assertTrue(after.output.contains("-dash"), after.output)
+        assertTrue("option" !in after.output, after.output)
+
+        val before = MergeCommand().test(listOf("--dry-run", "--dryrun", "--", "-dash"))
+        assertEquals(1, before.statusCode, before.output)
+        assertTrue(before.output.contains("no such option --dryrun"), before.output)
+    }
+
+    @Test
+    fun `a -- with no input after it still asks for one`() {
+        val result = MergeCommand().test(listOf("--dry-run", "--"))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("missing argument <repo>"), result.output)
+    }
+
+    @Test
     fun `-o writes the output repository and reports what it wrote`() {
         corpus()
         val out = tmp.resolve("merged.git")
