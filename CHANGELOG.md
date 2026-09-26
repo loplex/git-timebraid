@@ -34,6 +34,10 @@ Two changes alter what a command line written for 0.1.0 does:
 
 ### Fixed
 
+- **An `-o` that exists and is not a directory is refused.**\
+  0.1.0 took a file there for an empty directory and failed inside JGit with a stack trace, with `--force` or without.\
+  The refusal names the path, and the file is left as it was.
+
 - **`.git` is refused as a destination.**\
   0.1.0 accepted `repo=.git`, and wrote a tree that git will not check out and `git fsck` warns about.\
   Still not covered: `.git.`, `git~1`, and the unicode look-alikes git also guards against.
