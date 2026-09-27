@@ -7,6 +7,7 @@ import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommand
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
+import cz.loplex.timebraid.git.SpliceCheck
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
@@ -118,6 +119,17 @@ class MergeRunner(
                         .toMap()
                 )
 
+            // The one place that pairs the two: these are the repositories handed to read() above,
+            // and it gives back one SourceInputs per repository in the same order, each naming the
+            // strand that repository became, so they are paired by position here, once. Everything
+            // downstream looks a repository up by its Source and never has to know the order again.
+            val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
+
+            // Before anything is written into the output, and on a dry run too: a collision with
+            // the root repository's entries happens at one commit of the braid rather than at all
+            // of them, so a dry run that skipped this would report a plan it cannot carry out.
+            SpliceCheck(plan, braid, repoOf).check()
+
             val output = request.output
             // Before anything is written into the output, and on a dry run too. A remote the output
             // already records under an input's name is that input's own when its URL is the input's,
@@ -139,12 +151,6 @@ class MergeRunner(
                 }
             }
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
-
-            // The one place that pairs the two: these are the repositories handed to read() above,
-            // and it gives back one SourceInputs per repository in the same order, each naming the
-            // strand that repository became, so they are paired by position here, once. Everything
-            // downstream looks a repository up by its Source and never has to know the order again.
-            val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
             val written = writeOutput(output, repoOf, braid, plan)
             if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })

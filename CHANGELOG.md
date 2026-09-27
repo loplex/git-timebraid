@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Fifteen changes alter what a command line written for 0.1.0 does:
+Sixteen changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -79,6 +79,9 @@ Fifteen changes alter what a command line written for 0.1.0 does:
   its URL is the input's, as on a rerun, and refuses it under another URL, on a dry run too.\
   0.1.0 failed on either at `git remote add`, with the braid already written; its dry run passed
   both.
+
+- `--dry-run` refuses a collision with an entry of the `--root-repo`, as the run itself does.\
+  0.1.0 found it only while writing, so a dry run passed the plan.
 
 ### Fixed
 
@@ -228,6 +231,11 @@ Fifteen changes alter what a command line written for 0.1.0 does:
   written.\
   A remote of an input's name under another URL is refused instead, before anything is written into
   the output, on a dry run too.
+
+- **A collision with an entry of the `--root-repo` is refused before the output is created.**\
+  0.1.0 found it only while writing, after creating the output and fetching every input into it, so
+  a dry run passed the plan and the run left a half-written output behind. `--dry-run` refuses it
+  now too.
 
 ## [0.1.0] - 2026-09-08
 
