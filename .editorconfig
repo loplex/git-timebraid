@@ -1,0 +1,6 @@
+# The width the Kotlin sources keep, code and comments alike. Nothing in the build enforces it; an
+# editor that reads this file wraps and marks at it.
+root = true
+
+[*.{kt,kts}]
+max_line_length = 120
