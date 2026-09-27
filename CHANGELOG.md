@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Sixteen changes alter what a command line written for 0.1.0 does:
+Seventeen changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -72,6 +72,9 @@ Sixteen changes alter what a command line written for 0.1.0 does:
 - `--keep-remotes` into an output that already records a remote of an input's name keeps it
   where its URL is the input's, as on a rerun, and refuses it under another URL, on a dry run too.\
   0.1.0 failed on either at `git remote add`, with the braid already written; its dry run passed both.
+
+- `--dry-run` refuses a collision with an entry of the `--root-repo`, as the run itself does.\
+  0.1.0 found it only while writing, so a dry run passed the plan.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -221,6 +224,11 @@ Sixteen changes alter what a command line written for 0.1.0 does:
   0.1.0 tried to add them again and failed, `remote … already exists`, with the braid already written.\
   A remote of an input's name under another URL is refused instead,
   before anything is written into the output, on a dry run too.
+
+- **A collision with an entry of the `--root-repo` is refused before the output is created.**\
+  0.1.0 found it only while writing, after creating the output and fetching every input into it,
+  so a dry run passed the plan and the run left a half-written output behind.\
+  `--dry-run` refuses it now too.
 
 ## [0.1.0] - 2026-09-08
 
