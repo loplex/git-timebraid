@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Thirteen changes alter what a command line written for 0.1.0 does:
+Fourteen changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -37,6 +37,10 @@ Thirteen changes alter what a command line written for 0.1.0 does:
 
 - A remote input whose name finds a clone of another URL under `.timebraid-clones/` is refused.\
   0.1.0 refreshed that clone and braided it in place of the URL given.
+
+- A ref name with a component ending in `.lock` is refused,
+  from `--tag-prefix '{repo}.lock/'` or an input named `x.lock` alike.\
+  0.1.0 wrote such refs where git does not see them.
 
 - `--keep-remotes` beside a `-b` that leaves the mainline out mirrors each input's mainline too.\
   0.1.0 wrote a remote-tracking ref only for the branches `-b` took, beside every tag.
@@ -194,6 +198,11 @@ Thirteen changes alter what a command line written for 0.1.0 does:
   A clone is found by the input's name, and two locations can derive one:
   0.1.0 refreshed the first one's clone and braided it as the second.\
   The refusal names both URLs and the directory to remove.
+
+- **A ref name git refuses is no longer written.**\
+  0.1.0 asked JGit, which lets a component ending in `.lock` through where git does not:
+  `--tag-prefix '{repo}.lock/'` wrote tags that `git tag` does not list, and the closing report counted them.\
+  Such a name is refused now, by git's rules.
 
 ## [0.1.0] - 2026-09-08
 
