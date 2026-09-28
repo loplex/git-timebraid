@@ -24,6 +24,10 @@ import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.WriteOptions
+import org.eclipse.jgit.lib.RepositoryCache
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
+import org.eclipse.jgit.util.FS
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
@@ -147,6 +151,19 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
         rootRepo?.let { root ->
             if (root !in names) throw UsageError("--root-repo '$root' is not one of the inputs")
+        }
+        // A local input that is the output would be read and written at once: fetched into itself,
+        // then given the braid on top of its own history.
+        output?.let { out ->
+            val outputPlaces = placesOf(out, withGitDir = !bare)
+            // A location this platform cannot spell as a path is no path the output could be.
+            fun pathOf(location: String) = try { Path.of(location) } catch (e: InvalidPathException) { null }
+            val input = specs.firstOrNull { spec ->
+                !spec.isRemote && pathOf(spec.location)?.let { meet(inputPlacesOf(it), outputPlaces) } == true
+            }
+            input?.let {
+                throw UsageError("'${it.location}' is the output (-o), which a run cannot braid into itself")
+            }
         }
 
         val request = MergeRequest(
@@ -309,6 +326,94 @@ private fun splitSuffix(raw: String, marker: String): Pair<String, String?> {
     val suffix = if (at < 0) null else raw.substring(at + marker.length)
     if (suffix.isNullOrEmpty() || '/' in suffix || ':' in suffix) return raw to null
     return raw.substring(0, at) to suffix
+}
+
+/**
+ * The directories a repository at [location] takes up, for telling whether two locations are one
+ * repository: the location itself; the git directory it holds, as JGit finds it — a `.git`
+ * directory, or the one a `.git` file names in a linked worktree or a submodule — and that
+ * directory's common one, shared with the main repository of a linked worktree; and for any of these
+ * named `.git`, the working tree around it, which git reads through it. Each is resolved as the
+ * filesystem has it ([resolved]). [withGitDir] counts `location/.git` whether or not it exists yet,
+ * as the git directory a non-bare output is given.
+ */
+private fun placesOf(location: Path, withGitDir: Boolean = false): Set<Path> {
+    val places = mutableSetOf(resolved(location))
+    if (withGitDir) places.add(resolved(location.resolve(".git")))
+    gitDirOf(location)?.let { gitDir ->
+        places.add(resolved(gitDir.toPath()))
+        try {
+            places.add(resolved(FS.DETECTED.getCommonDir(gitDir).toPath()))
+        } catch (e: IOException) {
+            // No common directory to read: the git directory is its own.
+        }
+    }
+    if (location.fileName?.toString() == ".git") location.toAbsolutePath().parent?.let { places.add(resolved(it)) }
+    for (place in places.toList()) {
+        if (place.fileName?.toString() == ".git") place.parent?.let { places.add(it) }
+    }
+    return places
+}
+
+/**
+ * The directories an input at [location] takes up ([placesOf]), and those of the git directory its
+ * objects are fetched from: `TargetRepository.fetchFrom` names the input by its path normalized as
+ * text, which JGit's local transport resolves with `FileKey.resolve`, a sibling `<location>.git` it
+ * guesses included. The run reads the input in both places, so the output may meet neither.
+ */
+private fun inputPlacesOf(location: Path): Set<Path> {
+    val places = placesOf(location).toMutableSet()
+    RepositoryCache.FileKey.resolve(location.toAbsolutePath().normalize().toFile(), FS.DETECTED)?.let { gitDir ->
+        places.addAll(placesOf(gitDir.toPath()))
+    }
+    return places
+}
+
+/**
+ * The git directory an existing [location] is or holds, looked up as [SourceRepository.open] looks
+ * an input up where no `GIT_DIR` is exported — the location itself when it is a repository, else
+ * its `.git`, a directory or a file naming one elsewhere as a linked worktree's or a submodule's
+ * does — or `null`. Nothing is guessed beside it, and the path is not normalized: a `..` past a
+ * symlink is the filesystem's.
+ */
+private fun gitDirOf(location: Path): File? {
+    val dir = location.toAbsolutePath().toFile()
+    if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) return dir
+    if (!File(dir, ".git").exists()) return null
+    val builder = FileRepositoryBuilder()
+    dir.parentFile?.let { builder.addCeilingDirectory(it) }
+    return builder.findGitDir(dir).gitDir
+}
+
+/**
+ * Whether two sets of [placesOf] meet: a directory in both, or two that exist and the filesystem
+ * calls one, as it does where it ignores case.
+ */
+private fun meet(a: Set<Path>, b: Set<Path>): Boolean =
+    a.any { it in b } || a.any { x ->
+        b.any { y ->
+            try {
+                Files.exists(x) && Files.exists(y) && Files.isSameFile(x, y)
+            } catch (e: IOException) {
+                false
+            }
+        }
+    }
+
+/**
+ * [path] as the filesystem resolves it: its real path where it exists, a symlink or a `..` past one
+ * followed, and otherwise its nearest existing ancestor's real path with the rest appended.
+ */
+private fun resolved(path: Path): Path {
+    val absolute = path.toAbsolutePath()
+    var existing: Path? = absolute
+    while (existing != null && !Files.exists(existing)) existing = existing.parent
+    if (existing == null) return absolute.normalize()
+    return try {
+        existing.toRealPath().resolve(existing.relativize(absolute)).normalize()
+    } catch (e: IOException) {
+        absolute.normalize()
+    }
 }
 
 /** `scheme://…` or the scp-like `user@host:path` — anything git clones over the network. */

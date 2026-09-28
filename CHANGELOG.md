@@ -13,10 +13,15 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-One change alters what a command line written for 0.1.0 does:
+Two changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
+
+- An input that is the output, as in `-o merged.git merged.git …`, is refused, and so is an
+  `-o x/.git` inside a bare input `x`.\
+  0.1.0 passed the first on a dry run and under `--force` wrote the braid into the input itself;
+  the second it ran without `--force`, as a new repository inside `x` that git then opens for `x`.
 
 ### Fixed
 
@@ -39,6 +44,18 @@ One change alters what a command line written for 0.1.0 does:
   In 0.1.0 either ended in a Java stack trace, the second only once the output was written, so a
   run that had written its braid still exited 1.\
   The message names the path, and `--plan-out` is checked before the output is created.
+
+- **An input that is the output is refused.**\
+  0.1.0 read and wrote it at once: a dry run passed it, and under `--force` the run fetched the
+  repository into itself and wrote the braid on top of its own history.\
+  The two are compared by the directories they take up, as the filesystem resolves them: a
+  location, the git directory it holds (the one a `.git` file names in a linked worktree or a
+  submodule included), the common directory a linked worktree shares with its main repository, and
+  the directory around a `.git`, a bare repository's included. So a working tree and its git
+  directory count as one, and so does a symlink to either, and an `-o x/.git` inside a bare `x`,
+  which 0.1.0 ran without `--force` and git then opens for `x`, is refused too. A `file://` URL is a
+  remote input and is not compared: `--force` with `-o x` and `file://…/x` still writes the braid
+  into `x`.
 
 - **Two inputs that both describe a submodule with a blank name are refused with advice that
   fits.**\
