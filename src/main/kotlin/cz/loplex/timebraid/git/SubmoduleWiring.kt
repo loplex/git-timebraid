@@ -97,8 +97,14 @@ object SubmoduleWiring {
             for (name in part.names) {
                 val first = claimed.putIfAbsent(name, index)
                 require(first == null) {
-                    "two inputs both describe a submodule named '$name' at ${at()}; " +
-                        "give one of them another subdirectory with <repo>=<subdir>"
+                    // A blank name takes no prefix, so no subdirectory moves one off another.
+                    if (name.isBlank()) {
+                        "two inputs both describe a submodule with a blank name at ${at()}; " +
+                            "no subdirectory parts them, only renaming that section in one input"
+                    } else {
+                        "two inputs both describe a submodule named '$name' at ${at()}; " +
+                            "give one of them another subdirectory with <repo>=<subdir>"
+                    }
                 }
             }
         }
