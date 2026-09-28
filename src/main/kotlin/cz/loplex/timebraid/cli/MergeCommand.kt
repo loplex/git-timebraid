@@ -741,7 +741,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         // The report is the last thing said and belongs to no phase, so it is set off from the one
         // that happened to finish before it; under --quiet no phase was printed to set it off from.
         if (!reporting.quiet) echo("", err = true)
-        echo("mainline branch: ${result.braid.mainlineBranch}", err = true)
+        echo("mainline branch: ${result.inputs.mainlineBranch}", err = true)
 
         // Only the splices --splice enabled are worth a line in the closing report. The repository
         // at the output root contains every other input by definition, so saying so of each of them
@@ -795,8 +795,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             val notes = if (summary.notes > 0) ", ${summary.notes} notes refs" else ""
             val foreign = if (summary.foreign > 0) ", ${summary.foreign} other" else ""
             // What was left out is said here as well as in its phase, because -q prints this alone.
-            val labels = result.braid.labelsSkipped.let { if (it > 0) ", $it labels skipped" else "" }
-            val notesLeft = result.braid.notesSkipped.let { if (it > 0) ", $it notes skipped" else "" }
+            val labels = result.inputs.labelsSkipped.let { if (it > 0) ", $it labels skipped" else "" }
+            val notesLeft = result.inputs.notesSkipped.let { if (it > 0) ", $it notes skipped" else "" }
             echo(
                 "refs: ${summary.branches} branches, ${summary.tags} tags$foreign$notes$remotes$labels$notesLeft, " +
                     "HEAD -> ${summary.head}",
@@ -807,8 +807,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         // said all the same, -q included: a dry run is how a pattern is tuned.
         if (result.write == null) {
             val skipped = listOfNotNull(
-                result.braid.labelsSkipped.takeIf { it > 0 }?.let { "$it labels skipped" },
-                result.braid.notesSkipped.takeIf { it > 0 }?.let { "$it notes skipped" },
+                result.inputs.labelsSkipped.takeIf { it > 0 }?.let { "$it labels skipped" },
+                result.inputs.notesSkipped.takeIf { it > 0 }?.let { "$it notes skipped" },
             )
             if (skipped.isNotEmpty()) echo(skipped.joinToString(", "), err = true)
         }

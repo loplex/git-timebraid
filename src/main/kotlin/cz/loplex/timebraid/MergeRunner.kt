@@ -90,7 +90,7 @@ class FetchSummary(val repositories: Int, val refs: Int)
 
 /** What a run produced. [fetch] and [write] are `null` for a dry run. */
 class MergeResult(
-    val braid: BraidInputs,
+    val inputs: BraidInputs,
     val plan: MergePlan,
     /**
      * One per splice the plan makes, each checked against every tree before anything was written
@@ -135,7 +135,7 @@ class MergeRunner(
         try {
             locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
             progress.phase("reading the inputs and planning the braid")
-            val braid = progress.whileWorking(
+            val inputs = progress.whileWorking(
                 "reading ${sources.size} repositories",
                 finished = { "${sources.size} repositories, ${it.graph.size} commits" },
             ) {
@@ -150,24 +150,24 @@ class MergeRunner(
                 )
             }
 
-            if (braid.labelsAttached > 0 || braid.labelsSkipped > 0) {
+            if (inputs.labelsAttached > 0 || inputs.labelsSkipped > 0) {
                 val skipped =
-                    if (braid.labelsSkipped == 0) ""
-                    else ", skipping ${braid.labelsSkipped} that matched nothing loaded"
-                progress.result("${braid.labelsAttached} refs attached by label$skipped")
+                    if (inputs.labelsSkipped == 0) ""
+                    else ", skipping ${inputs.labelsSkipped} that matched nothing loaded"
+                progress.result("${inputs.labelsAttached} refs attached by label$skipped")
             }
-            if (braid.notesAttached > 0 || braid.notesSkipped > 0) {
+            if (inputs.notesAttached > 0 || inputs.notesSkipped > 0) {
                 val skipped =
-                    if (braid.notesSkipped == 0) ""
-                    else ", skipping ${braid.notesSkipped} attached to objects this run did not write"
-                progress.result("${braid.notesAttached} notes rekeyed onto the new commits$skipped")
+                    if (inputs.notesSkipped == 0) ""
+                    else ", skipping ${inputs.notesSkipped} attached to objects this run did not write"
+                progress.result("${inputs.notesAttached} notes rekeyed onto the new commits$skipped")
             }
             // Through detail and not result: this count is of what --interleave-ref asked for — the
             // commits its refs name, whose ancestry was allowed to widen the scope — and only a
             // reader tuning that option has a use for it.
-            if (braid.interleaveTips.isNotEmpty()) {
+            if (inputs.interleaveTips.isNotEmpty()) {
                 progress.detail(
-                    "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +
+                    "${inputs.interleaveTips.size} commits opted into the interleave, so a merge can " +
                         "wait for them"
                 )
             }
@@ -175,12 +175,12 @@ class MergeRunner(
                 "planning",
                 finished = { "${it.commits.size} commits planned, ${it.braid.size} on the braid" },
             ) {
-                braid.graph
-                    .braid(braid.heads, braid.interleaveTips)
+                inputs.graph
+                    .braid(inputs.heads, inputs.interleaveTips)
                     .plan(
                         // The strands are in the order the inputs were given, so the two are paired
                         // by position here rather than by asking a Source where it sits.
-                        braid.graph.sources
+                        inputs.graph.sources
                             .mapIndexed { index, source -> source to request.inputs[index].subdir }
                             .toMap(),
                         splice = request.splice,
@@ -191,13 +191,13 @@ class MergeRunner(
             // and it gives back one SourceInputs per repository in the same order, each naming the
             // strand that repository became, so they are paired by position here, once. Everything
             // downstream looks a repository up by its Source and never has to know the order again.
-            val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
+            val repoOf = inputs.sources.map { it.source }.zip(sources).toMap()
 
             // Before anything is written into the output, and on a dry run too — a splice that
             // collides does so at one commit of the braid rather than at all of them, so a dry run
             // that skipped this would report a plan it cannot carry out.
             val splices = progress.whileWorking("checking the splices") {
-                SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+                SpliceCheck(plan, inputs, repoOf, request.dissolveSubmodules, relocation).check()
             }
             for (splice in splices) {
                 val dissolved =
@@ -231,18 +231,18 @@ class MergeRunner(
                 }
             }
             if (request.dryRun || output == null) {
-                return MergeResult(braid, plan, splices, null, null)
+                return MergeResult(inputs, plan, splices, null, null)
             }
 
-            val written = writeOutput(output, repoOf, braid, plan)
+            val written = writeOutput(output, repoOf, inputs, plan)
             if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
             if (!request.bare) {
-                progress.phase("checking out ${braid.mainlineBranch}")
+                progress.phase("checking out ${inputs.mainlineBranch}")
                 // Its own progress, drawn as it arrives. Reading the stream is what made it look
                 // as though git had nothing to say here; it had, and now it is passed on.
-                progress.gitProgress().use { git.checkout(output, braid.mainlineBranch, it) }
+                progress.gitProgress().use { git.checkout(output, inputs.mainlineBranch, it) }
             }
-            return MergeResult(braid, plan, splices, written.fetch, written.write)
+            return MergeResult(inputs, plan, splices, written.fetch, written.write)
         } finally {
             sources.forEach { it.close() }
         }
@@ -273,7 +273,7 @@ class MergeRunner(
     private fun writeOutput(
         output: Path,
         repoOf: Map<Source, SourceRepository>,
-        braid: BraidInputs,
+        inputs: BraidInputs,
         plan: MergePlan,
     ): Written {
         // Opened before the output is created: creating it is the first thing the run does to the
@@ -282,18 +282,18 @@ class MergeRunner(
         progress.phase("fetching the inputs into the output")
         TargetRepository.create(
             output,
-            braid.mainlineBranch,
+            inputs.mainlineBranch,
             request.force,
             request.bare,
             log = { progress.detail(it) },
         ).use { target ->
-            val fetch = fetchInputs(target, repoOf, braid)
+            val fetch = fetchInputs(target, repoOf, inputs)
 
             progress.phase("writing the braid")
             val write = BraidWriter(
                 target = target,
                 repoOf = repoOf,
-                inputs = braid,
+                inputs = inputs,
                 plan = plan,
                 options = request.writeOptions,
                 mirrorRemotes = request.keepRemotes,
@@ -315,10 +315,10 @@ class MergeRunner(
     private fun fetchInputs(
         target: TargetRepository,
         repoOf: Map<Source, SourceRepository>,
-        braid: BraidInputs,
+        inputs: BraidInputs,
     ): FetchSummary {
         var refs = 0
-        for (input in braid.sources) {
+        for (input in inputs.sources) {
             val repo = repoOf.getValue(input.source)
             // The notes refs ride along: they contribute no commit, but the blobs a note is made
             // of have to be in the output before a tree of the output's own can point at one.
@@ -328,7 +328,7 @@ class MergeRunner(
             progress.result("[${repo.name}] ${wanted.size} refs")
             refs += target.fetchFrom(repo, wanted, progress.monitor(repo.name))
         }
-        return FetchSummary(braid.sources.size, refs)
+        return FetchSummary(inputs.sources.size, refs)
     }
 
     /**
