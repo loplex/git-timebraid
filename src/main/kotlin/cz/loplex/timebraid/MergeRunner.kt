@@ -7,6 +7,7 @@ import cz.loplex.timebraid.git.BraidWriter
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommand
 import cz.loplex.timebraid.git.OrderBy
+import cz.loplex.timebraid.git.RefNames
 import cz.loplex.timebraid.git.Relocation
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.SpliceCheck
@@ -236,6 +237,12 @@ class MergeRunner(
                         "trees$dissolved"
                 )
             }
+
+            // Before anything is written into the output as well: every name the refs get follows
+            // from the inputs as read, the options and the braid, so a name git would not accept, or
+            // a clash between two, is known now — and found only after the fetch, it would be one a
+            // dry run had passed.
+            RefNames(inputs, plan, request.writeOptions, request.keepRemotes).resolve()
 
             val output = request.output
             // Before anything is written into the output, and on a dry run too. A remote the output

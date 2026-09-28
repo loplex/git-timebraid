@@ -438,7 +438,7 @@ class MergeCommandOptionsTest {
             val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
             repo.branch("main", a1)
             // A branch literally named `tags/v1.0` mirrors to the name the tag `v1.0` mirrors to,
-            // which is the meeting BraidWriter.mirrorInputs documents and refuses.
+            // which is the meeting RefNames documents and refuses.
             repo.branch("tags/v1.0", a1)
             repo.lightweightTag("v1.0", a1)
         }

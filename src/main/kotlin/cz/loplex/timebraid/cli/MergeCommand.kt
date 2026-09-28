@@ -660,9 +660,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * refuses one derived from an argument, naming the directory and the argument that renames it.
      *
      * Only a finding no argument renamed is asked: a renamed one carries the argument's own name,
-     * which the parser has checked already. Left to the run, the name would have failed at the
-     * write of the first ref carrying it, an input's tag under the default prefix, once the braid
-     * was written, or not at all where no ref carried it.
+     * which the parser has checked already. Left to the run, the name would be refused only once
+     * every input was read, with the first ref carrying it, or not at all where no ref carried it.
      */
     private fun refuseScannedName(name: String, path: Path) {
         if (isRefComponent(name)) return

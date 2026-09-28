@@ -118,8 +118,11 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   0.1.0 failed on either at `git remote add`, with the braid already written; its dry run passed
   both.
 
-- `--dry-run` refuses a collision with an entry of the `--root-repo`, as the run itself does.\
-  0.1.0 found it only while writing, so a dry run passed the plan.
+- `--dry-run` refuses three things 0.1.0 refused only while writing: a collision with an entry of
+  the `--root-repo`, a ref name that is a directory of another, and a ref name JGit would not
+  write.\
+  0.1.0's dry run passed such a plan. The refusals of ref names new in this release come before
+  the output as well, a dry run's included.
 
 - `--mainline-branch` naming a revision rather than a branch, as `main~1` or `main^` does, is
   refused.\
@@ -569,6 +572,15 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   the terminal size.\
   The jar's manifest now allows native access, with `Enable-Native-Access`, and on JDK 22 and later
   mordant then reads the terminal size through the JDK's own foreign function API instead.
+
+- **A clash between two ref names is refused before the output is created, `--dry-run` included.**\
+  0.1.0 found `refs/heads/a` beside `refs/heads/a/b` only once every commit was written, and left
+  the output with the history of every input fetched into it.\
+  So is every other refusal of a ref name in this release: two inputs, or two refs of one input,
+  meeting on one name, a ref meeting the braid's own branch, a `--keep-remotes` mirror meeting a
+  destination, a destination among an input's mirrors that meets none of them, one under
+  `refs/timebraid-fetch/`, and a name git does not accept, such as one a `--tag-prefix` gives a
+  component ending in `.lock`.
 
 - **An input whose `..` leads, past a symlink, elsewhere than its text is fetched from, and named
   after, the directory it is read from.**\
