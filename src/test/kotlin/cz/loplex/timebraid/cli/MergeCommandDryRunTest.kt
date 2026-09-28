@@ -91,6 +91,60 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `an -o that cannot be created is reported by the location given, not thrown`() {
+        corpus()
+        tmp.resolve("afile").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("afile/merged.git")
+
+        val result = MergeCommand().test(
+            listOf("-o", out.toString(), tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot create the output at '$out'"), result.output)
+    }
+
+    @Test
+    fun `an -o that cannot be created is reported when a remote input is cloned beside it too`() {
+        corpus()
+        tmp.resolve("afile").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("afile/merged.git")
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                tmp.resolve("backend.git").toUri().toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("for the remote inputs' clones, beside the output '$out'"), result.output)
+    }
+
+    @Test
+    fun `a --plan-out that cannot be written is refused before the output is created`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+        // A directory where the file would go: the one case that fails whoever runs the test, root
+        // included, where a file without write permission would not.
+        val plan = tmp.resolve("plan").also { it.toFile().mkdir() }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                "--plan-out", plan.toString(),
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("--plan-out '$plan' cannot be written: it is a directory"), result.output)
+        assertTrue(!out.toFile().exists(), "the output should not have been created")
+    }
+
+    @Test
     fun `a subdirectory override and --root-repo are honoured`() {
         corpus()
 

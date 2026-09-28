@@ -14,6 +14,7 @@ import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -197,7 +198,19 @@ class MergeRunner(
         if (request.inputs.none { it.isRemote }) {
             return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
         }
-        val root = cloneRoot().also { it.createDirectories() }
+        val root = cloneRoot().also {
+            try {
+                it.createDirectories()
+            } catch (e: IOException) {
+                // Beside the output, so an -o whose parent is a file fails here, before the output
+                // itself is asked for; the refusal says which -o put the clones there.
+                throw IllegalArgumentException(
+                    "cannot create '$it' for the remote inputs' clones, beside the output " +
+                        "'${request.output}': ${e.message}",
+                    e,
+                )
+            }
+        }
         return request.inputs.map { input ->
             if (!input.isRemote) {
                 return@map LocalInput(Path.of(input.location), input.name, localRemote(input.location))

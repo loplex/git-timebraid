@@ -263,7 +263,17 @@ class TargetRepository private constructor(
             if (!bare) builder.setWorkTree(location.toFile())
             val repository = builder.build()
             if (!existingRepository) {
-                repository.create(bare)
+                try {
+                    repository.create(bare)
+                } catch (e: IOException) {
+                    // JGit names the directory it failed on, which for `-o ''` is the working
+                    // directory; the location as given is the one the user can act on.
+                    repository.close()
+                    throw IllegalArgumentException(
+                        "cannot create the output at '$location': ${e.message}",
+                        e,
+                    )
+                }
                 configureForRewriting(repository)
             }
             val target = TargetRepository(location, repository)

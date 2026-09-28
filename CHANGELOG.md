@@ -34,6 +34,12 @@ One change alters what a command line written for 0.1.0 does:
   Six of them wrote an em dash.\
   A Windows console's code page cannot encode it, so they write `--` now.
 
+- **An `-o` that cannot be created, and a `--plan-out` that cannot be written, are reported as
+  messages.**\
+  In 0.1.0 either ended in a Java stack trace, the second only once the output was written, so a
+  run that had written its braid still exited 1.\
+  The message names the path, and `--plan-out` is checked before the output is created.
+
 - **Two inputs that both describe a submodule with a blank name are refused with advice that
   fits.**\
   0.1.0 said to give one of them another subdirectory, which does not part them: a blank name is

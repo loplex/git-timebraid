@@ -24,6 +24,8 @@ import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.WriteOptions
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -132,6 +134,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         if (output == null && !dryRun) {
             throw UsageError("-o/--output is required unless --dry-run is given")
         }
+        // Asked now rather than left to the write: the plan is written after the output, and a path
+        // that cannot take it would fail a run whose braid is already in place.
+        planOut?.let { file ->
+            unwritable(file)?.let { throw UsageError("--plan-out '$file' cannot be written: $it") }
+        }
 
         val specs = inputs.map(::parseRepoSpec)
         val names = specs.map { it.name }
@@ -182,8 +189,12 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         echo(result.plan.summary())
 
         planOut?.let { file ->
-            file.toAbsolutePath().parent?.createDirectories()
-            file.writeText(result.plan.render())
+            try {
+                file.toAbsolutePath().parent?.createDirectories()
+                file.writeText(result.plan.render())
+            } catch (e: IOException) {
+                throw CliktError("could not write the plan to '$file': ${e.message}")
+            }
             echo("plan written to $file", err = true)
         }
 
@@ -317,4 +328,24 @@ private fun repoNameFromLocation(location: String): String {
     val trimmed = location.trimEnd('/', '\\')
     val lastSeparator = trimmed.lastIndexOfAny(charArrayOf('/', '\\', ':'))
     return trimmed.substring(lastSeparator + 1).removeSuffix(".git")
+}
+
+/**
+ * Why [file] cannot take the plan, or `null` when nothing here says it cannot.
+ *
+ * Asked of the file itself where it exists, and otherwise of the nearest directory above it that
+ * does, which is where the write would create it. A write can still fail for a reason no such
+ * question sees, a full disk for one, and that is reported where it happens.
+ */
+private fun unwritable(file: Path): String? {
+    if (Files.isDirectory(file)) return "it is a directory"
+    if (Files.exists(file)) return if (Files.isWritable(file)) null else "it is not writable"
+    var parent = file.toAbsolutePath().parent
+    while (parent != null && !Files.exists(parent)) parent = parent.parent
+    return when {
+        parent == null -> null
+        !Files.isDirectory(parent) -> "$parent is not a directory"
+        !Files.isWritable(parent) -> "$parent is not writable"
+        else -> null
+    }
 }
