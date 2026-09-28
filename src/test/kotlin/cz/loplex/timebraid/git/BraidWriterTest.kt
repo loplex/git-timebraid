@@ -498,6 +498,25 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `a ref name git refuses is not written, a lock suffix on any component included`() {
+        // Each measured against `git check-ref-format`: JGit's own check lets the first one by.
+        for (refused in listOf("refs/tags/a.lock/v1", "refs/tags/a/v1.lock", "refs/tags/a..b/v1")) {
+            assertTrue(!TargetRepository.isRefName(refused), refused)
+        }
+        // Not a component ending in `.`, which git takes and JGit refuses on Windows.
+        for (accepted in listOf("refs/tags/a.locked/v1", "refs/tags/a.LOCK/v1")) {
+            assertTrue(TargetRepository.isRefName(accepted), accepted)
+        }
+
+        TargetRepository.create(tmp.resolve("merged.git"), "main").use { target ->
+            val error = assertThrows<IllegalArgumentException> {
+                target.point("refs/tags/a.lock/v1", ObjectId.zeroId())
+            }
+            assertTrue(error.message!!.contains("'refs/tags/a.lock/v1' is not a valid ref name"), error.message)
+        }
+    }
+
+    @Test
     fun `an output location that is a file is refused, forced or not`() {
         val out = tmp.resolve("merged.git")
         out.toFile().writeText("not a repository")

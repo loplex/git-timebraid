@@ -216,6 +216,23 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a --tag-prefix that makes a component git refuses is refused`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", tmp.resolve("merged.git").toString(),
+                "--tag-prefix", "{repo}.lock/",
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("'refs/tags/backend.lock/v1' is not a valid ref name"), result.output)
+    }
+
+    @Test
     fun `a branch and a tag of one input meeting on one mirror name are refused`() {
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
             val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
