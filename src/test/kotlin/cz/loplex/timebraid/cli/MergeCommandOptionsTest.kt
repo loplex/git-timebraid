@@ -262,6 +262,27 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a clone another URL made is refused rather than refreshed`() {
+        corpus()
+        // A second repository whose location derives the same name, `backend`.
+        TestRepoBuilder.create(tmp.resolve("fork/backend.git")).use { repo ->
+            repo.branch("main", repo.commit("f1", at = Instant.parse("2021-01-01T08:00:00Z")))
+        }
+        val url = tmp.resolve("backend.git").toUri().toString()
+        val fork = tmp.resolve("fork/backend.git").toUri().toString()
+        val webui = tmp.resolve("webui.git").toString()
+        run("-o", tmp.resolve("first.git").toString(), url, webui)
+
+        val refused = MergeCommand().test(listOf("-o", tmp.resolve("second.git").toString(), fork, webui))
+
+        assertEquals(1, refused.statusCode, refused.output)
+        val clone = tmp.resolve(".timebraid-clones/backend.git")
+        assertTrue(refused.output.contains("$clone is a clone of $url, not of $fork"), refused.output)
+        // The same URL is still refreshed rather than refused.
+        run("-o", tmp.resolve("third.git").toString(), url, webui)
+    }
+
+    @Test
     fun `a dry run removes its clones only where no -o gave them a place to stay`() {
         corpus()
         val url = tmp.resolve("backend.git").toUri().toString()

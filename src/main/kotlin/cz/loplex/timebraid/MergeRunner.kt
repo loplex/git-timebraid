@@ -13,6 +13,7 @@ import cz.loplex.timebraid.git.WriteSummary
 import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.MergePlan
 import org.eclipse.jgit.lib.RepositoryCache
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
@@ -233,6 +234,7 @@ class MergeRunner(
 
             val dir = root.resolve("${input.name}.git")
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
+                refuseOtherOrigin(dir, input)
                 progress.step("refreshing ${input.name} in $dir")
                 git.fetch(dir)
             } else {
@@ -240,6 +242,23 @@ class MergeRunner(
                 git.cloneMirror(input.location, dir)
             }
             LocalInput(dir, input.name, input.location)
+        }
+    }
+
+    /**
+     * Refuses to refresh [dir] for [input] when it is a clone of another location.
+     *
+     * A clone is found by the input's name alone, and two locations can derive one name — two
+     * forks' `webui`, for one. Refreshing the clone the other one left would braid a repository this
+     * run never named, and report it as this input.
+     */
+    private fun refuseOtherOrigin(dir: Path, input: MergeInput) {
+        val origin = FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
+            it.config.getString("remote", "origin", "url")
+        }
+        require(origin == input.location) {
+            "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
+                "the input another name, with ::<name> after its location and before any =<subdir>"
         }
     }
 
