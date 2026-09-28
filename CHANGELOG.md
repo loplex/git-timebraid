@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Eleven changes alter what a command line written for 0.1.0 does:
+Twelve changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -37,6 +37,9 @@ Eleven changes alter what a command line written for 0.1.0 does:
 - `GIT_DIR` and its kin no longer decide which repository an input is read from.\
   0.1.0 read an input named by its working tree, or by a path holding no repository, from the one
   `GIT_DIR` named.
+
+- A remote input whose name finds a clone of another URL under `.timebraid-clones/` is refused.\
+  0.1.0 refreshed that clone and braided it in place of the URL given.
 
 - `--keep-remotes` beside a `-b` that leaves the mainline out mirrors each input's mainline too.\
   0.1.0 wrote a remote-tracking ref only for the branches `-b` took, beside every tag.
@@ -185,6 +188,14 @@ Eleven changes alter what a command line written for 0.1.0 does:
 - **The count `--verbose` gives for `--interleave-ref` says commits, which is what it counts.**\
   0.1.0 printed "2 refs opted into the interleave" for three refs on two commits: the count is of
   the commits the matched refs name, each once.
+
+- **A dry run without `-o` removes the clones it made.**\
+  Each such run cloned every URL input into a new temporary directory and left it there.
+
+- **A clone that another URL left under `.timebraid-clones/` is refused, not refreshed.**\
+  A clone is found by the input's name, and two locations can derive one: 0.1.0 refreshed the
+  first one's clone and braided it as the second.\
+  The refusal names both URLs and the directory to remove.
 
 ## [0.1.0] - 2026-09-08
 

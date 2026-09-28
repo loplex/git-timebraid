@@ -262,6 +262,55 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a clone another URL made is refused rather than refreshed`() {
+        corpus()
+        // A second repository whose location derives the same name, `backend`.
+        TestRepoBuilder.create(tmp.resolve("fork/backend.git")).use { repo ->
+            repo.branch("main", repo.commit("f1", at = Instant.parse("2021-01-01T08:00:00Z")))
+        }
+        val url = tmp.resolve("backend.git").toUri().toString()
+        val fork = tmp.resolve("fork/backend.git").toUri().toString()
+        val webui = tmp.resolve("webui.git").toString()
+        run("-o", tmp.resolve("first.git").toString(), url, webui)
+
+        val refused = MergeCommand().test(listOf("-o", tmp.resolve("second.git").toString(), fork, webui))
+
+        assertEquals(1, refused.statusCode, refused.output)
+        val clone = tmp.resolve(".timebraid-clones/backend.git")
+        assertTrue(refused.output.contains("$clone is a clone of $url, not of $fork"), refused.output)
+        // The same URL is still refreshed rather than refused.
+        run("-o", tmp.resolve("third.git").toString(), url, webui)
+    }
+
+    @Test
+    fun `a dry run removes its clones only where no -o gave them a place to stay`() {
+        corpus()
+        val url = tmp.resolve("backend.git").toUri().toString()
+        val webui = tmp.resolve("webui.git").toString()
+
+        // Without -o the clone goes to a temporary directory that no later run looks in.
+        val dry = run("--dry-run", url, webui)
+        val clone = Regex("""into (\S*timebraid-clones-\S+)""").find(dry.output)?.groupValues?.get(1)
+        assertTrue(clone != null, dry.output)
+        assertFalse(Path.of(clone!!).parent.exists(), "the directory $clone was cloned into is still there")
+
+        // A run refused after the clone was made removes it too.
+        TestRepoBuilder.create(tmp.resolve("topic.git"), initialBranch = "topic").use { repo ->
+            repo.branch("topic", repo.commit("t1", at = Instant.parse("2021-01-01T08:00:00Z")))
+        }
+        val refused = MergeCommand().test(listOf("--dry-run", tmp.resolve("topic.git").toUri().toString(), webui))
+        assertTrue(refused.statusCode != 0, refused.output)
+        val refusedClone = Regex("""into (\S*timebraid-clones-\S+)""").find(refused.output)?.groupValues?.get(1)
+        assertTrue(refusedClone != null, refused.output)
+        assertFalse(Path.of(refusedClone!!).parent.exists(), "a refused run left $refusedClone behind")
+
+        // With -o it sits beside the output, where the real run will refresh it rather than clone.
+        run("--dry-run", "-o", tmp.resolve("merged.git").toString(), url, webui)
+        val kept = tmp.resolve(".timebraid-clones/backend.git")
+        assertTrue(RepositoryCache.FileKey.isGitRepository(kept.toFile(), FS.DETECTED), "the clone beside -o is gone")
+    }
+
+    @Test
     fun `--quiet silences progress, --verbose shows the git commands`() {
         corpus()
 
