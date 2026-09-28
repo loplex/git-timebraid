@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Ten changes alter what a command line written for 0.1.0 does:
+Eleven changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -48,6 +48,11 @@ Ten changes alter what a command line written for 0.1.0 does:
 
 - A branch one input alone has, under the name another input's shared branch is qualified to, refuses the run.\
   0.1.0 kept whichever of the two was written last; leave one of them out with `-b`.
+
+- A shared branch qualified onto the braid's own name refuses the run:
+  `x` in two inputs beside a `--mainline-branch backend/x`.\
+  0.1.0 wrote input backend's `x` over the braid's branch,
+  so the output's mainline could point at that `x` rather than at the braid; leave that branch out with `-b`.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -155,6 +160,12 @@ Ten changes alter what a command line written for 0.1.0 does:
   `A/release` in C, beside a `release` that A and B both had.\
   The output kept the branch of the input written last, and the closing report counted both.\
   The refusal names both inputs and the branch.
+
+- **A shared branch qualified onto the braid's own name is refused, not written over it.**\
+  In 0.1.0 a branch two inputs had was qualified as `<repo>/<branch>`, which could be the mainline's own name:
+  `backend/x` for backend's `x` beside a `--mainline-branch backend/x`.\
+  The branch was written over the braid's, so the output's mainline could point at backend's `x`.\
+  The refusal names the braid and the input, and says to leave that branch out with `-b`.
 
 ## [0.1.0] - 2026-09-08
 
