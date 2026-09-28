@@ -215,9 +215,9 @@ class BraidWriter(
      * release names collide across repositories as a matter of course rather than by accident. A
      * prefix that does not keep `{repo}` apart from the tag name lets two inputs' tags meet on one
      * name, as does a branch one input alone has under the name another input's shared branch is
-     * qualified to. That is refused rather than resolved: the two point at different commits, so
-     * keeping either would publish one input's history under a name the other input's reader would
-     * look up.
+     * qualified to, and a shared branch qualified onto the braid's own. That is refused rather than
+     * resolved: the two can point at different commits, so keeping either would publish one history
+     * under a name the other's reader would look up.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -237,6 +237,9 @@ class BraidWriter(
 
         var tags = 0
         val branchOwner = HashMap<String, String>()
+        // The braid's own branch is in the running too: input backend's shared branch `x` is
+        // qualified onto a mainline called `backend/x`, and would write over it.
+        branchOwner[inputs.mainlineBranch] = BRAID
         val tagOwner = HashMap<String, String>()
         for (input in inputs.sources) {
             for (branch in input.branches) {
@@ -247,7 +250,7 @@ class BraidWriter(
                 branchOwner.put(name, input.source.name)?.let { first ->
                     throw IllegalArgumentException(
                         "'$first' and '${input.source.name}' would both write '${Constants.R_HEADS}$name'; " +
-                            "narrow the run"
+                            if (first == BRAID) "leave that branch out with -b" else "narrow the run"
                     )
                 }
                 refs[Constants.R_HEADS + name] = idOf(branch.commit)
@@ -357,6 +360,9 @@ class BraidWriter(
     companion object {
 
         private const val PGP_HEADER = "-----BEGIN PGP SIGNATURE-----"
+
+        /** The holder `resolveRefs` records for the braid's own branch, and names when it is met. */
+        private const val BRAID = "the braid"
 
         /** Drops a trailing PGP signature block from a tag message. */
         fun stripSignature(message: String): String {

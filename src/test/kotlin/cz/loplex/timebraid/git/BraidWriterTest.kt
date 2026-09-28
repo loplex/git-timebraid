@@ -74,11 +74,12 @@ class BraidWriterTest {
         rootRepo: String? = null,
         subdirs: Map<String, String> = emptyMap(),
         options: WriteOptions = WriteOptions(),
+        mainline: String? = null,
     ): WriteSummary {
         val names = listOf("backend", "webui")
         val opened = names.map { SourceRepository.open(tmp.resolve("$it.git")) }
         try {
-            val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER)
+            val inputs = CommitGraphReader.read(opened, OrderBy.COMMITTER, mainline)
             val repoOf = inputs.sources.map { it.source }.zip(opened).toMap()
             val plan = inputs.graph.braid(inputs.heads).plan(inputs.graph.sources.associateWith { if (it.name == rootRepo) null else subdirs[it.name] ?: it.name })
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
@@ -422,6 +423,27 @@ class BraidWriterTest {
         val message = error.message!!
         assertTrue(message.contains("'backend'") && message.contains("'webui'"), message)
         assertTrue(message.contains("refs/heads/backend/release"), message)
+    }
+
+    @Test
+    fun `a shared branch qualified onto the braid's own name is refused, not written over it`() {
+        corpus()
+        // The mainline is `backend/x` in both inputs, and both share `x`: backend's `x` is qualified
+        // onto the braid's own branch, webui's onto `webui/x`.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            repo.branch("backend/x", original.getValue("a3"))
+            repo.branch("x", original.getValue("a1"))
+        }
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            repo.branch("backend/x", original.getValue("b2"))
+            repo.branch("x", original.getValue("b1"))
+        }
+
+        val message = assertThrows<IllegalArgumentException> {
+            braid(tmp.resolve("met.git"), mainline = "backend/x")
+        }.message!!
+        assertTrue(message.contains("'the braid' and 'backend' would both write 'refs/heads/backend/x'"), message)
+        assertTrue(message.contains("leave that branch out with -b"), message)
     }
 
     @Test
