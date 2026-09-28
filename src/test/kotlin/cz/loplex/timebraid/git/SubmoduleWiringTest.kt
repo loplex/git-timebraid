@@ -160,6 +160,23 @@ class SubmoduleWiringTest {
     }
 
     @Test
+    fun `two blank submodule names are refused without advice a blank name cannot use`() {
+        val a = rewire("[submodule \"\"]\n\tpath = lib\n\turl = a\n", subdir = "A")
+        val b = rewire("[submodule \"\"]\n\tpath = lib\n\turl = b\n", subdir = "B", repo = "B")
+
+        val error = assertThrows<IllegalArgumentException> { merge(a, b) }
+        assertTrue(error.message!!.contains("a blank name"), error.message)
+        assertTrue(error.message!!.contains("renaming that section"), error.message)
+        assertTrue(!error.message!!.contains("another subdirectory"), error.message)
+
+        // A name that is not blank still gets the advice that does part it.
+        val root = rewire("[submodule \"A/lib\"]\n\tpath = A/lib\n\turl = r\n", subdir = null, repo = "root")
+        val lib = rewire("[submodule \"lib\"]\n\tpath = lib\n", subdir = "A")
+        val named = assertThrows<IllegalArgumentException> { merge(root, lib) }
+        assertTrue(named.message!!.contains("another subdirectory"), named.message)
+    }
+
+    @Test
     fun `a gitmodules that is not git config is an error naming the input and the commit`() {
         val error = assertThrows<IllegalArgumentException> {
             rewire("[submodule \"lib\"\n\tpath = lib\n", subdir = "A")
