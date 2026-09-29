@@ -2,7 +2,7 @@
 
 Five repositories in a directory, and the layout written nowhere: `--scan` reads it off the disk.
 Shows what the walk finds, what it deliberately does not, what a name two findings share cannot do,
-and how an argument corrects a finding rather than adding a second input.
+and how a correction renames a finding rather than adding a second input.
 
 ## Input
 
@@ -29,13 +29,14 @@ $ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
 
 Usage: git-timebraid [<options>] [<repo>]...
 
-Error: --ref 'core::refs/heads/main' is for input 'core', and two inputs are called that: doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- give one of them another name, as 'doc/examples/08-scan/input/platform/libs/core::=<name>' or 'doc/examples/08-scan/input/platform/tools/core::=<name>'
+Error: --ref 'core::refs/heads/main' is for input 'core', and two inputs are called that: doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- give one of them another name, as '::libs/core=<name>' or '::tools/core=<name>'
 ```
 
 `libs/core` and `tools/core` derive the same name. A name is a label, and two inputs may share one:
 where each lands is what tells them apart, so the scan alone would braid both, their commit subjects
 both reading `core: `. What refers to an input by its name — a pattern's scope, `--root-repo` —
-cannot say which of the two it means, so it is refused and says how to give one another name.
+cannot say which of the two it means, so it is refused, and giving one another name is the way out:
+the command below does.
 
 ## Command
 
@@ -43,7 +44,7 @@ cannot say which of the two it means, so it is refused and says how to give one 
 $ ./git-timebraid -o doc/examples/08-scan/output --no-bare \
     --scan doc/examples/08-scan/input/platform \
     --plan-out doc/examples/08-scan/plan.txt \
-    doc/examples/08-scan/input/platform/tools/core::=tools-core
+    ::tools/core=tools-core
 repositories:
   platform -> <root>
   webui -> apps/webui/
@@ -52,9 +53,10 @@ repositories:
   tools-core -> tools/core/
 ```
 
-The `<repo>` argument names a directory the scan already found, so it is a **correction to that
-finding** rather than a sixth input. It gives a name and no destination, which is exactly what a
-reference to either `core` needs.
+`::tools/core=tools-core` has no location: it is a **correction**, renaming the repository the scan
+found at `tools/core` rather than adding a sixth input, which is exactly what a reference to either
+`core` needs. An argument naming `input/platform/tools/core` itself would be another input, and is
+refused, naming this correction.
 
 ## Result
 
@@ -81,9 +83,8 @@ Everything landed where it sits on disk, and four separate rules can be read str
   without `--splice`, which is why the four destinations inside it are not a collision.
 - **The bare repository lost its `.git`**: `apps/webui.git` on disk, `apps/webui` in the output. A
   bare repository is found the same way any other is.
-- **The renamed repository did not move.** `tools-core` is its name — `::=tools-core` gives a name
-  and nothing else — but its destination is still `tools/core`, where the scan put it. An argument
-  that gives no destination leaves the finding's alone.
+- **The renamed repository did not move.** `tools-core` is its name, but its destination is still
+  `tools/core`, where the scan put it: a correction names the place it renames, and never moves it.
 - **`tools/core` and `libs/core` are two ordinary destinations**, and the commit subjects come from
   the names rather than from those (`--subject-prefix` defaults to `{repo}: `), which is why the two
   read `tools-core: ` and `core: ` rather than alike.

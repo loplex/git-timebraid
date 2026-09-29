@@ -115,6 +115,15 @@ already have is the tree the braid gets. A repository already found is not desce
 it holds of its own \- a submodule, a vendored checkout \- is never a second input. A directory whose
 name begins with a dot, and one reached through a symlink, are skipped along with anything under
 them.
+.IP
+A correction,
+.BI :: <subdir> = <name>
+with no location, renames the repository the scan found at
+.IR <subdir> ,
+and
+.BI ::= <name>
+the base directory at the output root; it never moves one. An argument with a location is always
+another input, and one naming a repository the scan found is refused, naming the correction.
 .TP
 \fB\-\-root\-repo\fR=\fI<text>\fR
 The input whose content lands at the output root rather than in a subdirectory of its own. It is the

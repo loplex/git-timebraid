@@ -47,6 +47,8 @@ class ResolvedInput(
     val subdir: String?,
     /** Where a local input is on disk, or `null` for a remote one, which is nowhere until cloned. */
     val local: LocalPlace?,
+    /** Whether an argument placed this input and can place it elsewhere; not one `--scan` found. */
+    val movable: Boolean = true,
 ) {
     val isRemote: Boolean get() = local == null
 }
@@ -288,15 +290,19 @@ class MergeRunner(
     /**
      * The remedy a refusal about where an input lands offers, for the input at a destination: its
      * location with another subdirectory, as [InputRemedy.placed] spells it. A repository `--scan` found
-     * is moved the same way, by naming its directory, which corrects the finding.
+     * sits where its directory does, and nothing on the command line places it elsewhere.
      */
     private val relocation = Relocation { destination ->
-        request.inputs.firstOrNull { it.subdir == destination }
-            ?.let {
+        val input = request.inputs.firstOrNull { it.subdir == destination }
+        when {
+            input == null -> Relocation.UNSPELLED.remedy(destination)
+            !input.movable ->
+                "rename the directory of the repository at '$destination', which --scan found there and " +
+                    "which cannot be given another subdirectory"
+            else ->
                 "give the repository at '$destination' another subdirectory, as " +
-                    InputRemedy(it.location, name = it.name).moved()
-            }
-            ?: Relocation.UNSPELLED.remedy(destination)
+                    InputRemedy(input.location, name = input.name).moved()
+        }
     }
 
     /**

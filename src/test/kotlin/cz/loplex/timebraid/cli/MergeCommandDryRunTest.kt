@@ -979,6 +979,40 @@ class MergeCommandDryRunTest {
         }
     }
 
+    @Test
+    fun `two findings at one subdirectory are refused, told that a finding stays where it is`() {
+        // `core.git` and `core` both land at `libs/core`, and neither is an argument to move.
+        scanned("libs/core.git")
+        scanned("libs/core", bare = false)
+
+        val result = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("two inputs would be placed at 'libs/core'"), result.output)
+        assertTrue(
+            printed.contains("a finding cannot be given another subdirectory: rename one of their directories"),
+            result.output,
+        )
+    }
+
+    @Test
+    fun `a finding and two arguments at one subdirectory offer one of the arguments a subdirectory`() {
+        scanned("libs/core.git")
+        for (name in listOf("a.git", "b.git")) {
+            TestRepoBuilder.create(tmp.resolve(name)).use { it.branch("main", it.commit("x1")) }
+        }
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", "--scan", path("tree"), path("a.git") + "::libs/core", path("b.git") + "::libs/core"),
+        )
+
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("three inputs would be placed at 'libs/core'"), result.output)
+        assertTrue(printed.contains("give one of the arguments a subdirectory of its own"), result.output)
+    }
+
     /** A repository at [at] under the scan base, with one commit in it. */
     private fun scanned(at: String, bare: Boolean = true) {
         val dir = tmp.resolve("tree/$at")
@@ -1013,7 +1047,32 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `an argument naming a scanned directory renames that finding rather than adding one`() {
+    fun `a placement refusal tells an argument how to move, and a finding that it cannot`() {
+        // A file where the scan found a repository below it: the base holds 'libs', so nothing lands
+        // inside it.
+        TestRepoBuilder.create(tmp.resolve("tree"), bare = false).use {
+            it.branch("main", it.commit("p1", files = mapOf("libs" to "a stray file")))
+        }
+        scanned("libs/backend.git")
+        val found = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+        assertEquals(1, found.statusCode, found.output)
+        assertTrue(found.output.contains("rename the directory of the repository at 'libs/backend'"), found.output)
+
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { it.branch("main", it.commit("w1")) }
+        val argument = MergeCommand().test(
+            listOf("--dry-run", "--scan", path("tree"), "${path("webui.git")}::libs/webui")
+        )
+        assertEquals(1, argument.statusCode, argument.output)
+        assertTrue(
+            argument.output.contains(
+                "give the repository at 'libs/webui' another subdirectory, as '${path("webui.git")}::<subdir>=webui'"
+            ),
+            argument.output,
+        )
+    }
+
+    @Test
+    fun `a correction renames the finding at its subdirectory, and leaves it there`() {
         scanned("libs/core.git")
         scanned("tools/core.git")
 
@@ -1023,17 +1082,43 @@ class MergeCommandDryRunTest {
         assertTrue(shared.output.contains("core -> libs/core/"), shared.output)
         assertTrue(shared.output.contains("core -> tools/core/"), shared.output)
 
-        val named = MergeCommand().test(
-            listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core.git") + "::=tools-core"),
-        )
+        val named = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "::tools/core=tools-core"))
         assertEquals(0, named.statusCode, named.output)
-        // Renamed, but left where the scan put it: the argument gave no subdirectory of its own.
+        // Renamed, and left where the scan put it: a correction names the place, it does not move.
         assertTrue(named.output.contains("tools-core -> tools/core/"), named.output)
         assertTrue(named.output.contains("core -> libs/core/"), named.output)
+
+        // Matched by the string, against a place the scan found something at, and needing a name.
+        val refusals = listOf(
+            listOf("::tools/cor=x") to "it found none there; it found one at 'libs/core', 'tools/core'",
+            listOf("::tools/core") to "gives it no name",
+            listOf("::tools/core=") to
+                "names no repository after its '=' (a correction gives one, as '::tools/core=<name>')",
+            listOf("::tools/core=a", "::tools/core=b") to "two corrections rename",
+            // Not a correction: one with a location is named after its subdirectory, or the location.
+            listOf(path("tree") + "/libs/core::libs/core=") to "leave the '=' out to name it after the subdirectory",
+            listOf(path("tree") + "/libs/core::=") to "leave the '=' out to name it after the location",
+        )
+        for ((extra, refusal) in refusals) {
+            val result = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")) + extra)
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.replace(Regex("\\s+"), " ").contains(refusal), result.output)
+        }
+        // A correction has no location, so a refusal of its suffix offers none of the location's
+        // remedies.
+        val unusable = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "::tools//core=x"))
+        assertEquals(1, unusable.statusCode, unusable.output)
+        assertTrue(unusable.output.contains("is not a usable subdirectory"), unusable.output)
+        assertTrue("end the argument with '::'" !in unusable.output, unusable.output)
+
+        // And without a scan there is nothing to correct.
+        val unscanned = MergeCommand().test(listOf("--dry-run", "::tools/core=x", path("tree/libs/core.git")))
+        assertEquals(1, unscanned.statusCode, unscanned.output)
+        assertTrue(unscanned.output.contains("there is no --scan"), unscanned.output)
     }
 
     @Test
-    fun `a scanned name git will not have in a ref is refused, and an argument renames it`() {
+    fun `a scanned name git will not have in a ref is refused, and a correction renames it`() {
         scanned("apps/x~y.git")
 
         // Refused when the scan is read, as an argument's own name is, rather than at the write.
@@ -1044,42 +1129,33 @@ class MergeCommandDryRunTest {
             printed.contains("'x~y' cannot be a repository name (found by --scan at "),
             refused.output,
         )
-        assertTrue(printed.contains("x~y.git::=<name>'"), refused.output)
+        assertTrue(printed.contains("give it a name, as '::apps/x~y=<name>'"), refused.output)
 
-        val renamed = MergeCommand().test(
-            listOf("--dry-run", "--scan", path("tree"), path("tree/apps/x~y.git") + "::=xy"),
-        )
+        val renamed = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "::apps/x~y=xy"))
         assertEquals(0, renamed.statusCode, renamed.output)
         assertTrue(renamed.output.contains("xy -> apps/x~y/"), renamed.output)
     }
 
     @Test
-    fun `an argument naming a scanned working tree by its dot-git corrects that finding`() {
+    fun `an argument naming a found repository however spelled is refused, naming the correction`() {
         scanned("libs/core.git")
         scanned("tools/core", bare = false)
-
-        val named = MergeCommand().test(
-            listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core/.git") + "::=tools-core"),
-        )
-
-        assertEquals(0, named.statusCode, named.output)
-        assertTrue(named.output.contains("tools-core -> tools/core/"), named.output)
-        assertTrue(named.output.contains("core -> libs/core/"), named.output)
-        assertTrue(!named.output.contains("-> tools-core/"), named.output)
-    }
-
-    @Test
-    fun `an argument naming a scanned repository through a symlink corrects that finding`() {
-        scanned("libs/core.git")
-        scanned("apps/webui.git")
         val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), tmp.resolve("tree/libs/core.git"))
 
-        val named = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "$alias::=libs-core"))
-
-        assertEquals(0, named.statusCode, named.output)
-        assertTrue(named.output.contains("libs-core -> libs/core/"), named.output)
-        assertTrue(named.output.lines().none { it.trim() == "core -> libs/core/" }, named.output)
-        assertTrue(!named.output.contains("-> libs-core/"), named.output)
+        // By its own path, by its `.git`, and through a symlink: one git directory each time, which
+        // is what makes it the finding rather than another input however it is spelled.
+        val spellings = listOf(
+            path("tree/libs/core.git") + "::=x" to "'::libs/core=<name>'",
+            path("tree/tools/core/.git") to "'::tools/core=<name>'",
+            "$alias::=x" to "'::libs/core=<name>'",
+        )
+        for ((argument, correction) in spellings) {
+            val result = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), argument))
+            val printed = result.output.replace(Regex("\\s+"), " ")
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(printed.contains("names a repository --scan already found"), result.output)
+            assertTrue(printed.contains("write $correction"), result.output)
+        }
     }
 
     @Test
@@ -1154,16 +1230,12 @@ class MergeCommandDryRunTest {
         assertEquals(1, clash.statusCode, clash.output)
         assertTrue(clash.output.contains("conflicts with --scan"), clash.output)
 
-        // The way out the message names: give the base repository a subdirectory of its own.
-        val moved = MergeCommand().test(
-            listOf(
-                "--dry-run", "--scan", path("tree"), "--root-repo", "backend",
-                path("tree") + "::platform",
-            ),
-        )
-        assertEquals(0, moved.statusCode, moved.output)
-        assertTrue(moved.output.contains("platform -> platform/"), moved.output)
-        assertTrue(moved.output.contains("backend -> <root>"), moved.output)
+        // Nothing moves a finding, so the way out is the one the message names: leave --root-repo
+        // out, and the base stays at the root. A correction with no subdirectory renames it there.
+        assertTrue(clash.output.contains("leave --root-repo out"), clash.output)
+        val renamed = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "::=platform"))
+        assertEquals(0, renamed.statusCode, renamed.output)
+        assertTrue(renamed.output.contains("platform -> <root>"), renamed.output)
     }
 
     @Test

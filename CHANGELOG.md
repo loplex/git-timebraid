@@ -164,7 +164,8 @@ Thirty changes alter what a command line written for 0.1.0 does:
 - **A name is a label, and two inputs may share one; the destination tells them apart.**\
   0.1.0 refused two inputs of one name, which is what two directories called `core` derive.\
   Two inputs placed at one destination are refused instead, on the command line, naming both and
-  offering each a subdirectory of its own.\
+  offering each argument among them a subdirectory of its own; a `--scan` finding stays where it
+  sits.\
   A reference to a shared name — a pattern's `<input>::`, `--root-repo` — is refused as naming
   both, and so are two inputs `--keep-remotes` would add as one remote.\
   Two of one name meeting on a ref name are refused naming `{subdir}`, which keeps them apart
@@ -366,7 +367,10 @@ Thirty changes alter what a command line written for 0.1.0 does:
   Every repository under `DIR` becomes an input, placed in the output where it sits on disk.\
   `DIR` itself lands at the output root when it is a repository.\
   A repository is not descended into, and the run's own output is left out.\
-  A `<repo>` argument naming one corrects that finding rather than adding a second input.
+  `::<subdir>=<name>`, with no location, renames what it found at `<subdir>`, and `::=<name>` the
+  base directory; a correction never moves a finding.\
+  An argument with a location is always another input, and one naming a repository the scan found
+  is refused, naming the correction.
 
 - **`--dissolve-submodules`** — let an input take the place of the gitlink it lands on.\
   The `[submodule]` section naming that path is left out of `.gitmodules` with it.\

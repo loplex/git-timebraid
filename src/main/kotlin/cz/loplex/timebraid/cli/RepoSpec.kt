@@ -28,6 +28,12 @@ internal class RepoSpec(
     val given: String? = null,
 ) {
     /**
+     * Whether this names no location at all, `::<subdir>=<name>`: a correction, renaming the
+     * repository `--scan` found at that subdirectory rather than adding an input.
+     */
+    val isCorrection: Boolean get() = split && location.isEmpty()
+
+    /**
      * The argument this is read from: the exact inverse of [parseRepoSpec], so that changing one
      * field and formatting the rest back keeps every part the argument wrote.
      */
@@ -123,15 +129,19 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
     val subdir = subdirText.ifEmpty { null }?.also { text ->
         refuseSeparators(text, "subdirectory", raw)
         if (!text.split('/').all(::isOneSegment)) {
-            throw UsageError("'$text' is not a usable subdirectory (in '$raw') -- " + InputRemedy(raw).wholeLocation())
+            throw UsageError("'$text' is not a usable subdirectory (in '$raw')" + suffixRemedy(raw))
         }
     }
     val name = nameText?.also { text ->
         if (text.isEmpty()) {
-            throw UsageError(
-                "'$raw' names no repository after its '=' (leave the '=' out to name it after " +
-                    "the subdirectory) -- " + InputRemedy(raw).wholeLocation()
-            )
+            // A correction has nothing else to be named after: without the '=' it would give no
+            // name, which is all a correction does.
+            val advice = when {
+                at >= 0 && location.isEmpty() -> "a correction gives one, as ${InputRemedy("", subdir).named()}"
+                subdir == null -> "leave the '=' out to name it after the location"
+                else -> "leave the '=' out to name it after the subdirectory"
+            }
+            throw UsageError("'$raw' names no repository after its '=' ($advice)" + suffixRemedy(raw))
         }
         refuseSeparators(text, "name", raw)
         if (!isOneSegment(text)) throw unusableName(text, raw, fromSuffix = true)
@@ -174,8 +184,17 @@ private const val SEPARATOR = "::"
  */
 private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageError {
     val said = "'$name' is not a usable name (in '$raw')"
-    return UsageError(if (fromSuffix) "$said -- " + InputRemedy(raw).wholeLocation() else said)
+    return UsageError(if (fromSuffix) said + suffixRemedy(raw) else said)
 }
+
+/**
+ * The location remedy a refusal out of [raw]'s suffix carries, or nothing for a correction.
+ *
+ * A correction, `::<subdir>=<name>`, has no location for its `::` to have belonged to, so the
+ * advice to end the argument with one would name an argument that cannot mean anything.
+ */
+private fun suffixRemedy(raw: String): String =
+    if (raw.lastIndexOf(SEPARATOR) == 0) "" else " -- " + InputRemedy(raw).wholeLocation()
 
 /**
  * A name git would not accept inside a ref.
@@ -193,7 +212,7 @@ private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageE
 private fun unusableRefName(spec: RepoSpec, raw: String): UsageError {
     val said = "'${spec.name}' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
         "git will not have it in a ref name -- give the input a name, as ${InputRemedy(spec).named()}"
-    val fromSuffix = spec.given != null || spec.subdir != null
+    val fromSuffix = !spec.isCorrection && (spec.given != null || spec.subdir != null)
     return UsageError(if (fromSuffix) "$said; or, " + InputRemedy(raw).wholeLocation() else said)
 }
 
@@ -237,7 +256,7 @@ private fun splitAtEquals(suffix: String): Pair<String, String?> {
  * A second `=` reaches this only in the name, the first one having ended the subdirectory.
  */
 private fun refuseSeparators(text: String, part: String, raw: String) {
-    val remedy = " -- " + InputRemedy(raw).wholeLocation()
+    val remedy = suffixRemedy(raw)
     if (':' in text) throw UsageError("a ':' cannot appear in the $part (in '$raw')$remedy")
     if ('=' in text) throw UsageError("a '=' cannot appear in the $part (in '$raw')$remedy")
 }
@@ -327,7 +346,7 @@ private fun repoNameFromLocation(location: String): String {
  * What is on disk never changes the reading — this only refuses to go on, naming the remedy.
  */
 internal fun checkSplit(spec: RepoSpec, raw: String) {
-    if (spec.isRemote || !spec.split) return
+    if (spec.isRemote || !spec.split || spec.isCorrection) return
     val whole = try {
         Path.of(raw)
     } catch (e: InvalidPathException) {

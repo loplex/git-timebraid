@@ -97,7 +97,7 @@ Three rules follow — two about the location, one about what comes after:
   not the name: a name derived from a last segment git would not take in a ref is refused, so the
   working spelling here is `~/repos/odd::name::=oddname`. An IPv6 URL needs the bare `::` and
   nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal name. Every
-  refusal that comes out of a suffix suggests the `::`.
+  refusal that comes out of the suffix of an argument with a location suggests the `::`.
 - **A subdirectory or a name written after the `::` holds no `:` and no `=`.** Neither is escaped;
   both are refused. That is what guarantees a suffix can never hold a `::` of its own, so the last
   `::` in the argument is always the separator. A name derived from the location may hold a `=`,
@@ -148,8 +148,9 @@ Placement and naming travel together, and can be separated.
   would add as one remote. Where two of one name meet on a ref name, a prefix holding `{subdir}`
   keeps them apart where `{repo}` cannot.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
-  placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
-  what the second one is mostly for: the scan already decided where it goes.
+  placing it, which then lands at `<name>/`. Renaming a repository
+  [`--scan`](#taking-the-layout-off-a-directory-tree) found is a correction instead,
+  `::<subdir>=<name>`, with no location.
 - One local repository is one input. Given as two arguments, however the second spells its
   location — through a symlink, or by its `.git` — it is refused, naming it and where each argument
   would place it.
@@ -190,21 +191,28 @@ The run's own `-o` is never a finding either, however it is spelled, so rerunnin
 `merged.git` beside the inputs does not braid it into itself; an argument naming the output, or an
 `-o` naming the `.git` of a working tree the scan finds, is refused.
 
-A `<repo>` argument may be given alongside, and one whose location is a directory the scan found, or
-that directory's `.git`, is a **correction to that finding** rather than a second input.
+A finding is renamed by a **correction**: `::<subdir>=<name>`, a `<repo>` with no location, naming
+the place the scan found it at.
 
-- The name it gives wins, and the subdirectory too when it gives one.
-- An argument that gives none leaves the finding where the scan put it.
+- It renames and does not move: where the scan put a finding is where the directory sits.
+  `--root-repo` is the one thing that moves an input, to the root.
+- `::=<name>` renames the base directory, the finding at the output root.
+- It is matched by the text of the subdirectory, so one naming a place the scan found nothing at is
+  refused, listing the places it did.
 - That is how a finding gets a name of its own. Two findings may derive the same one — `libs/core`
   and `tools/core` — and are told apart by where they sit, but a reference to that name, a
   pattern's scope or `--root-repo`, is refused until one of them is named:
 
 ```bash
-git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::=tools-core
+git-timebraid -o out.git --scan ~/repos ::tools/core=tools-core
 ```
 
-Anything the scan skipped, or a repository from outside the tree entirely, is added the same way:
-as an ordinary argument.
+**An argument with a location is always another input.** One naming a repository the scan already
+found — by its path, its `.git` or a symlink to either — is refused rather than read as that
+finding, and the refusal names the correction that renames it.
+
+Anything the scan skipped, or a repository from outside the tree entirely, is added as an ordinary
+argument.
 
 [Example 08](examples/08-scan/README.md) scans a tree holding all of these cases at once — a bare
 repository, a dot-name, a repository nested inside another, and the two findings that derive the
@@ -868,6 +876,8 @@ Finding the inputs, and placing their content:
   --scan=<path>          Take the layout from this directory.
                          Every repository under it becomes an input, placed in the output where it
                          sits on disk.
+                         '::<subdir>=<name>', with no location, renames the one it found at
+                         <subdir>.
   --root-repo=<text>     Name of the repository whose content lands at the output root.
   --splice               Allow one input's subdirectory to lie inside another's, splicing the two
                          into one directory.

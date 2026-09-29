@@ -108,7 +108,8 @@ private class PlacementOptions : OptionGroup(
         .help(
             "Take the layout from this directory." + BR +
                 "Every repository under it becomes an input, placed in the output where it sits " +
-                "on disk."
+                "on disk." + BR +
+                "'::<subdir>=<name>', with no location, renames the one it found at <subdir>."
         )
 
     val rootRepo by option("--root-repo")
@@ -533,15 +534,15 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     private var landings: List<Landing> = emptyList()
 
     /**
-     * The inputs the run will use: what `--scan` found, what the `<repo>` arguments named, and
-     * `--root-repo` applied over both.
+     * The inputs the run will use: what `--scan` found, renamed by the corrections, what the
+     * `<repo>` arguments named, and `--root-repo` applied over all of them.
      *
-     * An argument naming a repository the scan already found — its git directory, however the
-     * argument spells it — is not a second input but a correction to that one. The name it gives
-     * wins, and the subdirectory too when it gives one, while an argument that gives none leaves the
-     * finding where the scan put it. That is what makes the two composable rather than merely both
-     * allowed: renaming is how a finding gets a name nothing else shares, and there is no other way
-     * to reach one of them.
+     * An argument with a location is always another input, and two naming one local repository are
+     * refused. One naming a repository the scan already found — its git directory, however the
+     * argument spells it — is refused rather than read as that finding, since it would otherwise be one
+     * input by one spelling and a second by another: the rename it may have meant is a correction,
+     * `::<subdir>=<name>`, which names the finding by where it sits and has no location to be spelled
+     * two ways.
      */
     private fun resolveInputs(specs: List<RepoSpec>): List<ResolvedInput> {
         val scanned = placement.scan?.let { base ->
@@ -556,8 +557,6 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         // filesystem has it: however the argument spells it, through a symlink or its `.git`.
         val foundPlaces = scanned.associateWith { placeOf(it.path.toString()) }
         val byGitDir = foundPlaces.entries.mapNotNull { (found, local) -> local?.let { it.gitDir to found } }.toMap()
-        val overrides = LinkedHashMap<ScannedRepository, Landing>()
-        val extras = ArrayList<Landing>()
         // The directories the output takes up, which an argument's or a finding's own may not meet.
         val outputPlaces = outputRepo.output?.let { placesOf(it, withGitDir = !outputContent.bare) }
         // The scan leaves the output itself out, however it is spelled, but not a working tree whose
@@ -568,40 +567,41 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                     "cannot braid into itself"
             )
         }
-        for (spec in specs) {
+        val renamed = corrections(specs.filter { it.isCorrection }, scanned)
+        val extras = ArrayList<Landing>()
+        for (spec in specs.filterNot { it.isCorrection }) {
             val local = if (spec.isRemote) null else placeOf(spec.location)
-            val found = local?.let { byGitDir[it.gitDir] }
-            if (found == null) {
-                extras += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local, InputRemedy(spec))
-            } else if (overrides.put(found, Landing(spec.location, false, spec.name, spec.subdir ?: found.subdir, local, InputRemedy(spec))) != null) {
+            local?.let { byGitDir[it.gitDir] }?.let { found ->
                 throw UsageError(
-                    "two input arguments name '${shownPath(found.path.toString())}', which --scan already found"
+                    "'${spec.format()}' names a repository --scan already found, at " +
+                        "${subdirName(found.subdir)} -- an argument with a location is always another " +
+                        "input; to rename that one, write ${InputRemedy("", found.subdir).named()}"
                 )
             }
+            extras += Landing(
+                spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local, InputRemedy(spec),
+            )
         }
-
         // Two arguments naming one git directory are one repository, which braided as two inputs would
         // be braided against itself.
         val byRepository = extras.filter { it.local != null }.groupBy { it.local!!.gitDir }
         byRepository.values.firstOrNull { it.size > 1 }?.let { twice ->
-            val count = if (twice.size == 2) "two" else twice.size.toString()
             val shown = shownPath(twice.first().local!!.path.toString())
             throw UsageError(
-                "$count input arguments name one repository, '$shown', placing it at " +
+                "${count(twice)} input arguments name one repository, '$shown', placing it at " +
                     "${twice.joinToString(" and ") { "'${it.subdir}'" }} -- give it once"
             )
         }
 
         val merged = ArrayList<Landing>(scanned.size + extras.size)
         for (found in scanned) {
-            merged += overrides[found] ?: run {
-                refuseScannedName(found.name, found.path)
-                Landing(
-                    found.path.toString(), isRemote = false, found.name, found.subdir, foundPlaces[found],
-                    // The argument that corrects a finding is its directory, named.
-                    InputRemedy(shownPath(found.path.toString()), name = found.name),
-                )
-            }
+            val name = renamed[found] ?: found.name.also { refuseScannedName(it, found) }
+            merged += Landing(
+                found.path.toString(), isRemote = false, name, found.subdir, foundPlaces[found],
+                // What renames a finding is a correction naming where it sits; nothing moves one.
+                InputRemedy("", found.subdir),
+                movable = false,
+            )
         }
         merged += extras
 
@@ -621,8 +621,9 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             merged.firstOrNull { it.subdir == null && it.name != root }?.let { base ->
                 throw UsageError(
                     "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
-                        "repository ('${base.name}') and lands at the output root -- give that one " +
-                        "a subdirectory, as ${base.remedy.moved()}, to move it off"
+                        "repository ('${base.name}') and lands at the output root, where nothing " +
+                        "moves it from -- leave --root-repo out, or --scan a directory that is no " +
+                        "repository"
                 )
             }
         }
@@ -630,7 +631,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             // Refused only now, after the refusals that speak of the whole command line.
             if (!input.isRemote && input.local == null) throw CliktError("no git repository at ${input.location}")
             val subdir = input.subdir.takeIf { input.name != placement.rootRepo }
-            ResolvedInput(input.location, input.name, subdir, input.local)
+            ResolvedInput(input.location, input.name, subdir, input.local, input.movable)
         }
         resolved.firstOrNull { input ->
             val local = input.local
@@ -639,6 +640,49 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         landings = merged
         return resolved
     }
+
+    /**
+     * The names [corrections] give the findings of [scanned], each matched by the subdirectory it
+     * names, as a string: `::libs/core=core-lib` renames the finding at `libs/core`, and `::=<name>`
+     * the base directory, found at the output root.
+     *
+     * A correction renames and does not move: where the scan put a finding is where the directory
+     * sits, and `--root-repo` is what moves one, to the root. So one has to give a name, and name a
+     * subdirectory the scan found something at, once; and without a scan there is nothing to
+     * correct.
+     */
+    private fun corrections(
+        corrections: List<RepoSpec>,
+        scanned: List<ScannedRepository>,
+    ): Map<ScannedRepository, String> {
+        val renamed = LinkedHashMap<ScannedRepository, String>()
+        for (spec in corrections) {
+            val written = spec.format()
+            if (placement.scan == null) {
+                throw UsageError(
+                    "'$written' has no location, so it corrects a repository --scan found, and there " +
+                        "is no --scan -- put the repository's location before the '::'"
+                )
+            }
+            val name = spec.given ?: throw UsageError(
+                "'$written' corrects a repository --scan found and gives it no name, which is all a " +
+                    "correction does -- write ${InputRemedy("", spec.subdir).named()}"
+            )
+            val found = scanned.firstOrNull { it.subdir == spec.subdir } ?: throw UsageError(
+                "'$written' corrects the repository --scan found at ${subdirName(spec.subdir)}, and it " +
+                    "found none there; it found one at " + scanned.joinToString { subdirName(it.subdir) }
+            )
+            if (renamed.put(found, name) != null) {
+                throw UsageError(
+                    "two corrections rename the repository --scan found at ${subdirName(found.subdir)}"
+                )
+            }
+        }
+        return renamed
+    }
+
+    /** Where a finding at [subdir] sits, as a refusal names it. */
+    private fun subdirName(subdir: String?): String = subdir?.let { "'$it'" } ?: "the output root"
 
     /**
      * An input's subdirectory and name, and where it is on disk: `null` for a remote input, and for a local
@@ -652,6 +696,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val local: LocalPlace?,
         /** The way out of a refusal about this input, spelled on the argument that gave it. */
         val remedy: InputRemedy,
+        /** Whether an argument placed this input and another can place it elsewhere; not a finding. */
+        val movable: Boolean = true,
     )
 
     /**
@@ -676,19 +722,20 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     /**
      * Refuses a name the scan derived that git would not accept inside a ref, as [parseRepoSpec]
-     * refuses one derived from an argument, naming the directory and the argument that renames it.
+     * refuses one derived from an argument, naming the directory and the correction that renames it.
      *
-     * Only a finding no argument renamed is asked: a renamed one carries the argument's own name,
-     * which the parser has checked already. Left to the run, the name would be refused only once
-     * every input was read, with the first ref carrying it, or not at all where no ref carried it.
+     * Only a finding no correction renamed is asked: a renamed one carries the correction's own
+     * name, which the parser has checked already. Left to the run, the name would be refused only
+     * once every input was read, with the first ref carrying it, or not at all where no ref carried
+     * it.
      */
-    private fun refuseScannedName(name: String, path: Path) {
+    private fun refuseScannedName(name: String, found: ScannedRepository) {
         if (isRefComponent(name)) return
-        val dir = shownPath(path.toString())
+        val dir = shownPath(found.path.toString())
         throw UsageError(
             "'$name' cannot be a repository name (found by --scan at $dir): it becomes a " +
                 "tag prefix, and git will not have it in a ref name -- give it a name, as " +
-                InputRemedy(dir).named()
+                InputRemedy("", found.subdir).named()
         )
     }
 
@@ -713,15 +760,27 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * The destination is what tells inputs apart, their names being labels two may share, so it has
      * to be unique; asked here, on the command line, rather than by the planner once every input is
      * read. An argument that places nothing lands at its name, so two naming one directory `core` in
-     * different places meet here, and each is offered a subdirectory of its own.
+     * different places meet here, and each argument among them is offered a subdirectory of its own;
+     * a finding stays where it sits.
      */
     private fun refuseSharedSubdirs(inputs: List<Landing>) {
         val shared = inputs.filter { it.subdir != null }.groupBy { it.subdir }.filterValues { it.size > 1 }
         val (subdir, sharing) = shared.entries.firstOrNull() ?: return
-        throw UsageError(
-            "${count(sharing)} inputs would be placed at '$subdir': ${listed(sharing)} -- give one of " +
-                "them a subdirectory of its own, as ${sharing.joinToString(" or ") { it.remedy.moved() }}"
-        )
+        // A finding sits where the directory does, so only an argument can be given another
+        // subdirectory.
+        val movable = sharing.filter { it.movable }
+        val remedy = if (movable.isEmpty()) {
+            "each was found by --scan, and a finding cannot be given another subdirectory: rename one of " +
+                "their directories"
+        } else {
+            val which = when {
+                movable.size == sharing.size -> "one of them"
+                movable.size == 1 -> "the argument"
+                else -> "one of the arguments"
+            }
+            "give $which a subdirectory of its own, as ${movable.joinToString(" or ") { it.remedy.moved() }}"
+        }
+        throw UsageError("${count(sharing)} inputs would be placed at '$subdir': ${listed(sharing)} -- $remedy")
     }
 
     /**
