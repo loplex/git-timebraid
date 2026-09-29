@@ -32,8 +32,11 @@ import cz.loplex.timebraid.MergeRunner
 import cz.loplex.timebraid.ResolvedInput
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
+import cz.loplex.timebraid.git.MainlineRequest
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.RepositoryScan
+import cz.loplex.timebraid.git.ScopedPatterns
+import cz.loplex.timebraid.git.branchPatterns
 import cz.loplex.timebraid.git.ScannedRepository
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
@@ -464,6 +467,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         outputRepo.output?.let { output ->
             TargetRepository.refusal(output, outputRepo.force, outputContent.bare)?.let { throw CliktError(it) }
         }
+        val patterns = patterns(merged.map { it.name })
 
         val request = MergeRequest(
             inputs = merged,
@@ -472,11 +476,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             bare = outputContent.bare,
             keepRemotes = outputContent.keepRemotes,
             orderBy = history.orderBy,
-            mainlineBranch = history.mainlineBranch,
-            refs = branchPatterns(refPatterns.branches, merged.map { it.name }) +
-                refPatterns.refs,
-            interleaveRefs = refPatterns.interleaveRefs,
-            labelRefs = refPatterns.labelRefs,
+            mainline = patterns.mainline,
+            refs = patterns.refs,
+            interleaveRefs = patterns.interleave,
+            labelRefs = patterns.labels,
             notes = outputContent.notes,
             splice = placement.splice,
             dissolveSubmodules = placement.dissolveSubmodules,
@@ -668,8 +671,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      *
      * Only a finding no argument renamed is asked:
      * a renamed one carries the argument's own name, which the parser has checked already.\
-     * Left to the run, the name would have failed at the write of the first ref carrying it,
-     * an input's tag under the default prefix, once the braid was written, or not at all where no ref carried it.
+     * Left to the run, the name would be refused only once every input was read,
+     * with the first ref carrying it, or not at all where no ref carried it.
      */
     private fun refuseScannedName(name: String, path: Path) {
         if (isRefComponent(name)) return
@@ -723,6 +726,38 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
         return UsageError(described.joinToString("; "))
     }
+
+    /** What every option naming refs asked for, parsed; see [patterns]. */
+    private class Patterns(
+        val mainline: MainlineRequest,
+        val refs: ScopedPatterns,
+        val interleave: ScopedPatterns,
+        val labels: ScopedPatterns,
+    )
+
+    /**
+     * Every option naming refs, parsed against [names], the inputs' names in the order the run reads them:
+     * on the command line, so a mistyped pattern is refused before an input is cloned or read,
+     * as the usage error every other mistyped argument gets.
+     *
+     * The scoped patterns are parsed before the mainlines,
+     * so that a mistyped input name in a pattern is reported before anything the mainline value gets wrong.
+     */
+    private fun patterns(names: List<String>): Patterns =
+        try {
+            val refs = branchPatterns(refPatterns.branches, names) +
+                ScopedPatterns.parse(refPatterns.refs, "--ref", names, destinations = true)
+            val labels = ScopedPatterns.parse(refPatterns.labelRefs, "--label-ref", names, destinations = true)
+            val interleave = ScopedPatterns.parse(refPatterns.interleaveRefs, "--interleave-ref", names)
+            Patterns(
+                refs = ScopedPatterns(refs, "--ref", names, emptyMeans = true),
+                labels = ScopedPatterns(labels, "--label-ref", names, emptyMeans = false),
+                interleave = ScopedPatterns(interleave, "--interleave-ref", names, emptyMeans = false),
+                mainline = MainlineRequest.parse(history.mainlineBranch, names),
+            )
+        } catch (e: IllegalArgumentException) {
+            throw UsageError(e.message ?: "a ref pattern could not be read")
+        }
 
     private fun report(result: MergeResult) {
         // The report is the last thing said and belongs to no phase,
@@ -827,21 +862,6 @@ private fun ArgumentTransformContext.afterOptions(tokens: List<String>): List<St
     }
     return tokens.filter { it != END_OF_OPTIONS }
 }
-
-/**
- * `-b` values as the `--ref` patterns they are shorthand for, a scope checked against [inputs].
- *
- * The reader refuses a malformed value with an [IllegalArgumentException], the way it does for every other caller.
- * It becomes a [UsageError] here because the request is built before `run`'s own catch,
- * so an unwrapped one would reach the user as a stack trace
- * rather than as the usage error every other mistyped argument gets.
- */
-private fun branchPatterns(values: List<String>, inputs: List<String>): List<String> =
-    try {
-        CommitGraphReader.words(values, "-b").map { CommitGraphReader.branchPattern(it, inputs) }
-    } catch (e: IllegalArgumentException) {
-        throw UsageError(e.message ?: "a -b value could not be read")
-    }
 
 /**
  * The directories a repository at [location] takes up, for telling whether two locations are one repository:
