@@ -31,6 +31,55 @@ class Named(
 )
 
 /**
+ * What a ref carried over is called in the output, in the two parts a prefix goes between.
+ *
+ * The output name is held in two parts because the run may have written either, neither or both of
+ * them. [namespace] and [name] are always concatenated to make it; [prefixed] says whether the
+ * naming rule for [namespace] — `--branch-prefix`, `--tag-prefix` — goes between the two.
+ *
+ * That is the whole of how a destination and a prefix get along. A run that gives no destination
+ * leaves both to the prefix rule; one that names a namespace takes that half; one that spells out a
+ * pattern takes all of it and the prefix stays out.
+ */
+class OutputName(
+    /** Namespace the output writes it into, `refs/heads/` and the like, with its trailing slash. */
+    val namespace: String,
+    /** Name below [namespace]. */
+    val name: String,
+    /** Whether the prefix belonging to [namespace] goes between the two. */
+    val prefixed: Boolean = true,
+) {
+    companion object {
+
+        /**
+         * What [ref], of the input named [repo], is called in the output under the pattern that
+         * took it.
+         *
+         * The three destination forms land here as the two halves of a name plus one boolean. A
+         * namespace destination swaps the namespace and leaves the rest to that namespace's
+         * prefix; a spelled-out destination fills both halves and turns the prefix off; no
+         * destination at all keeps the ref exactly where it was.
+         */
+        fun of(ref: BraidOutRef, repo: String): OutputName {
+            val pattern = ref.takenBy
+            val spelled = pattern?.resolve(ref.fullName, repo)
+            val namespace = pattern?.destination?.takeIf { pattern.toNamespace }
+            return when {
+                // Split at the last separator so the two halves still join back, and so a name
+                // under refs/heads or refs/tags is still counted as the branch or the tag it became.
+                spelled != null -> OutputName(
+                    spelled.substringBeforeLast('/') + "/",
+                    spelled.substringAfterLast('/'),
+                    prefixed = false,
+                )
+                namespace != null -> OutputName(namespace, ref.name)
+                else -> OutputName(ref.namespace, ref.name)
+            }
+        }
+    }
+}
+
+/**
  * Names the output's refs, and refuses a set of names that cannot all be written, without writing
  * anything.
  *
@@ -100,7 +149,7 @@ class RefNames(
                 // so once a destination may have renamed it.
                 if (ref.isMainlineOf(input)) continue
                 val name = named(ref, repo)
-                claim(claimed, name, repo, prefixFlag(ref))
+                claim(claimed, name, repo, prefixFlag(OutputName.of(ref, repo)))
                 refs[name] = RefSource.Of(ref)
                 when {
                     name.startsWith(Constants.R_HEADS) -> branches++
@@ -140,8 +189,9 @@ class RefNames(
      * overrides exactly the part of it that it wrote.
      */
     private fun named(ref: BraidOutRef, repo: String): String {
-        val prefix = if (!ref.prefixed) "" else prefixOf(ref.namespace).replace("{repo}", repo)
-        return ref.namespace + prefix + ref.name
+        val out = OutputName.of(ref, repo)
+        val prefix = if (!out.prefixed) "" else prefixOf(out.namespace).replace("{repo}", repo)
+        return out.namespace + prefix + out.name
     }
 
     /**
@@ -156,10 +206,10 @@ class RefNames(
         else -> error("no prefix rule for '$namespace' -- it should have been named outright")
     }
 
-    /** The option setting the prefix [ref] sees, for a message that has to suggest a remedy. */
-    private fun prefixFlag(ref: BraidOutRef): String = when {
-        !ref.prefixed -> "the destination"
-        ref.namespace == Constants.R_HEADS -> "--branch-prefix"
+    /** The option setting the prefix [out] sees, for a message that has to suggest a remedy. */
+    private fun prefixFlag(out: OutputName): String = when {
+        !out.prefixed -> "the destination"
+        out.namespace == Constants.R_HEADS -> "--branch-prefix"
         else -> "--tag-prefix"
     }
 

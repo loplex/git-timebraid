@@ -654,6 +654,20 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a malformed ref pattern is refused before a remote input is cloned`() {
+        corpus()
+        val remote = tmp.resolve("backend.git").toUri().toString()
+
+        val result = MergeCommand().test(
+            listOf("-o", path("out.git"), "--interleave-ref", "^refs/heads/wip", remote, path("webui.git"))
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("nothing but patterns that subtract"), result.output)
+        assertTrue(!Files.exists(tmp.resolve(".timebraid-clones")), result.output)
+    }
+
+    @Test
     fun `a local input that is no repository is refused before a remote one is cloned`() {
         corpus()
         val remote = tmp.resolve("backend.git").toUri().toString()

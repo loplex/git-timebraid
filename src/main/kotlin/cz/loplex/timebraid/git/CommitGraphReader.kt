@@ -123,29 +123,11 @@ class BraidNotes(
     val message: String,
 )
 
-/** The two ref namespaces this program enumerates by default, and names a rule for. */
-enum class RefKind(val namespace: String) {
-    BRANCH(Constants.R_HEADS),
-    TAG(Constants.R_TAGS);
-
-    companion object {
-        /** The kind a namespace names, or `null` when it is neither of the two. */
-        fun of(namespace: String): RefKind? =
-            entries.firstOrNull { it.namespace == namespace || it.namespace == "$namespace/" }
-    }
-}
-
 /**
- * One ref carried over: where it came from, what it points at, and what it is called in the output.
+ * One ref carried over: where it came from, what it points at, and the pattern that took it.
  *
- * The output name is held in two parts because the run may have written either, neither or both of
- * them. [namespace] and [name] are always concatenated to make it; [prefixed] says whether the
- * naming rule for [namespace] — `--branch-prefix`, `--tag-prefix` — goes between the two.
- *
- * That is the whole of how a destination and a prefix get along. A run that gives no destination
- * leaves both to the prefix rule; one that names a namespace takes that half; one that spells out a
- * pattern takes all of it and the prefix stays out. Nothing here has to know which of the three
- * happened.
+ * What it is called in the output follows from those and the options, and is [OutputName]'s to
+ * work out beside the other names the output's refs get: nothing the reader decides depends on it.
  */
 class BraidOutRef(
     /**
@@ -165,13 +147,17 @@ class BraidOutRef(
      * the braid.
      */
     val labelOnly: Boolean = false,
-    /** Namespace the output writes it into, `refs/heads/` and the like, with its trailing slash. */
+    /**
+     * The namespace the ref was found under in the input, `refs/heads/` and the like, with its
+     * trailing slash: the part of [fullName] a prefix goes after.
+     */
     val namespace: String,
-    /** Name below [namespace]. */
-    val name: String,
-    /** Whether the prefix belonging to [namespace] goes between the two. */
-    val prefixed: Boolean = true,
+    /** The pattern that took this ref, with the destination it may give, or `null` for none. */
+    val takenBy: RefPattern? = null,
 ) {
+    /** What the ref is called below [namespace]. */
+    val name: String get() = fullName.removePrefix(namespace)
+
     /** Whether this ref is the one the braid already speaks for, and must not be written twice. */
     fun isMainlineOf(input: SourceInputs): Boolean =
         fullName == Constants.R_HEADS + input.mainlineBranch
@@ -192,71 +178,10 @@ object CommitGraphReader {
     val MAINLINE_CANDIDATES = listOf("main", "master", "develop")
 
     /**
-     * The `refs` pattern that `-b/--branch` is shorthand for.
+     * Every pattern arrives parsed ([ScopedPatterns.parse]), each scoped to an input by its position
+     * in [repositories], so nothing here reads option text.
      *
-     * A git branch name cannot contain a star, so the short form desugars into the general one
-     * exactly — there is no name for which the two select differently, and nothing to escape. Nor
-     * can it contain a space, which is what lets one argument carry several of them: see [words],
-     * through which `-b` passes for the same reason every other option in its group does.
-     *
-     * The rest of the group's grammar belongs around the branch name rather than inside it, so only
-     * the pattern is prefixed and the scope, the subtracting `^` and a destination are held back:
-     * `backend::^wip` becomes `backend::^refs/heads/wip`. Neither a `:` nor a `^` can occur in a ref
-     * name, so nothing a branch could legitimately be called is mistaken for one of them.
-     *
-     * What is malformed as a `-b` value is refused here, naming `-b` and the text as written: its
-     * fields, and its scope and destination by the rules a `--ref` is held to ([scopeOf],
-     * [destinationOf]). Left to the pattern parser the same refusal would name `--ref` and the
-     * desugared value, neither of which the user typed.
-     *
-     * @param inputs the names an `<input>::` scope may take.
-     */
-    fun branchPattern(value: String, inputs: Collection<String>): String {
-        val (input, written) = scopeOf("-b", value, inputs)
-        val negated = written.startsWith('^')
-        val fields = (if (negated) written.substring(1) else written).split(':')
-        refuseFields("-b", value, fields, inputs, negated, "<branch>")
-        val name = fields[0]
-        require(name.isNotEmpty()) { if (negated) "-b '$value' subtracts no branch" else "-b '$value' names no branch" }
-        require(!name.contains('^')) {
-            "-b '$value' holds a '^' inside the branch name; git refuses one anywhere in a ref " +
-                "name, so it can only be the leading mark that makes a pattern subtract"
-        }
-        val heads = Constants.R_HEADS + name
-        val destination = fields.getOrNull(1)?.let { destinationOf("-b", value, it, negated) }
-        destination?.let { checkDestination("-b", value, heads, RefPattern(heads, it)) }
-        return (if (input == null) "" else input + SCOPE) + (if (negated) "^" else "") + heads +
-            (if (destination == null) "" else ":$destination")
-    }
-
-    /**
-     * The [destination] a refspec gave, refused on a pattern that subtracts, since nothing lands from
-     * it, on an option that takes none, and when it is empty; whether it can be carried out is
-     * [checkDestination]'s to say.
-     *
-     * @param allowed whether [option] takes a destination at all.
-     */
-    private fun destinationOf(
-        option: String,
-        value: String,
-        destination: String,
-        negated: Boolean,
-        allowed: Boolean = true,
-    ): String {
-        require(!negated) {
-            "$option '$value' gives a destination to a pattern that subtracts; nothing " +
-                "lands from it, so there is nothing to name"
-        }
-        require(allowed) {
-            "$option '$value' gives a destination, and $option decides what a run " +
-                "reads rather than what it writes; a destination belongs on -b, --ref " +
-                "or --label-ref"
-        }
-        require(destination.isNotEmpty()) { "$option '$value' names no destination" }
-        return destination
-    }
-
-    /**
+     * @param requested which branch each input braids along, as `--mainline-branch` asked for it.
      * @param refs glob patterns matched against full ref names — `refs/heads/main` for one branch,
      *   `refs/tags/v1.*` for a release series, a star alone for every branch and tag — selecting
      *   which of each input's refs are loaded and later recreated. Empty selects every branch and
@@ -308,26 +233,19 @@ object CommitGraphReader {
     fun read(
         repositories: List<SourceRepository>,
         orderBy: OrderBy,
-        mainlineBranch: List<String> = emptyList(),
-        refs: List<String> = emptyList(),
-        interleaveRefs: List<String> = emptyList(),
-        labelRefs: List<String> = emptyList(),
+        requested: MainlineRequest = MainlineRequest.NONE,
+        refs: ScopedPatterns = ScopedPatterns.NONE,
+        interleaveRefs: ScopedPatterns = ScopedPatterns.NONE,
+        labelRefs: ScopedPatterns = ScopedPatterns.NONE,
         notes: Boolean = false,
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
-        require(repositories.map { it.name }.toSet().size == repositories.size) {
+        // The command line refuses two inputs of one name; a caller that did not is a bug here.
+        check(repositories.map { it.name }.toSet().size == repositories.size) {
             "two input repositories have the same name"
         }
 
-        val names = repositories.map { it.name }
-        // Before the mainlines, so that a mistyped input name is reported as the mistyped input name
-        // rather than being masked by whatever the mainline resolution makes of the run.
-        val scopedRefs = ScopedPatterns(refs, "--ref", names, emptyMeans = true, destinations = true)
-        val scopedLabels =
-            ScopedPatterns(labelRefs, "--label-ref", names, emptyMeans = false, destinations = true)
-        val scopedInterleave =
-            ScopedPatterns(interleaveRefs, "--interleave-ref", names, emptyMeans = false)
-        val mainlines = resolveMainlines(repositories, mainlineBranch)
+        val mainlines = resolveMainlines(repositories, requested)
         val outputBranch = mainlines.output
         val builder = CommitGraphBuilder()
         val heads = ArrayList<Commit>(repositories.size)
@@ -338,22 +256,22 @@ object CommitGraphReader {
         var notesAttached = 0
         var notesSkipped = 0
 
-        for (repo in repositories) {
+        for ((index, repo) in repositories.withIndex()) {
             val source = builder.addSource(repo.name)
 
-            val selected = Selection(scopedRefs.of(repo.name), emptyMeans = true)
+            val selected = Selection(refs.of(index), emptyMeans = true)
             // Empty matches nothing here, the other way round from the selection: a label is
             // something a run asks for, where carrying the refs over is what it does by default.
-            val labelled = Selection(scopedLabels.of(repo.name), emptyMeans = false)
+            val labelled = Selection(labelRefs.of(index), emptyMeans = false)
 
-            val mainline = mainlines.perInput.getValue(repo.name)
+            val mainline = mainlines.perInput[index]
             val mainlineTip = repo.resolveBranch(mainline)
                 ?: error("repository '${repo.name}' has no branch '$mainline'")
 
             // Namespaces beyond the two known ones are read only where a pattern names one, so a
             // bare star and a star under `refs/` still mean every branch and every tag: a Gerrit
             // change or a clone's own branch is reached by asking for it.
-            val foreign = foreignRefs(repo, scopedRefs.of(repo.name) + scopedLabels.of(repo.name))
+            val foreign = foreignRefs(repo, refs.of(index) + labelRefs.of(index))
 
             // Every ref this input offers, under the namespace it was found in, so that one loop
             // decides what is read and one decides what it is called.
@@ -404,11 +322,15 @@ object CommitGraphReader {
             // A label reaches the same line by the ordinary route rather than the exceptional one.
             // Nothing above put its target in, so it is there only if something else's ancestry
             // carried it, and the miss is counted instead of being a fact about the input.
+            fun carried(ref: SourceRef, pattern: RefPattern?, labelOnly: Boolean): BraidOutRef? {
+                val commit = builder.find(source, ref.target.name) ?: return null
+                return BraidOutRef(ref.fullName, commit, ref.annotation, labelOnly, ref.namespace, pattern)
+            }
             val selectedRefs = takenBySelection.mapNotNull {
-                carried(it, selected.taking(it.fullName), builder, source, repo.name, labelOnly = false)
+                carried(it, selected.taking(it.fullName), labelOnly = false)
             }
             val labelledRefs = takenByLabel.mapNotNull {
-                carried(it, labelled.taking(it.fullName), builder, source, repo.name, labelOnly = true)
+                carried(it, labelled.taking(it.fullName), labelOnly = true)
             }
             labelsAttached += labelledRefs.size
             labelsSkipped += takenByLabel.size - labelledRefs.size
@@ -447,7 +369,7 @@ object CommitGraphReader {
             mainlineBranch = outputBranch,
             commits = original,
             sources = inputs,
-            interleaveTips = interleaveTips(scopedInterleave, inputs),
+            interleaveTips = interleaveTips(interleaveRefs, inputs),
             labelsAttached = labelsAttached,
             labelsSkipped = labelsSkipped,
             notesAttached = notesAttached,
@@ -507,55 +429,6 @@ object CommitGraphReader {
     }
 
     /**
-     * What [ref] becomes in the output under [pattern], or `null` when its target was never read.
-     *
-     * The three destination forms land here as the two halves of a name plus one boolean. A
-     * namespace destination swaps the namespace and leaves the rest to that namespace's prefix; a
-     * spelled-out destination fills both halves and turns the prefix off; no destination at all
-     * keeps the ref exactly where it was.
-     */
-    private fun carried(
-        ref: SourceRef,
-        pattern: RefPattern?,
-        builder: CommitGraphBuilder,
-        source: Source,
-        repo: String,
-        labelOnly: Boolean,
-    ): BraidOutRef? {
-        val commit = builder.find(source, ref.target.name) ?: return null
-        val spelled = pattern?.resolve(ref.fullName, repo)
-        return when {
-            spelled != null -> BraidOutRef(
-                fullName = ref.fullName,
-                commit = commit,
-                annotation = ref.annotation,
-                labelOnly = labelOnly,
-                // Split at the last separator so the two halves still join back, and so a name under
-                // refs/heads or refs/tags is still counted as the branch or the tag it became.
-                namespace = spelled.substringBeforeLast('/') + "/",
-                name = spelled.substringAfterLast('/'),
-                prefixed = false,
-            )
-            pattern?.toNamespace == true -> BraidOutRef(
-                fullName = ref.fullName,
-                commit = commit,
-                annotation = ref.annotation,
-                labelOnly = labelOnly,
-                namespace = pattern.destination!!,
-                name = ref.name,
-            )
-            else -> BraidOutRef(
-                fullName = ref.fullName,
-                commit = commit,
-                annotation = ref.annotation,
-                labelOnly = labelOnly,
-                namespace = ref.namespace,
-                name = ref.name,
-            )
-        }
-    }
-
-    /**
      * The refs the patterns match, as the commits they name, deduplicated.
      *
      * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
@@ -575,8 +448,8 @@ object CommitGraphReader {
         inputs: List<SourceInputs>,
     ): List<Commit> {
         val tips = LinkedHashSet<Commit>()
-        for (input in inputs) {
-            val opted = Selection(patterns.of(input.source.name), emptyMeans = false)
+        for ((index, input) in inputs.withIndex()) {
+            val opted = Selection(patterns.of(index), emptyMeans = false)
             // A label is skipped whatever the pattern says. That is the whole of the separation:
             // the interleave matches what a run chose to read, and a label chose nothing.
             for (ref in input.refs) {
@@ -585,165 +458,6 @@ object CommitGraphReader {
             }
         }
         return tips.toList()
-    }
-
-    /**
-     * One glob, and the right half of the refspec it may carry.
-     *
-     * [destination] is `null` where the pattern only selects. Where it is given it says how much of
-     * the output name the run is writing itself: a namespace (`refs/tags/`), leaving the rest to
-     * that namespace's prefix; or a name holding a `*`, which is substituted with whatever the
-     * glob's own `*` matched and leaves no room for a prefix at all; or a plain name, for the one
-     * ref a pattern without a star can reach.
-     *
-     * [negated] is a pattern written with a leading `^`, as `^refs/heads/wip`, which subtracts
-     * rather than selects: it takes back every ref it matches, whatever else brought them in. It
-     * carries no destination, nothing landing that could be named, and it reads no namespace of its
-     * own for the same reason.
-     */
-    private class RefPattern(
-        val glob: String,
-        val destination: String?,
-        val negated: Boolean = false,
-    ) {
-
-        /** Whether the destination is a namespace to hand back to the prefix rules. */
-        val toNamespace: Boolean =
-            destination != null && !destination.contains('*') && destination.endsWith("/")
-
-        /**
-         * Where a ref this pattern matched is written, or `null` to leave it where it came from.
-         *
-         * [name] is the ref's full name in the input, which is what the glob matched, and [repo] is
-         * the input's own name, for a `{repo}` in the destination. Only the spelled-out forms are
-         * resolved here; a namespace destination is [toNamespace] and the writer's business.
-         */
-        fun resolve(name: String, repo: String): String? {
-            if (destination == null || toNamespace) return null
-            val spelled = destination.replace("{repo}", repo)
-            if (!spelled.contains('*')) return spelled
-            return spelled.replace("*", captured(name))
-        }
-
-        /** What this pattern's own star matched in [name], which the destination's star receives. */
-        private fun captured(name: String): String {
-            val head = glob.substringBefore('*')
-            val tail = glob.substringAfter('*')
-            return name.substring(head.length, name.length - tail.length)
-        }
-    }
-
-    /**
-     * A pattern, the input it speaks for, and where its matches land, written
-     * `[<input>::][^]<refspec>`: `backend::refs/heads/main` narrows to one input, while a pattern
-     * with no `::` speaks for every one of them.
-     *
-     * **What follows the scope is git's refspec**, `<pattern>[:<destination>]`, so a value valid as
-     * a git refspec means the same here: `refs/heads/main:refs/tags/main` reads the branch and
-     * writes it as a tag. The differences are few and each on purpose: a destination may be a
-     * namespace (`refs/tags/`) handed to that namespace's prefix, and may hold `{repo}`; a pattern
-     * with stars may go without a destination, which `git fetch` allows only in a negative refspec,
-     * or name one ref as its destination; and there is no `+`, no empty pattern or destination, and
-     * no short name, every pattern matching full ref names.
-     *
-     * **The scope is ended by `::`**, the separator the `<repo>` grammar puts between a location and
-     * its suffix. The separator is decidable rather than a convention: a refspec holds at most one
-     * `:`, so never a `::`.
-     *
-     * **The empty case stays per input, and keeps the meaning it had.** No pattern for an input is
-     * that option's empty case for that input — every branch and tag for [Selection], none for the
-     * interleave and the labels. So `--ref backend::refs/heads/main` narrows backend and leaves the
-     * other inputs carrying everything, which is the generalisation of *naming any ref leaves out
-     * every ref not named* from the run to the input. An unscoped pattern narrows every input
-     * exactly as before.
-     *
-     * **A `^` in front of the pattern subtracts instead of selecting**, the way git has written a
-     * negative refspec since 2.29, and in the same place, before the refspec. It is decidable rather
-     * than a convention, git refusing a `^` anywhere in a ref name. The mark goes after the scope
-     * rather than in front of the whole value: `^backend::refs/heads/wip` would read as *not
-     * backend*, which is a meaning this never has.
-     *
-     * @param emptyMeans what no pattern for an input says about that input — every branch and tag,
-     *   or none. It is also what a run holding nothing but subtractions resolves against, which is
-     *   why it is known here and not only in [Selection]: where the empty case is no ref at all
-     *   there is nothing to take back out, and such a run is refused rather than quietly matching
-     *   nothing.
-     * @param destinations whether a destination is meaningful at all. It is for the two options that
-     *   write refs; for the one that decides what may weigh on the braid it would name a namespace
-     *   nothing is ever written to, so it is refused rather than accepted and ignored.
-     */
-    private class ScopedPatterns(
-        raw: List<String>,
-        option: String,
-        inputs: Collection<String>,
-        emptyMeans: Boolean,
-        destinations: Boolean = false,
-    ) {
-        private val unscoped = ArrayList<RefPattern>()
-        private val byInput = HashMap<String, MutableList<RefPattern>>()
-
-        init {
-            for (value in words(raw, option)) {
-                val (input, written) = scopeOf(option, value, inputs)
-                // A leading '^' is decidable rather than a convention: git refuses a '^' anywhere in
-                // a ref name, so one here can only be the mark.
-                val negated = written.startsWith('^')
-                val fields = (if (negated) written.substring(1) else written).split(':')
-                refuseFields(option, value, fields, inputs, negated, "<pattern>")
-                val glob = fields[0]
-                require(glob.isNotEmpty()) {
-                    if (negated) "$option '$value' subtracts no pattern" else "$option '$value' names no pattern"
-                }
-                require(!glob.contains('^')) {
-                    "$option '$value' holds a '^' inside its pattern; git refuses one anywhere in " +
-                        "a ref name, so it can only be the leading mark that makes a pattern subtract"
-                }
-                require(!glob.startsWith('+')) {
-                    "$option '$value' begins its refspec with '+', which git reads as allowing an " +
-                        "update that is no fast-forward; a run writes every ref afresh, so there is " +
-                        "nothing for it to allow. Leave it out"
-                }
-
-                val destination =
-                    fields.getOrNull(1)?.let { destinationOf(option, value, it, negated, allowed = destinations) }
-                val pattern = RefPattern(glob, destination, negated)
-                checkDestination(option, value, glob, pattern)
-                // After the destination, because whether a pattern may read a namespace the output
-                // has no name rule for depends on whether it said what the matches are called. A
-                // pattern that subtracts reads no namespace of its own, so it is asked for nothing.
-                checkReachable(
-                    option,
-                    value,
-                    glob,
-                    writes = destinations && !negated,
-                    named = destination != null,
-                )
-                if (input == null) unscoped += pattern else byInput.getOrPut(input) { ArrayList() } += pattern
-            }
-
-            // Checked per input rather than per run, because the empty case is per input: an
-            // unscoped subtraction and no positive anywhere leaves every input with nothing to take
-            // it out of, while one input's scoped subtraction is answered by an unscoped positive.
-            if (!emptyMeans) {
-                for (input in inputs) {
-                    val patterns = of(input)
-                    require(patterns.isEmpty() || patterns.any { !it.negated }) {
-                        "$option holds nothing but patterns that subtract for input '$input', and " +
-                            "its empty case is no ref at all -- so there is nothing to take back " +
-                            "out. Say what is opted in first, a star for all of it"
-                    }
-                }
-            }
-        }
-
-        /**
-         * The patterns applying to [input], the ones naming it first.
-         *
-         * The order only matters to a destination, where the first pattern that matches a ref
-         * decides where it lands: a scoped pattern is the more specific of the two, so it is the one
-         * that should win over an unscoped pattern covering the same ref.
-         */
-        fun of(input: String): List<RefPattern> = (byInput[input] ?: emptyList<RefPattern>()) + unscoped
     }
 
     /**
@@ -817,177 +531,8 @@ object CommitGraphReader {
         }
     }
 
-    /**
-     * Every value of [values], each split on whitespace, so one shell word may carry a whole list:
-     * `--mainline-branch 'A::main B::trunk'`, `-b 'main develop'`.
-     *
-     * Splitting is safe for the same reason the `::` scope is: git refuses a space anywhere in a
-     * ref name, as it refuses a colon, while it accepts `,`, `;` and `|` — so whitespace can never
-     * cut a pattern or a branch name in half, and none of the obvious separators could have been
-     * used instead. Repeating the option still works and means the same thing.
-     */
-    internal fun words(values: List<String>, option: String): List<String> =
-        values.flatMap { value ->
-            val parts = value.split(WHITESPACE).filter { it.isNotEmpty() }
-            require(parts.isNotEmpty()) { "$option was given a value holding nothing but whitespace" }
-            parts
-        }
-
-    private val WHITESPACE = Regex("\\s+")
-
-    /**
-     * Whether [pattern] can match any name under [namespace] at all.
-     *
-     * Decided on the pattern's literal head, the part before its first `*`: with nothing to match
-     * loosely, the pattern itself has to sit under the namespace, and with a star anywhere the head
-     * and the namespace have to agree as far as the shorter of the two runs. So `refs/tags/v1.*`
-     * reaches the tags, a star alone or `refs/` with one reaches both, and a pattern under
-     * `refs/notes/` reaches neither.
-     *
-     * Conservative in the one direction that is safe: the head is all this looks at, so a pattern
-     * whose star sits inside a namespace's own text (`re*fs/heads/x`) is let through on a head of
-     * `re` agreeing with `refs/heads/`, whatever the pattern as a whole then goes on to match —
-     * with the star standing for nothing, `refs/heads/x` among other things. What matters is that
-     * nothing which *could* match is refused.
-     */
-    private fun reaches(pattern: String, namespace: String): Boolean {
-        val head = pattern.substringBefore('*')
-        if (head.length == pattern.length) return pattern.startsWith(namespace)
-        return namespace.startsWith(head) || head.startsWith(namespace)
-    }
-
-    /**
-     * Refuses a destination that cannot be carried out.
-     *
-     * A star in the destination is a substitution, so there has to be exactly one thing to
-     * substitute: the glob must hold exactly one star of its own. A destination without a star names
-     * a namespace or one ref outright, and neither asks anything of the glob.
-     *
-     * A namespace destination has to be one of the two the program names a prefix for. Anywhere else
-     * it would be a namespace and a missing naming rule, which is what the star form is for.
-     */
-    private fun checkDestination(option: String, value: String, glob: String, pattern: RefPattern) {
-        val destination = pattern.destination ?: return
-        // The same refusal the read side gives a pattern under refs/notes/, for the same reason:
-        // what would land there is a commit, and a notes ref names a tree keyed by object shas.
-        // Checked before the branches below, because the namespace branch's refusal suggests
-        // '<destination>*', which under refs/notes/ the star branch would otherwise accept.
-        require(!destination.startsWith(Constants.R_NOTES)) {
-            "$option '$value' writes into ${Constants.R_NOTES}, which is not where a commit goes: " +
-                "a notes ref points at a tree keyed by shas. Notes are carried by --notes, which " +
-                "rekeys them onto the commits this run writes"
-        }
-        if (destination.contains('*')) {
-            require(destination.count { it == '*' } == 1) {
-                "$option '$value' has more than one star in its destination; one substitutes what " +
-                    "the pattern matched, and a second would have nothing of its own to stand for"
-            }
-            require(glob.count { it == '*' } == 1) {
-                "$option '$value' substitutes a star into its destination, so the pattern needs " +
-                    "exactly one of its own to say what is substituted"
-            }
-            require(destination.startsWith(Constants.R_REFS)) {
-                "$option '$value' writes '$destination', which is not a ref name: every one " +
-                    "begins ${Constants.R_REFS}"
-            }
-            return
-        }
-        if (pattern.toNamespace) {
-            requireNotNull(RefKind.of(destination)) {
-                "$option '$value' hands '$destination' back to a prefix rule, and there is none " +
-                    "for it -- ${Constants.R_HEADS} and ${Constants.R_TAGS} have --branch-prefix " +
-                    "and --tag-prefix. Spell the name out instead, with a star: '$destination*'"
-            }
-            return
-        }
-        require(destination.startsWith(Constants.R_REFS)) {
-            "$option '$value' writes '$destination', which is not a ref name: every one begins " +
-                "${Constants.R_REFS}"
-        }
-    }
-
-    /**
-     * Refuses a pattern that could never reach a ref, and one whose matches would have no name.
-     *
-     * A well-formed selection matching nothing is indistinguishable, from the command line, from an
-     * input that simply does not have what was asked for — so a pattern under `refs/notes/` was as
-     * quiet as `--ref 'refs/tags/v9.*'` against a repository with no v9. One of those is a fact
-     * about the input and one is a fact about this program, and only the second can be said here.
-     *
-     * Outside `refs/heads/` and `refs/tags/` the question is not whether a ref *can* be read — a
-     * Gerrit change and a forge's pull ref name commits like any other — but what it would be
-     * called afterwards. Nothing qualifies a namespace the program has never heard of, so a pattern
-     * that reads one has to say where its matches land, and the destination field is that answer.
-     *
-     * @param writes whether this option decides what is read and written, as opposed to what may
-     *   weigh on the braid. Only the first kind needs a destination: the interleave matches refs
-     *   some other pattern already brought in, so a foreign namespace there is already named.
-     */
-    private fun checkReachable(
-        option: String,
-        value: String,
-        glob: String,
-        writes: Boolean,
-        named: Boolean,
-    ) {
-        require(!glob.startsWith(Constants.R_NOTES)) {
-            "$option '$value' names ${Constants.R_NOTES}, which is not history: a notes ref points " +
-                "at a tree keyed by shas rather than at a commit anyone braids. Notes are carried " +
-                "by --notes, which rekeys them onto the commits this run writes"
-        }
-        if (RefKind.entries.any { reaches(glob, it.namespace) }) return
-
-        val namespace = requireNotNull(foreignNamespace(glob)) {
-            "$option '$value' can match no ref: every ref name begins ${Constants.R_REFS}, and " +
-                "'$glob' cannot"
-        }
-        require(!writes || named) {
-            // A destination is the refspec's right half, so it goes at the end, the scope kept.
-            val refused = "$option '$value' reads '$namespace', which the output has no naming " +
-                "rule for -- --branch-prefix and --tag-prefix speak for ${Constants.R_HEADS} and " +
-                "${Constants.R_TAGS} alone."
-            // The destination offered has to be one checkDestination takes, and a star there needs
-            // exactly one in the glob: so a glob with none is offered its name spelled out, and one
-            // with several is offered nothing, no one destination being able to stand for it.
-            when (val stars = glob.count { it == '*' }) {
-                1 -> "$refused Say what its matches are called: '$value:$namespace{repo}/*'"
-                0 -> "$refused Say what it is called: " +
-                    "'$value:$namespace{repo}/${glob.removePrefix(namespace)}'"
-                else -> "$refused A destination substitutes one star, and this has $stars: split " +
-                    "it into patterns of one star each, and give each its destination"
-            }
-        }
-    }
-
-    /**
-     * The namespace a pattern outside the two known ones reads from, or `null` if it can reach no
-     * ref at all.
-     *
-     * The literal head cut back to its last `/`, which is the deepest prefix that is certainly a
-     * namespace rather than half a ref name: `refs/changes/` for a Gerrit pattern, `refs/pull/` for
-     * one reaching into a pull ref, and plain `refs/` for a pattern naming a single ref such as the
-     * stash. Enumerating that prefix and letting the glob filter it is exact either way; a shorter
-     * prefix only costs a wider listing.
-     */
-    private fun foreignNamespace(glob: String): String? {
-        val head = glob.substringBefore('*')
-        if (!head.contains('/')) return null
-        val namespace = head.substringBeforeLast('/') + "/"
-        return if (namespace.startsWith(Constants.R_REFS)) namespace else null
-    }
-
-    /**
-     * Matches a full ref name against [pattern], where `*` is the only metacharacter and it spans
-     * path separators — so a pattern ending in one covers a whole prefix however deeply nested, and
-     * a bare star is every ref.
-     */
-    private fun glob(pattern: String): (String) -> Boolean {
-        val matcher = Regex(pattern.split('*').joinToString(".*") { Regex.escape(it) })
-        return { name -> matcher.matches(name) }
-    }
-
-    /** Which branch each input braids along, and the single branch the output carries. */
-    private class Mainlines(val perInput: Map<String, String>, val output: String)
+    /** Which branch each input braids along, by position, and the single branch the output carries. */
+    private class Mainlines(val perInput: List<String>, val output: String)
 
     /**
      * Resolves the mainline per input.
@@ -1004,38 +549,10 @@ object CommitGraphReader {
      */
     private fun resolveMainlines(
         repositories: List<SourceRepository>,
-        requested: List<String>,
+        requested: MainlineRequest,
     ): Mainlines {
-        val names = repositories.map { it.name }
-        var common: String? = null
-        val scoped = LinkedHashMap<String, String>()
-        for (value in words(requested, "--mainline-branch")) {
-            val (input, branch) = scopeOf("--mainline-branch", value, names)
-            val colon = branch.indexOf(':')
-            require(colon < 0) {
-                val before = branch.substring(0, colon)
-                if (before in names) {
-                    "--mainline-branch '$value' names the branch '$branch', and '$before' is an " +
-                        "input: a scope is ended by '::', as '$before::${branch.substring(colon + 1)}'"
-                } else {
-                    "--mainline-branch '$value' holds a ':'; it names a branch rather than a ref, " +
-                        "and takes no destination"
-                }
-            }
-            require(branch.isNotEmpty()) { "--mainline-branch '$value' names no branch" }
-            if (input == null) {
-                require(common == null) {
-                    "--mainline-branch is given twice without naming an input: '$common' and '$value'"
-                }
-                common = branch
-            } else {
-                require(scoped.put(input, branch) == null) {
-                    "--mainline-branch is given twice for input '$input'"
-                }
-            }
-        }
-
-        val awaiting = repositories.filter { it.name !in scoped }
+        val common = requested.common
+        val awaiting = repositories.filterIndexed { index, _ -> index !in requested.scoped }
         val detected = when {
             awaiting.isEmpty() -> null
             common != null -> {
@@ -1054,72 +571,9 @@ object CommitGraphReader {
             )
         }
 
-        val perInput = repositories.associate { repo ->
-            repo.name to (scoped[repo.name] ?: detected ?: error("no mainline for '${repo.name}'"))
+        val perInput = repositories.mapIndexed { index, repo ->
+            requested.scoped[index] ?: detected ?: error("no mainline for '${repo.name}'")
         }
-        return Mainlines(perInput, common ?: perInput.getValue(repositories.first().name))
-    }
-
-    /**
-     * The input [value] is scoped to and the rest of it, or `null` and the whole of it where it
-     * names none.
-     *
-     * The scope is what stands before the first `::`: an input's name holds no `:`, so the first one
-     * ends it, where the `<repo>` grammar takes the last because a location may hold one. An empty
-     * one is refused, the unscoped form already saying it; so is a `^` opening it, the mark written a
-     * scope too early, and a name that is none of [inputs].
-     */
-    private fun scopeOf(option: String, value: String, inputs: Collection<String>): Pair<String?, String> {
-        val at = value.indexOf(SCOPE)
-        if (at < 0) return null to value
-        val input = value.substring(0, at)
-        require(input.isNotEmpty()) {
-            "$option '$value' names no input before its '::'; leave the '::' out to speak for every input"
-        }
-        require(!input.startsWith('^')) {
-            if (option == "--mainline-branch") {
-                "$option '$value' begins with '^', where the input goes, and a mainline is a branch to " +
-                    "braid along, not a pattern a '^' could subtract from"
-            } else {
-                // -b names a branch, so the pattern it is offered is a branch's name too: typed back
-                // into -b, a full name would subtract a branch called refs/heads/..., which is none.
-                val pattern = if (option == "-b") "wip/*" else "refs/heads/wip/*"
-                "$option '$value' begins with '^', where the input goes. The mark belongs in front of " +
-                    "the pattern: 'backend::^$pattern' subtracts in one input, '^$pattern' in every one"
-            }
-        }
-        require(input in inputs) {
-            "$option '$value' is for input '$input', which is not one of: " + inputs.joinToString()
-        }
-        return input to value.substring(at + SCOPE.length)
-    }
-
-    /** The `::` that ends a scope — see [scopeOf]. */
-    private const val SCOPE = "::"
-
-    /**
-     * Refuses a refspec of more than two `:`-separated [fields], and one whose first field is an
-     * input's name: a scope written with one colon, which reads as a pattern and a destination.
-     *
-     * @param negated whether a `^` stood in front of [fields], which the form offered keeps, once.
-     * @param form what the first field is called in the form a refusal quotes.
-     */
-    private fun refuseFields(
-        option: String,
-        value: String,
-        fields: List<String>,
-        inputs: Collection<String>,
-        negated: Boolean,
-        form: String,
-    ) {
-        require(fields.size <= 2) {
-            "$option '$value' has ${fields.size} ':'-separated fields after its scope; the form is " +
-                "[<input>::][^]$form[:<destination>]"
-        }
-        require(fields.size == 1 || fields[0] !in inputs) {
-            val mark = if (negated && !fields[1].startsWith('^')) "^" else ""
-            "$option '$value' reads as the pattern '${fields[0]}' written to '${fields[1]}', and " +
-                "'${fields[0]}' is an input: a scope is ended by '::', as '${fields[0]}::$mark${fields[1]}'"
-        }
+        return Mainlines(perInput, common ?: perInput.first())
     }
 }
