@@ -31,7 +31,7 @@ Here that is also what the directories were called, so nothing was renamed by pl
 That name is what the commit subjects below distinguish the repositories by,
 and it is deliberately *not* the destination:
 `--subject-prefix` defaults to `{repo}: `, which is why they read `backend: ` and not `libs/backend: `.\
-A destination can be arbitrarily deep; a name is one segment.
+A destination can be arbitrarily deep; a name defaults to one segment.
 
 ## Result
 

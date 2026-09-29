@@ -16,7 +16,7 @@ class WriteOptions(
      * the input's name, and where it lands — its name again for the input placed at the output root.
      *
      * The default is the name and not the destination because a destination can be nested arbitrarily deep
-     * and the subject line carries it on every commit; a name is one segment.
+     * and the subject line carries it on every commit; a name defaults to one segment.
      */
     val subjectPrefix: String = "{repo}: ",
     /**
