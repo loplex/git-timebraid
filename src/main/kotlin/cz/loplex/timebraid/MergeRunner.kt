@@ -23,8 +23,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
-/** One input to the merge, as the CLI layer parsed it. */
-class MergeInput(
+/**
+ * One input to the merge, as the CLI layer parsed it and the filesystem resolved it:
+ * once, on the command line, before anything is cloned or read.
+ */
+class ResolvedInput(
     /**
      * A local filesystem path or a remote URL as the user wrote it,
      * or, for a repository `--scan` found, the absolute path it was found at.
@@ -37,11 +40,17 @@ class MergeInput(
      * or `null` for the repository placed at the root.
      */
     val subdir: String?,
+    /**
+     * The git directory of a local input, as the filesystem has it:
+     * its real path, so `core`, `core/.git` and a symlink to either are one directory.\
+     * `null` for a remote input, which has none until it is cloned.
+     */
+    val gitDir: Path?,
 )
 
 /** Everything the runner needs, already validated by the CLI layer. */
 class MergeRequest(
-    val inputs: List<MergeInput>,
+    val inputs: List<ResolvedInput>,
     val output: Path?,
     val force: Boolean,
     val bare: Boolean,
@@ -133,11 +142,11 @@ class MergeRunner(
         }
 
     private fun merge(): MergeResult {
-        val locations = resolveInputs()
+        val localInputs = localInputs()
         // Opened inside the try, so that an input refused on opening closes the ones before it.
-        val sources = ArrayList<SourceRepository>(locations.size)
+        val sources = ArrayList<SourceRepository>(localInputs.size)
         try {
-            locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
+            localInputs.mapTo(sources) { SourceRepository.open(it.path, it.name) }
             progress.phase("reading the inputs and planning the braid")
             val inputs = progress.whileWorking(
                 "reading ${sources.size} repositories",
@@ -225,7 +234,7 @@ class MergeRunner(
             } else {
                 emptyMap()
             }
-            for (input in locations) {
+            for (input in localInputs) {
                 if (input.name !in remotes) continue
                 val url = remotes[input.name]
                 require(url == input.remote) {
@@ -240,7 +249,7 @@ class MergeRunner(
             }
 
             val written = writeOutput(output, repoOf, inputs, plan)
-            if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
+            if (request.keepRemotes) keepRemotes(output, localInputs.filter { it.name !in remotes })
             if (!request.bare) {
                 progress.phase("checking out ${inputs.mainlineBranch}")
                 // Its own progress, drawn as it arrives.
@@ -340,15 +349,15 @@ class MergeRunner(
     }
 
     /**
-     * Records each of [locations] as a remote of the output;
+     * Records each of [localInputs] as a remote of the output;
      * one the output records already, under its own URL, is not among them.\
      * The remote-tracking refs themselves are written by [BraidWriter] along with everything else,
      * so all that is left here is the configuration
      * that lets a later `git fetch <name>` pick up what the input has gained since.
      */
-    private fun keepRemotes(output: Path, locations: List<LocalInput>) {
+    private fun keepRemotes(output: Path, localInputs: List<LocalInput>) {
         progress.phase("recording the inputs as remotes")
-        for (input in locations) {
+        for (input in localInputs) {
             git.addRemote(output, input.name, input.remote)
             progress.result("${input.name} -> ${input.remote}")
         }
@@ -362,7 +371,7 @@ class MergeRunner(
      * When there is no output to sit beside (`--dry-run` with no `-o`),
      * the clones go to a temporary directory instead, which the run removes when it ends.
      */
-    private fun resolveInputs(): List<LocalInput> {
+    private fun localInputs(): List<LocalInput> {
         if (request.inputs.none { it.isRemote }) {
             return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
         }
@@ -408,7 +417,7 @@ class MergeRunner(
      * Refreshing the clone the other one left would braid a repository this run never named,
      * and report it as this input.
      */
-    private fun refuseOtherOrigin(dir: Path, input: MergeInput) {
+    private fun refuseOtherOrigin(dir: Path, input: ResolvedInput) {
         val origin = FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
             it.config.getString("remote", "origin", "url")
         }
