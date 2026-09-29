@@ -34,6 +34,7 @@ import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.RepositoryScan
+import cz.loplex.timebraid.git.ScannedRepository
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
@@ -530,8 +531,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * The inputs the run will use: what `--scan` found, what the `<repo>` arguments named, and
      * `--root-repo` applied over both.
      *
-     * An argument whose location is a directory the scan already found is not a second input but a
-     * correction to that one. The name it gives wins, and the subdirectory too when it gives one,
+     * An argument naming a repository the scan already found — its git directory, however the
+     * argument spells it — is not a second input but a correction to that one. The name it gives wins, and the subdirectory too when it gives one,
      * while an argument that gives none leaves the finding where the scan put it. That is what
      * makes the two composable rather than merely both allowed: renaming is the answer two findings
      * that derive the same name need, and there is no other way to reach one of them.
@@ -545,9 +546,12 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
         } ?: emptyList()
 
-        val byPath = scanned.associateBy { it.path }
-        val overrides = LinkedHashMap<Path, RepoSpec>()
-        val extras = ArrayList<RepoSpec>()
+        // A finding and an argument are one repository when they are one git directory, as the
+        // filesystem has it: however the argument spells it, through a symlink or its `.git`.
+        val foundPlaces = scanned.associateWith { placeOf(it.path.toString()) }
+        val byGitDir = foundPlaces.entries.mapNotNull { (found, local) -> local?.let { it.gitDir to found } }.toMap()
+        val overrides = LinkedHashMap<ScannedRepository, Landing>()
+        val extras = ArrayList<Landing>()
         // The directories the output takes up, which an argument's or a finding's own may not meet.
         val outputPlaces = outputRepo.output?.let { placesOf(it, withGitDir = !outputContent.bare) }
         // The scan leaves the output itself out, however it is spelled, but not a working tree whose
@@ -559,27 +563,37 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             )
         }
         for (spec in specs) {
-            val path = localPathOf(spec)
-            if (path == null || path !in byPath) {
-                extras += spec
-            } else if (overrides.put(path, spec) != null) {
-                throw UsageError("two input arguments name '$path', which --scan already found")
+            val local = if (spec.isRemote) null else placeOf(spec.location)
+            val found = local?.let { byGitDir[it.gitDir] }
+            if (found == null) {
+                extras += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local)
+            } else if (overrides.put(found, Landing(spec.location, false, spec.name, spec.subdir ?: found.subdir, local)) != null) {
+                throw UsageError(
+                    "two input arguments name '${shownPath(found.path.toString())}', which --scan already found"
+                )
             }
+        }
+
+        // Two arguments naming one git directory are one repository, which braided as two inputs would
+        // be braided against itself.
+        val byRepository = extras.filter { it.local != null }.groupBy { it.local!!.gitDir }
+        byRepository.values.firstOrNull { it.size > 1 }?.let { twice ->
+            val count = if (twice.size == 2) "two" else twice.size.toString()
+            val shown = shownPath(twice.first().local!!.path.toString())
+            throw UsageError(
+                "$count input arguments name one repository, '$shown', placing it at " +
+                    "${twice.joinToString(" and ") { "'${it.subdir}'" }} -- give it once"
+            )
         }
 
         val merged = ArrayList<Landing>(scanned.size + extras.size)
         for (found in scanned) {
-            val spec = overrides[found.path]
-            merged += if (spec == null) {
+            merged += overrides[found] ?: run {
                 refuseScannedName(found.name, found.path)
-                Landing(found.path.toString(), isRemote = false, found.name, found.subdir)
-            } else {
-                Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: found.subdir)
+                Landing(found.path.toString(), isRemote = false, found.name, found.subdir, foundPlaces[found])
             }
         }
-        for (spec in extras) {
-            merged += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name)
-        }
+        merged += extras
 
         val names = merged.map { it.name }
         if (names.toSet().size != names.size) throw duplicateNames(merged)
@@ -594,7 +608,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
         }
         val resolved = merged.map { input ->
-            resolved(input.location, input.isRemote, input.name, input.subdir.takeIf { input.name != placement.rootRepo })
+            // Refused only now, after the refusals that speak of the whole command line.
+            if (!input.isRemote && input.local == null) throw CliktError("no git repository at ${input.location}")
+            val subdir = input.subdir.takeIf { input.name != placement.rootRepo }
+            ResolvedInput(input.location, input.name, subdir, input.local)
         }
         resolved.firstOrNull { input ->
             val local = input.local
@@ -604,35 +621,27 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     /**
-     * [spec]'s location as a directory this scan could have found, or `null` when it is not one:
-     * a remote, or a location this platform cannot spell as a path.
-     *
-     * A final `.git` segment is dropped, as [repositoryPlace] drops it: `core/.git` opens the
-     * repository the scan found at `core`, and naming it that way corrects that finding rather than
-     * adding the same repository a second time.
+     * An input's subdirectory and name, and where it is on disk: `null` for a remote input, and for a local
+     * one holding no repository, which is refused once the command line as a whole has been.
      */
-    private fun localPathOf(spec: RepoSpec): Path? {
-        if (spec.isRemote) return null
-        return try {
-            repositoryPlace(Path.of(spec.location))
-        } catch (e: InvalidPathException) {
-            null
-        }
-    }
-
-    /** An input's subdirectory and name, before its location is looked up on disk. */
-    private class Landing(val location: String, val isRemote: Boolean, val name: String, val subdir: String?)
+    private class Landing(
+        val location: String,
+        val isRemote: Boolean,
+        val name: String,
+        val subdir: String?,
+        val local: LocalPlace?,
+    )
 
     /**
-     * An input as the run will use it, its git directory looked up now: a local location that holds
-     * no repository is refused here, before a remote input is cloned or any input read.
+     * Where the repository at [location] is, as the filesystem has it, or `null` when there is none
+     * there: its git directory looked up once, before a remote input is cloned or any input read.
      *
-     * A [CliktError] rather than a usage error, as the same refusal was when opening the input
-     * made it: the command line is well formed, and what it names is not there.
+     * A [CliktError] rather than a usage error when the location cannot be read, as the refusal of
+     * a missing repository was when opening the input made it: the command line is well formed, and
+     * what it names is not there.
      */
-    private fun resolved(location: String, isRemote: Boolean, name: String, subdir: String?): ResolvedInput {
-        if (isRemote) return ResolvedInput(location, name, subdir, local = null)
-        val local = try {
+    private fun placeOf(location: String): LocalPlace? =
+        try {
             val path = Path.of(location)
             SourceRepository.gitDirOf(path)?.let { gitDir ->
                 LocalPlace(gitDir.toPath().toRealPath(), path.toRealPath(), SourceRepository.absolute(path).toString())
@@ -642,8 +651,6 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         } catch (e: IOException) {
             throw CliktError("cannot read '$location': ${e.message}")
         }
-        return ResolvedInput(location, name, subdir, local ?: throw CliktError("no git repository at $location"))
-    }
 
     /**
      * Refuses a name the scan derived that git would not accept inside a ref, as [parseRepoSpec]
@@ -1106,17 +1113,6 @@ private fun isOneSegment(name: String): Boolean {
         return false
     }
     return !path.isAbsolute && path.nameCount == 1
-}
-
-/**
- * Where a repository named by [path] sits, for telling whether two paths name one: absolute,
- * normalized, and without a final `.git` segment, so `x` and `x/.git`, a working tree and its own
- * git directory, come out the same on either side. The `.git` ending a bare `x.git` is part of its
- * name, and stays.
- */
-private fun repositoryPlace(path: Path): Path {
-    val absolute = path.toAbsolutePath().normalize()
-    return if (absolute.fileName?.toString() == ".git") absolute.parent ?: absolute else absolute
 }
 
 /**

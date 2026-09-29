@@ -819,6 +819,19 @@ class MergeCommandDryRunTest {
         assertTrue(result.output.contains("ui -> frontend/"), result.output)
     }
 
+    @Test
+    fun `one repository given as two arguments is refused, however the second spells it`() {
+        corpus()
+        val backend = path("backend.git")
+        for (second in listOf("$backend::y", "$backend/.::y")) {
+            val result = MergeCommand().test(listOf("--dry-run", "$backend::x", second))
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("two input arguments name one repository"), result.output)
+            assertTrue(result.output.contains("placing it at 'x' and 'y'"), result.output)
+        }
+    }
+
     /** A repository at [at] under the scan base, with one commit in it. */
     private fun scanned(at: String, bare: Boolean = true) {
         val dir = tmp.resolve("tree/$at")
@@ -905,6 +918,20 @@ class MergeCommandDryRunTest {
         assertTrue(named.output.contains("tools-core -> tools/core/"), named.output)
         assertTrue(named.output.contains("core -> libs/core/"), named.output)
         assertTrue(!named.output.contains("-> tools-core/"), named.output)
+    }
+
+    @Test
+    fun `an argument naming a scanned repository through a symlink corrects that finding`() {
+        scanned("libs/core.git")
+        scanned("apps/webui.git")
+        val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), tmp.resolve("tree/libs/core.git"))
+
+        val named = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "$alias::=libs-core"))
+
+        assertEquals(0, named.statusCode, named.output)
+        assertTrue(named.output.contains("libs-core -> libs/core/"), named.output)
+        assertTrue(named.output.lines().none { it.trim() == "core -> libs/core/" }, named.output)
+        assertTrue(!named.output.contains("-> libs-core/"), named.output)
     }
 
     @Test

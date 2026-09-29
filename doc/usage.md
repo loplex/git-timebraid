@@ -146,6 +146,9 @@ Placement and naming travel together, and can be separated.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
   placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
   what the second one is mostly for: the scan already decided where it goes.
+- One local repository is one input. Given as two arguments, however the second spells its
+  location — through a symlink, or by its `.git` — it is refused, naming it and where each argument
+  would place it.
 - Two inputs may not contain each other — `libs` and `libs/backend` — unless **`--splice`** says so.
 - `--splice` never buys a merge of two repositories' files: anything the containing repository
   already holds at the inner destination is a collision, with or without the flag. The one entry
