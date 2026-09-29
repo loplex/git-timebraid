@@ -6,8 +6,11 @@ import cz.loplex.timebraid.git.BraidInputs
 import cz.loplex.timebraid.git.BraidWriter
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommand
+import cz.loplex.timebraid.git.MainlineRequest
 import cz.loplex.timebraid.git.OrderBy
+import cz.loplex.timebraid.git.RefNames
 import cz.loplex.timebraid.git.Relocation
+import cz.loplex.timebraid.git.ScopedPatterns
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.SpliceCheck
 import cz.loplex.timebraid.git.SpliceReport
@@ -75,27 +78,26 @@ class MergeRequest(
     val keepRemotes: Boolean,
     val orderBy: OrderBy,
     /**
-     * Which branch each input braids along. A value may be scoped to one input as
-     * `<input>::<branch>`; an unscoped one is the default for the rest and names the output's
-     * branch. Empty leaves it to detection.
+     * Which branch each input braids along. A value may be scoped to one input; an unscoped one is
+     * the default for the rest and names the output's branch. Nothing asked leaves it to detection.
      */
-    val mainlineBranch: List<String>,
+    val mainline: MainlineRequest,
     /**
-     * Ref patterns, as `--ref` takes them, selecting which of each input's refs are loaded and
-     * recreated. Empty selects every branch and tag, which is the default.
+     * Ref patterns, as `--ref` and `-b` take them, selecting which of each input's refs are loaded
+     * and recreated. None selects every branch and tag, which is the default.
      */
-    val refs: List<String>,
+    val refs: ScopedPatterns,
     /**
      * Glob patterns over full ref names, scoped as [refs] are, whose ancestry may delay a braid
-     * commit. Empty means the default scope, the mainline chains alone.
+     * commit. None means the default scope, the mainline chains alone.
      */
-    val interleaveRefs: List<String>,
+    val interleaveRefs: ScopedPatterns,
     /**
      * Glob patterns over full ref names, scoped as [refs] are, recreated when the run already holds
-     * their target. Empty matches nothing. Reads nothing extra and never weighs on the braid — see
+     * their target. None matches nothing. Reads nothing extra and never weighs on the braid — see
      * [CommitGraphReader.read].
      */
-    val labelRefs: List<String>,
+    val labelRefs: ScopedPatterns,
     /**
      * Whether every input's `refs/notes/` is carried over, rekeyed onto the commits this run writes.
      * Off by default — see [CommitGraphReader.read].
@@ -169,7 +171,7 @@ class MergeRunner(
                 CommitGraphReader.read(
                     repositories = sources,
                     orderBy = request.orderBy,
-                    mainlineBranch = request.mainlineBranch,
+                    requested = request.mainline,
                     refs = request.refs,
                     interleaveRefs = request.interleaveRefs,
                     labelRefs = request.labelRefs,
@@ -236,6 +238,12 @@ class MergeRunner(
                         "trees$dissolved"
                 )
             }
+
+            // Before anything is written into the output as well: every name the refs get follows
+            // from the inputs as read, the options and the braid, so a name git would not accept, or
+            // a clash between two, is known now — and found only after the fetch, it would be one a
+            // dry run had passed.
+            RefNames(inputs, plan, request.writeOptions, request.keepRemotes).resolve()
 
             val output = request.output
             // Before anything is written into the output, and on a dry run too. A remote the output

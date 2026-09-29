@@ -228,6 +228,43 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a ref name that cannot be written is refused on a dry run too, before any output exists`() {
+        val at = java.time.Instant.parse("2021-01-01T09:00:00Z")
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = at)
+            repo.branch("main", a1)
+            repo.branch("a", a1)
+            repo.lightweightTag("v1", a1)
+        }
+        TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
+            val b1 = repo.commit("b1", at = at.plusSeconds(60))
+            repo.branch("main", b1)
+            repo.branch("a/b", b1)
+            repo.lightweightTag("v1", b1)
+        }
+        val out = tmp.resolve("merged.git")
+        val inputs = listOf(tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+
+        // Names no check of the command line refuses, and the write would refuse only once every
+        // commit was written: a name that is a directory of another, two inputs meeting on one, and
+        // a name git does not accept.
+        val clashes = listOf(
+            listOf("--branch-prefix", "") to "'refs/heads/a' and 'refs/heads/a/b' cannot both be refs",
+            listOf("--tag-prefix", "") to "'backend' and 'webui' would both write 'refs/tags/v1'",
+            listOf("--tag-prefix", "{repo}.lock/") to "'refs/tags/backend.lock/v1' is not a valid ref name",
+        )
+        for ((options, refusal) in clashes) {
+            for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+                val result = MergeCommand().test(dryRun + options + listOf("-o", out.toString()) + inputs)
+
+                assertEquals(1, result.statusCode, result.output)
+                assertTrue(result.output.contains(refusal), result.output)
+                assertTrue(!out.toFile().exists(), "the output should not have been created")
+            }
+        }
+    }
+
+    @Test
     fun `an -o that cannot be created is reported by the location given, not thrown`() {
         corpus()
         tmp.resolve("afile").toFile().writeText("a file, not a directory")
@@ -614,6 +651,20 @@ class MergeCommandDryRunTest {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("no git repository at /nonexistent/path"), result.output)
         assertTrue("end the argument with '::'" !in result.output, result.output)
+    }
+
+    @Test
+    fun `a malformed ref pattern is refused before a remote input is cloned`() {
+        corpus()
+        val remote = tmp.resolve("backend.git").toUri().toString()
+
+        val result = MergeCommand().test(
+            listOf("-o", path("out.git"), "--interleave-ref", "^refs/heads/wip", remote, path("webui.git"))
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("nothing but patterns that subtract"), result.output)
+        assertTrue(!Files.exists(tmp.resolve(".timebraid-clones")), result.output)
     }
 
     @Test

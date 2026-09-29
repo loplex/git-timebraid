@@ -399,9 +399,9 @@ Show the version and exit.
 The braid was written, or the run was asked only to describe itself.
 .TP
 .B 1
-The run was refused or failed. A refusal of the plan happens before anything is written into the
-output; one of a ref name, or a failure part way, leaves the output where it got to, which is why
-the output has to be new or empty unless
+The run was refused or failed. A refusal of the plan or of a ref name happens before anything is
+written into the output; a failure part way leaves the output where it got to, which is why the
+output has to be new or empty unless
 .B \-\-force
 says otherwise.
 .PP
