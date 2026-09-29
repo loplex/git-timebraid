@@ -837,16 +837,17 @@ class MergeCommandDryRunTest {
     @Test
     fun `a file scheme over a Windows path is still named by its last segment`() {
         // Concatenating `file://` with an absolute path is how a caller spells a local repository as
-        // a URL, and on Windows the result carries a drive letter and backslashes. The name is the
-        // directory the clone goes in, so reading it from the colon of `C:` would take the clone out
-        // of the clone root and into whatever `\repos\backend` resolves to.
+        // a URL, and on Windows the result carries a drive letter and backslashes. The URL names
+        // the directory the clone goes in, so reading it from the colon of `C:` would take the clone
+        // out of the clone root and into whatever `\repos\backend` resolves to.
         val result = MergeCommand().test(listOf("--dry-run", "file://C:\\repos\\backend.git"))
 
         assertEquals(1, result.statusCode, result.output)
         // Read from the refusal, which quotes the whole `git clone` including where it was sending
         // the clone. The run cannot get further than that: there is no repository at the path.
-        val target = result.output.substringAfter("backend.git ").substringBefore("`").trim()
-        assertEquals("backend.git", Path.of(target).fileName.toString(), result.output)
+        val target = Path.of(result.output.substringAfter("backend.git ").substringBefore("`").trim())
+        assertTrue(Regex("backend-[0-9a-f]{12}\\.git").matches(target.fileName.toString()), result.output)
+        assertTrue(target.parent.fileName.toString().startsWith("timebraid-clones-"), result.output)
     }
 
     @Test

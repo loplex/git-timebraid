@@ -25,6 +25,7 @@ import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import kotlin.io.path.createDirectories
 
 /**
@@ -415,7 +416,7 @@ class MergeRunner(
         return request.inputs.map { input ->
             input.local?.let { return@map it.input(input.name) }
 
-            val dir = root.resolve("${input.name}.git")
+            val dir = root.resolve(cloneDirOf(input.location))
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
                 refuseOtherOrigin(dir, input)
                 progress.gitProgress(input.name).use { git.fetch(dir, it) }
@@ -431,18 +432,36 @@ class MergeRunner(
     /**
      * Refuses to refresh [dir] for [input] when it is a clone of another location.
      *
-     * A clone is found by the input's name alone, and two locations can derive one name — two
-     * forks' `webui`, for one. Refreshing the clone the other one left would braid a repository this
-     * run never named, and report it as this input.
+     * A clone is found by its URL ([cloneDirOf]), so two locations meet on one only where their
+     * hashes do, or where somebody put another clone there. Refreshing it would braid a repository
+     * this run never named, and report it as this input.
      */
     private fun refuseOtherOrigin(dir: Path, input: ResolvedInput) {
         val origin = FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
             it.config.getString("remote", "origin", "url")
         }
         require(origin == input.location) {
-            "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
-                "the input another name, as ${InputRemedy(input.location, input.subdir).named()}"
+            "$dir is a clone of $origin, not of ${input.location}; remove that directory"
         }
+    }
+
+    /**
+     * The directory under the clone root that [location] is cloned into: its last segment, for a
+     * reader looking in, and a hash of the whole URL, which is what tells two apart.
+     *
+     * Named by the URL rather than by the input's name: the same URL finds its clone again whatever
+     * the run calls it or wherever it places it, and two forks' `webui` never meet on one directory.
+     */
+    private fun cloneDirOf(location: String): String {
+        val segment = location.trimEnd('/', '\\')
+            .substringAfterLast('/').substringAfterLast('\\').substringAfterLast(':')
+            .removeSuffix(".git")
+            .filter { it.isLetterOrDigit() || it in "-_." }
+            .trimStart('.')
+            .ifEmpty { "clone" }
+        val digest = MessageDigest.getInstance("SHA-256").digest(location.toByteArray(Charsets.UTF_8))
+        val hash = digest.take(6).joinToString("") { "%02x".format(it) }
+        return "$segment-$hash.git"
     }
 
     private fun cloneRoot(): Path =

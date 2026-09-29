@@ -117,16 +117,16 @@ Refusing the colon rather than escaping it costs nothing, because a `:` is illeg
 and the name becomes a tag prefix. A name that needed one could never have been used.
 
 A **remote input**, one whose location is a URL (`file://` included) or git's scp-like
-`user@host:path`, is cloned before anything is read: into `.timebraid-clones/<name>.git`, in the
-directory that holds the output, and a later run over the same URL whose output sits in the same
-directory refreshes that clone rather than downloading it again. A clone that another URL left under
-that name is refused, naming both. A `--dry-run` without `-o` clones into a temporary directory
-instead, and removes it when the run ends.
+`user@host:path`, is cloned before anything is read: into `.timebraid-clones/`, in the directory
+that holds the output, under a directory named by the URL — its last segment and a hash of the
+whole, as `backend-<hash>.git` — and a later run over the same URL whose output sits in the
+same directory refreshes that clone rather than downloading it again, whatever it names or places
+the input. A clone of another URL found there is refused, naming both. A `--dry-run` without `-o`
+clones into a temporary directory instead, and removes it when the run ends.
 
 Beyond the `:` and the `=` it may not be written with, a name cannot hold a `/`, nor anything else
 git refuses in a ref name.
-The `/` is no gap: the name is a directory name for the clone of a remote input and a segment of a
-tag name, so one segment is what it means.
+The `/` is no gap: the name is a segment of a tag name, so one segment is what it means.
 
 ## Naming and placement
 

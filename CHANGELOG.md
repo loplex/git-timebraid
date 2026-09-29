@@ -77,8 +77,10 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   0.1.0 read an input named by its working tree, or by a path holding no repository, from the one
   `GIT_DIR` named.
 
-- A remote input whose name finds a clone of another URL under `.timebraid-clones/` is refused.\
-  0.1.0 refreshed that clone and braided it in place of the URL given.
+- A remote input's clone under `.timebraid-clones/` is named by its URL, not by the input's name.\
+  0.1.0's clones there are not reused, and the first run downloads each URL again.\
+  Two URLs deriving one name no longer share a clone: 0.1.0 refreshed the first one's and braided
+  it in place of the URL given.
 
 - A ref name with a component ending in `.lock` is refused, from `--tag-prefix '{repo}.lock/'` or
   an input named `x.lock` alike.\
@@ -534,10 +536,13 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
 - **A dry run without `-o` removes the clones it made.**\
   Each such run cloned every URL input into a new temporary directory and left it there.
 
-- **A clone that another URL left under `.timebraid-clones/` is refused, not refreshed.**\
-  A clone is found by the input's name, and two locations can derive one: 0.1.0 refreshed the
+- **Two URLs never share a clone under `.timebraid-clones/`.**\
+  A clone was found by the input's name, and two locations can derive one: 0.1.0 refreshed the
   first one's clone and braided it as the second.\
-  The refusal names both URLs and the directory to remove.
+  A clone is now named by its URL, its last segment and a hash of the whole, so the same URL finds
+  it again whatever the run names or places the input.\
+  A clone of another URL found in its place is refused, naming both URLs and the directory to
+  remove.
 
 - **A ref name git refuses is no longer written.**\
   0.1.0 asked JGit, which lets a component ending in `.lock` through where git does not:
