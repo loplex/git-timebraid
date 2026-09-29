@@ -19,6 +19,7 @@ import org.eclipse.jgit.transport.URIish
 import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.net.URISyntaxException
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -236,7 +237,8 @@ class TargetRepository private constructor(
          *
          * Without [force] the location must not exist, or must be an empty directory: overwriting
          * refs in a repository somebody else is using is not something to do by accident. Nothing is
-         * ever deleted here — [force] only permits writing *into* what is already there.
+         * ever deleted here — [force] only permits writing *into* what is already there, so a
+         * location that exists and is not a directory is refused with or without it.
          *
          * When [bare] is `false`, [location] becomes the working tree and its `.git` the git
          * directory; the working tree is left empty here — the caller checks the mainline out through
@@ -248,26 +250,73 @@ class TargetRepository private constructor(
             force: Boolean = false,
             bare: Boolean = true,
         ): TargetRepository {
-            val gitDir = if (bare) location.toFile() else location.resolve(Constants.DOT_GIT).toFile()
+            val gitDir = gitDirOf(location, bare)
             val existingRepository = RepositoryCache.FileKey.isGitRepository(gitDir, FS.DETECTED)
-            if (location.toFile().exists()) {
-                val occupied = existingRepository || (location.toFile().list()?.isNotEmpty() ?: false)
-                require(!occupied || force) {
-                    "$location already exists and is not empty; pass --force to write into it"
-                }
-            }
+            // Asked again, though the command line asked first: the directory can fill between the
+            // two, and a caller other than the command line has asked nothing.
+            refusal(location, force, bare, creatable = false)?.let { throw IllegalArgumentException(it) }
 
             val builder = FileRepositoryBuilder().setGitDir(gitDir)
             if (!bare) builder.setWorkTree(location.toFile())
             val repository = builder.build()
             if (!existingRepository) {
-                repository.create(bare)
+                try {
+                    repository.create(bare)
+                } catch (e: IOException) {
+                    // JGit's message names the path it failed on, made absolute: the git directory (the
+                    // location itself when bare) or something inside it. The location as given is the one
+                    // the user can act on.
+                    repository.close()
+                    throw IllegalArgumentException(
+                        "cannot create the output at '$location': ${e.message}",
+                        e,
+                    )
+                }
                 configureForRewriting(repository)
             }
             val target = TargetRepository(location, repository)
             target.setHead(initialBranch)
             return target
         }
+
+        /**
+         * Why [location] cannot become the output, or `null` when nothing here says it cannot —
+         * asked without creating anything, so that the command line asks it before the inputs are
+         * read, and a dry run with it. The rules are [create]'s.
+         *
+         * @param creatable whether a location that does not exist is asked whether it can be
+         *   created: whether its nearest existing ancestor is a directory this process may write
+         *   into. [create] leaves that to the creation itself, whose failure names the directory.
+         */
+        fun refusal(location: Path, force: Boolean, bare: Boolean, creatable: Boolean = true): String? {
+            // An empty path is the working directory to `Path` and nothing at all to `File`, so the
+            // questions below would be asked of the working directory's parent.
+            if (location.toString().isEmpty()) return "an empty location names no directory for the output"
+            val file = location.toFile()
+            if (file.exists()) {
+                if (!file.isDirectory) return "$location exists and is not a directory"
+                val existingRepository = RepositoryCache.FileKey.isGitRepository(gitDirOf(location, bare), FS.DETECTED)
+                val occupied = existingRepository || (file.list()?.isNotEmpty() ?: false)
+                return if (occupied && !force) {
+                    "$location already exists and is not empty; pass --force to write into it"
+                } else {
+                    null
+                }
+            }
+            if (!creatable) return null
+            var parent = location.toAbsolutePath().parent
+            while (parent != null && !Files.exists(parent)) parent = parent.parent
+            return when {
+                parent == null -> null
+                !Files.isDirectory(parent) -> "cannot create the output at '$location': $parent is not a directory"
+                !Files.isWritable(parent) -> "cannot create the output at '$location': $parent is not writable"
+                else -> null
+            }
+        }
+
+        /** The git directory a [bare] or non-bare output at [location] has. */
+        private fun gitDirOf(location: Path, bare: Boolean) =
+            if (bare) location.toFile() else location.resolve(Constants.DOT_GIT).toFile()
 
         /**
          * Pins line-ending handling off in the output's own config.

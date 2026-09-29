@@ -5,8 +5,12 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
 
@@ -88,6 +92,262 @@ class MergeCommandDryRunTest {
         SourceRepository.open(out).use { repo ->
             assertEquals(listOf("main"), repo.branches().map { it.name })
         }
+    }
+
+    @Test
+    fun `an -o that cannot be created is reported by the location given, not thrown`() {
+        corpus()
+        tmp.resolve("afile").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("afile/merged.git")
+
+        val result = MergeCommand().test(
+            listOf("-o", out.toString(), tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot create the output at '$out'"), result.output)
+    }
+
+    @Test
+    fun `an -o that cannot be created is reported before a remote input is cloned beside it`() {
+        corpus()
+        tmp.resolve("afile").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("afile/merged.git")
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                tmp.resolve("backend.git").toUri().toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot create the output at '$out'"), result.output)
+        assertTrue(!result.output.contains("git-timebraid: cloning "), result.output)
+    }
+
+    @Test
+    fun `a clones directory that cannot be made beside a usable -o is reported with that -o`() {
+        corpus()
+        tmp.resolve(".timebraid-clones").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("merged.git")
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                tmp.resolve("backend.git").toUri().toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("for the remote inputs' clones, beside the output '$out'"), result.output)
+    }
+
+    @Test
+    fun `a dry run refuses an -o the real run would refuse, and creates nothing`() {
+        corpus()
+        val inputs = listOf(tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+        val occupied = Files.createDirectories(tmp.resolve("occupied"))
+        Files.writeString(occupied.resolve("keep.txt"), "somebody's")
+        val file = tmp.resolve("afile").also { it.toFile().writeText("a file, not a directory") }
+        val refusals = listOf(
+            occupied to "already exists and is not empty; pass --force",
+            file to "exists and is not a directory",
+            file.resolve("merged.git") to "cannot create the output at '${file.resolve("merged.git")}'",
+        )
+        for ((out, refusal) in refusals) {
+            for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+                val result = MergeCommand().test(dryRun + listOf("-o", out.toString()) + inputs)
+
+                assertEquals(1, result.statusCode, "$dryRun -o $out: ${result.output}")
+                assertTrue(result.output.contains(refusal), "$dryRun -o $out: ${result.output}")
+                // Refused before the inputs are read, where every other command-line refusal is.
+                assertTrue(!result.output.contains("git-timebraid: reading "), result.output)
+            }
+        }
+        assertEquals(listOf("keep.txt"), occupied.toFile().list()?.toList())
+
+        // An empty -o is no place at all, and is refused before anything is read, a dry run's too.
+        for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+            val empty = MergeCommand().test(dryRun + listOf("-o", "") + inputs)
+            assertEquals(1, empty.statusCode, empty.output)
+            assertTrue(empty.output.contains("-o/--output names no directory"), empty.output)
+            assertTrue(!empty.output.contains("git-timebraid: reading "), empty.output)
+        }
+
+        // --force takes the occupied directory, a dry run as well as a real one.
+        val forced = MergeCommand().test(listOf("--dry-run", "--force", "-o", occupied.toString()) + inputs)
+        assertEquals(0, forced.statusCode, forced.output)
+    }
+
+    @Test
+    fun `an output spelled in another case than an input is refused where the filesystem ignores case`() {
+        corpus()
+        val backend = tmp.resolve("backend.git")
+        val other = tmp.resolve("BACKEND.git")
+        // Only where one name finds the other: on Windows, say, and not on most Linux filesystems.
+        assumeTrue(Files.exists(other), "the filesystem under $tmp tells case apart")
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", "-o", other.toString(), backend.toString(), tmp.resolve("webui.git").toString())
+        )
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("is the output (-o)"), result.output)
+    }
+
+    @Test
+    fun `an input that is the output is refused, on a dry run and under --force alike`() {
+        corpus()
+        val backend = tmp.resolve("backend.git")
+        val before = SourceRepository.open(backend).use { repo -> repo.branches().map { it.name to it.target.name } }
+
+        for (mode in listOf("--dry-run", "--force")) {
+            val result = MergeCommand().test(
+                listOf(mode, "-o", backend.toString(), backend.toString(), tmp.resolve("webui.git").toString())
+            )
+
+            assertEquals(1, result.statusCode, "$mode: ${result.output}")
+            assertTrue(
+                result.output.contains("'$backend' is the output (-o), which a run cannot braid into itself"),
+                "$mode: ${result.output}",
+            )
+        }
+        val after = SourceRepository.open(backend).use { repo -> repo.branches().map { it.name to it.target.name } }
+        assertEquals(before, after, "the input was written into")
+
+        // One repository named another way on either side: a working tree and its own git
+        // directory, a symlink to the input, a symlink to a working tree's git directory, and a
+        // working tree whose `.git` is a symlink to its git directory kept elsewhere.
+        val tree = tmp.resolve("tree")
+        TestRepoBuilder.create(tree, bare = false).use { it.branch("main", it.commit("t1")) }
+        val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), backend)
+        val gitDir = Files.createSymbolicLink(tmp.resolve("gitdir"), tree.resolve(".git"))
+        // A working tree whose `.git` is itself a symlink to a git directory kept elsewhere.
+        val linked = tmp.resolve("linked")
+        TestRepoBuilder.create(linked, bare = false).use { it.branch("main", it.commit("l1")) }
+        val kept = Files.move(linked.resolve(".git"), tmp.resolve("store.git"))
+        Files.createSymbolicLink(linked.resolve(".git"), kept)
+        // A working tree whose `.git` is a file naming its git directory, as a submodule's is.
+        val pointed = tmp.resolve("pointed")
+        val pointedStore = tmp.resolve("pointed-store.git")
+        TestRepoBuilder.create(pointedStore).use { it.branch("main", it.commit("p1")) }
+        Files.createDirectories(pointed)
+        Files.writeString(pointed.resolve(".git"), "gitdir: $pointedStore\n")
+        // A linked worktree of `tree`: its `.git` file names a directory under `tree/.git/worktrees`,
+        // whose `commondir` leads back to `tree/.git`.
+        val worktree = tmp.resolve("worktree")
+        val admin = Files.createDirectories(tree.resolve(".git/worktrees/worktree"))
+        Files.writeString(admin.resolve("HEAD"), "ref: refs/heads/main\n")
+        Files.writeString(admin.resolve("commondir"), "../..\n")
+        Files.writeString(admin.resolve("gitdir"), "${worktree.resolve(".git")}\n")
+        Files.createDirectories(worktree)
+        Files.writeString(worktree.resolve(".git"), "gitdir: $admin\n")
+        // A working tree whose `.git` file names `<tree>.git` beside it, as --separate-git-dir does.
+        val separate = tmp.resolve("separate")
+        val separateStore = tmp.resolve("separate.git")
+        TestRepoBuilder.create(separateStore).use { it.branch("main", it.commit("s1")) }
+        Files.createDirectories(separate)
+        Files.writeString(separate.resolve(".git"), "gitdir: $separateStore\n")
+        Files.createDirectories(pointed.resolve("sub"))
+        val same = listOf(
+            tree.resolve(".git") to tree, tree to tree.resolve(".git"), alias to backend,
+            gitDir to tree, tree to gitDir,
+            kept to linked, linked to kept, linked.resolve(".git") to linked,
+            pointedStore to pointed, pointed to pointedStore,
+            separateStore to separate, separate to separateStore,
+            // A `..` past a symlink from inside `tree`: read from `pointed`, but fetched from `tree`,
+            // which the fetch names by the path normalized as text.
+            tree to Files.createSymbolicLink(tree.resolve("sym"), pointed.resolve("sub")).resolve(".."),
+            tree.resolve(".git") to worktree, worktree to tree,
+            // A bare repository and a `.git` inside it: git would take the new one for it.
+            backend.resolve(".git") to backend,
+        )
+        for ((o, input) in same) {
+            val result = MergeCommand().test(
+                listOf("--dry-run", "-o", o.toString(), input.toString(), tmp.resolve("webui.git").toString())
+            )
+            assertEquals(1, result.statusCode, "-o $o, input $input: ${result.output}")
+            assertTrue(result.output.contains("is the output (-o)"), "-o $o, input $input: ${result.output}")
+        }
+
+        // The `.git` ending a bare repository's name is part of it: `backend` is another place,
+        // an empty directory beside it included, which JGit alone would take for `backend.git`.
+        Files.createDirectories(tmp.resolve("backend"))
+        val beside = MergeCommand().test(
+            listOf(
+                "--dry-run", "-o", tmp.resolve("backend").toString(),
+                backend.toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+        assertEquals(0, beside.statusCode, beside.output)
+
+        // Nor when that directory holds a `.git` that is no repository: JGit would guess the
+        // sibling `backend.git` there too, and the input is not what `-o backend` writes into.
+        Files.createDirectories(tmp.resolve("backend/.git"))
+        val broken = MergeCommand().test(
+            listOf(
+                "--dry-run", "--force", "-o", tmp.resolve("backend").toString(),
+                backend.toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+        assertEquals(0, broken.statusCode, broken.output)
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "Windows resolves a '..' as text, before any symlink, so it leads where its text does",
+    )
+    fun `an input that is the output by way of a dot-dot past a symlink is refused`() {
+        corpus()
+        val backend = tmp.resolve("backend.git")
+        // A working tree whose `.git` is a file naming its git directory, as a submodule's is.
+        val pointed = tmp.resolve("pointed")
+        val pointedStore = tmp.resolve("pointed-store.git")
+        TestRepoBuilder.create(pointedStore).use { it.branch("main", it.commit("p1")) }
+        Files.createDirectories(pointed)
+        Files.writeString(pointed.resolve(".git"), "gitdir: $pointedStore\n")
+        // A `..` past a symlink into a working tree whose git directory is kept elsewhere: its graph
+        // is read from the one `pointed/.git` names, though its objects are fetched by the path.
+        Files.createDirectories(pointed.resolve("sub"))
+        val up = Files.createSymbolicLink(tmp.resolve("up"), pointed.resolve("sub"))
+        // A `..` past a symlink: `dotdot/..` is backend.git itself, not the directory `dotdot` sits in.
+        val dotdot = Files.createSymbolicLink(tmp.resolve("dotdot"), backend.resolve("refs"))
+        val same = listOf(
+            pointedStore to up.resolve(".."), up.resolve("..") to pointedStore,
+            dotdot.resolve("..") to backend,
+        )
+        for ((o, input) in same) {
+            val result = MergeCommand().test(
+                listOf("--dry-run", "-o", o.toString(), input.toString(), tmp.resolve("webui.git").toString())
+            )
+            assertEquals(1, result.statusCode, "-o $o, input $input: ${result.output}")
+            assertTrue(result.output.contains("is the output (-o)"), "-o $o, input $input: ${result.output}")
+        }
+    }
+
+    @Test
+    fun `a --plan-out that cannot be written is refused before the output is created`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+        // A directory where the file would go: the one case that fails whoever runs the test, root
+        // included, where a file without write permission would not.
+        val plan = tmp.resolve("plan").also { it.toFile().mkdir() }
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                "--plan-out", plan.toString(),
+                tmp.resolve("backend.git").toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("--plan-out '$plan' cannot be written: it is a directory"), result.output)
+        assertTrue(!out.toFile().exists(), "the output should not have been created")
     }
 
     @Test
