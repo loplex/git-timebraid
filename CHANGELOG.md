@@ -565,10 +565,10 @@ Twenty-eight changes alter what a command line written for 0.1.0 does:
   The jar's manifest now allows native access, with `Enable-Native-Access`, and on JDK 22 and later
   mordant then reads the terminal size through the JDK's own foreign function API instead.
 
-- **An input whose `..` leads, past a symlink, elsewhere than its text is fetched from the
-  directory it is read from.**\
-  0.1.0 read it from the directory the filesystem resolved and fetched it from the one the text
-  normalized to: a failed fetch, or a braid over trees the output lacked.\
+- **An input whose `..` leads, past a symlink, elsewhere than its text is fetched from, and named
+  after, the directory it is read from.**\
+  0.1.0 read it from the directory the filesystem resolved, and fetched it from and named it after
+  the one the text normalized to: a failed fetch, or a braid over trees the output lacked.\
   `--keep-remotes` records that directory too, by its real path, where 0.1.0 recorded the
   normalized text.
 

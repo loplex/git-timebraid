@@ -635,10 +635,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val local = try {
             val path = Path.of(location)
             SourceRepository.gitDirOf(path)?.let { gitDir ->
-                val real = path.toRealPath()
-                val text = path.toAbsolutePath().normalize()
-                val remote = if (Files.exists(text) && text.toRealPath() == real) text else real
-                LocalPlace(gitDir.toPath().toRealPath(), real, remote.toString())
+                LocalPlace(gitDir.toPath().toRealPath(), path.toRealPath(), SourceRepository.absolute(path).toString())
             }
         } catch (e: InvalidPathException) {
             null

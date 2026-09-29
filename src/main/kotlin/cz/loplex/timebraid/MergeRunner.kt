@@ -58,8 +58,8 @@ class LocalPlace(
      */
     val path: Path,
     /**
-     * What `--keep-remotes` records as the input's URL: the location made absolute and normalized
-     * as text, a symlink in it kept as written, unless that text leads somewhere other than [path],
+     * What `--keep-remotes` records as the input's URL: the location as [SourceRepository.absolute]
+     * makes it, a symlink in it kept as written unless the text leads somewhere other than [path],
      * as a `..` past a symlink can; that one is recorded as [path] itself.
      */
     val remote: String,

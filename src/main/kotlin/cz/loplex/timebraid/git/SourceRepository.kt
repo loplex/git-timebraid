@@ -15,6 +15,8 @@ import org.eclipse.jgit.treewalk.CanonicalTreeParser
 import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.util.FS
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -330,21 +332,53 @@ class SourceRepository private constructor(
         }
 
         /**
-         * The repository name implied by a path: the last segment of its absolute, normalized form,
-         * without a trailing `.git`.
+         * The repository name implied by a path: the last segment of its [absolute] form, without a
+         * trailing `.git`.
          *
-         * Normalizing first is what lets `.` and `../sibling` be written as inputs and still name
+         * Resolving first is what lets `.` and `../sibling` be written as inputs and still name
          * the directory they land on rather than themselves. Dropping a final `.git` *segment* —
          * as opposed to the `.git` suffix of a bare `repo.git` — is what makes `repo/.git` name
          * `repo` instead of nothing at all. Empty only for a path with no segment to be named by,
          * the filesystem root; callers reject that rather than carrying a nameless repository.
          */
         fun defaultName(location: Path): String {
-            val absolute = location.toAbsolutePath().normalize()
+            val absolute = absolute(location)
             val directory =
                 if (absolute.fileName?.toString() == Constants.DOT_GIT) absolute.parent ?: absolute
                 else absolute
             return directory.fileName?.toString()?.removeSuffix(".git") ?: ""
+        }
+
+        /**
+         * [location] made absolute and normalized as text, so a symlink in it keeps the name it was
+         * given, unless that text leads somewhere other than reading the path does. A `..` past a
+         * symlink is the one way it can: read, it goes to the parent of the directory the symlink
+         * leads to, where the text names the directory the symlink sits in. Such a path is resolved
+         * as the filesystem resolves it ([followed]). Windows resolves a `..` as text, before any
+         * symlink, so there the two never differ.
+         */
+        fun absolute(location: Path): Path {
+            val absolute = location.toAbsolutePath()
+            val text = absolute.normalize()
+            if (absolute.none { it.toString() == ".." }) return text
+            val read = followed(absolute)
+            return if (followed(text) == read) text else read
+        }
+
+        /**
+         * [absolute] as the filesystem resolves it, a symlink or a `..` past one followed: its real
+         * path where it exists, and otherwise its nearest existing ancestor's with the rest
+         * appended.
+         */
+        private fun followed(absolute: Path): Path {
+            var existing: Path? = absolute
+            while (existing != null && !Files.exists(existing)) existing = existing.parent
+            if (existing == null) return absolute.normalize()
+            return try {
+                existing.toRealPath().resolve(existing.relativize(absolute)).normalize()
+            } catch (e: IOException) {
+                absolute.normalize()
+            }
         }
 
         /** Whether [text] is spelled the way git writes an object id in a notes tree path. */
