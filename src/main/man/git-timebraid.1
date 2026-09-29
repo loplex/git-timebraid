@@ -22,7 +22,7 @@
 .\" and what a reader takes it for; the version bump open-next-version.sh makes is not one. Nothing
 .\" holds it: a depth-1 CI checkout cannot read when a file last changed, so the check would have to
 .\" be a full clone for one field. It is kept by hand.
-.TH GIT\-TIMEBRAID 1 "2026\-09\-13" "git\-timebraid 0.2.0" "Git Extensions"
+.TH GIT\-TIMEBRAID 1 "2026\-09\-29" "git\-timebraid 0.2.0" "Git Extensions"
 .
 .SH NAME
 git\-timebraid \- merge several git repositories into one, braided along the time axis
@@ -81,6 +81,9 @@ or of the location. Neither field may be written with a
 .B :
 or a
 .BR = .
+.PP
+One local repository is one input: two arguments naming it, however each spells its location, are
+refused.
 .
 .SH OPTIONS
 .SS Where the result is written

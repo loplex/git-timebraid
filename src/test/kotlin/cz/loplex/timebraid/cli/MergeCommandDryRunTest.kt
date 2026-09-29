@@ -383,16 +383,12 @@ class MergeCommandDryRunTest {
         TestRepoBuilder.create(separateStore).use { it.branch("main", it.commit("s1")) }
         Files.createDirectories(separate)
         Files.writeString(separate.resolve(".git"), "gitdir: $separateStore\n")
-        Files.createDirectories(pointed.resolve("sub"))
         val same = listOf(
             tree.resolve(".git") to tree, tree to tree.resolve(".git"), alias to backend,
             gitDir to tree, tree to gitDir,
             kept to linked, linked to kept, linked.resolve(".git") to linked,
             pointedStore to pointed, pointed to pointedStore,
             separateStore to separate, separate to separateStore,
-            // A `..` past a symlink from inside `tree`: read from `pointed`, but fetched from `tree`,
-            // which the fetch names by the path normalized as text.
-            tree to Files.createSymbolicLink(tree.resolve("sym"), pointed.resolve("sub")).resolve(".."),
             tree.resolve(".git") to worktree, worktree to tree,
             // A bare repository and a `.git` inside it: git would take the new one for it.
             backend.resolve(".git") to backend,
@@ -443,7 +439,7 @@ class MergeCommandDryRunTest {
         Files.createDirectories(pointed)
         Files.writeString(pointed.resolve(".git"), "gitdir: $pointedStore\n")
         // A `..` past a symlink into a working tree whose git directory is kept elsewhere: its graph
-        // is read from the one `pointed/.git` names, though its objects are fetched by the path.
+        // and its objects both come from the one `pointed/.git` names.
         Files.createDirectories(pointed.resolve("sub"))
         val up = Files.createSymbolicLink(tmp.resolve("up"), pointed.resolve("sub"))
         // A `..` past a symlink: `dotdot/..` is backend.git itself, not the directory `dotdot` sits in.
@@ -459,6 +455,19 @@ class MergeCommandDryRunTest {
             assertEquals(1, result.statusCode, "-o $o, input $input: ${result.output}")
             assertTrue(result.output.contains("is the output (-o)"), "-o $o, input $input: ${result.output}")
         }
+
+        // The same kind of `..` from inside `tree` is `pointed`, read and fetched alike, and so is
+        // not the output `tree`: a lexical `..` would have fetched it from `tree`.
+        val tree = tmp.resolve("tree")
+        TestRepoBuilder.create(tree, bare = false).use { it.branch("main", it.commit("t1")) }
+        val inside = Files.createSymbolicLink(tree.resolve("sym"), pointed.resolve("sub")).resolve("..")
+        val apart = MergeCommand().test(
+            listOf(
+                "--dry-run", "--force", "-o", tree.toString(),
+                inside.toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+        assertEquals(0, apart.statusCode, apart.output)
     }
 
     @Test
@@ -554,10 +563,7 @@ class MergeCommandDryRunTest {
         val derived = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(derived.output.contains("cannot be a repository name"), derived.output)
-        assertTrue(
-            derived.output.contains("give the input a name, with =<name> at the end of its ::<subdir> suffix"),
-            derived.output,
-        )
+        assertTrue(derived.output.contains("give the input a name, as '$holding::=<name>'"), derived.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "$holding::=oddname", path("webui.git"))
@@ -611,6 +617,19 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a local input that is no repository is refused before a remote one is cloned`() {
+        corpus()
+        val remote = tmp.resolve("backend.git").toUri().toString()
+
+        val result = MergeCommand().test(listOf("-o", path("out.git"), remote, path("missing")))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no git repository at ${path("missing")}"), result.output)
+        // The clones go beside the output, so a refusal made after them leaves this behind.
+        assertTrue(!Files.exists(tmp.resolve(".timebraid-clones")), result.output)
+    }
+
+    @Test
     @DisabledOnOs(
         value = [OS.WINDOWS],
         disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
@@ -627,6 +646,21 @@ class MergeCommandDryRunTest {
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("its name holds a '::'"), result.output)
         assertTrue(result.output.contains("end the argument with '::'"), result.output)
+    }
+
+    @Test
+    fun `two inputs of one name are each offered a name that keeps the subdirectory they gave`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::libs/a", path("webui.git") + "::apps/a"),
+        )
+
+        // `<path-or-url>::=<name>` would move either input from where its argument put it to `<name>/`.
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("'${path("backend.git")}::libs/a=<name>'"), result.output)
+        assertTrue(printed.contains("'${path("webui.git")}::apps/a=<name>'"), result.output)
     }
 
     @Test
@@ -705,9 +739,13 @@ class MergeCommandDryRunTest {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("cannot be a repository name"), result.output)
-        // The name came out of the suffix, so the remedy is the suffix's, not a name to give.
+        // Another name is the way out, the subdirectory kept; and since the name came out of the
+        // suffix, so is the suffix's own remedy.
+        assertTrue(
+            result.output.contains("give the input a name, as '${path("backend.git")}::ok=<name>'"),
+            result.output,
+        )
         assertTrue(result.output.contains("end the argument with '::'"), result.output)
-        assertTrue("give the input a name" !in result.output, result.output)
     }
 
     @Test
@@ -797,6 +835,19 @@ class MergeCommandDryRunTest {
         assertTrue(result.output.contains("ui -> frontend/"), result.output)
     }
 
+    @Test
+    fun `one repository given as two arguments is refused, however the second spells it`() {
+        corpus()
+        val backend = path("backend.git")
+        for (second in listOf("$backend::y", "$backend/.::y")) {
+            val result = MergeCommand().test(listOf("--dry-run", "$backend::x", second))
+
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("two input arguments name one repository"), result.output)
+            assertTrue(result.output.contains("placing it at 'x' and 'y'"), result.output)
+        }
+    }
+
     /** A repository at [at] under the scan base, with one commit in it. */
     private fun scanned(at: String, bare: Boolean = true) {
         val dir = tmp.resolve("tree/$at")
@@ -838,7 +889,8 @@ class MergeCommandDryRunTest {
         val collided = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
         assertEquals(1, collided.statusCode, collided.output)
         assertTrue(collided.output.contains("same repository name"), collided.output)
-        assertTrue(collided.output.contains("giving its directory as an argument"), collided.output)
+        val printed = collided.output.replace(Regex("\\s+"), " ")
+        assertTrue(printed.contains("give one of them a name, as '${path("tree/libs/core.git")}::=<name>'"), collided.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core.git") + "::=tools-core"),
@@ -886,6 +938,20 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `an argument naming a scanned repository through a symlink corrects that finding`() {
+        scanned("libs/core.git")
+        scanned("apps/webui.git")
+        val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), tmp.resolve("tree/libs/core.git"))
+
+        val named = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "$alias::=libs-core"))
+
+        assertEquals(0, named.statusCode, named.output)
+        assertTrue(named.output.contains("libs-core -> libs/core/"), named.output)
+        assertTrue(named.output.lines().none { it.trim() == "core -> libs/core/" }, named.output)
+        assertTrue(!named.output.contains("-> libs-core/"), named.output)
+    }
+
+    @Test
     fun `a scan leaves the run's own output out, and an argument or a finding that is the output is refused`() {
         scanned("libs/backend.git")
         // What an earlier run with `-o tree/merged.git` left beside its inputs.
@@ -907,7 +973,7 @@ class MergeCommandDryRunTest {
         assertEquals(0, aliased.statusCode, aliased.output)
         assertTrue(!aliased.output.contains("merged -> "), aliased.output)
 
-        val named = MergeCommand().test(listOf("--dry-run", "-o", out, path("libs.git"), out))
+        val named = MergeCommand().test(listOf("--dry-run", "-o", out, path("tree/libs/backend.git"), out))
         assertEquals(1, named.statusCode, named.output)
         assertTrue(named.output.contains("is the output (-o)"), named.output)
 
@@ -978,14 +1044,17 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `a name taken from the suffix's subdirectory is refused with the suffix's remedy`() {
+    fun `a name taken from the suffix's subdirectory is refused with a name that keeps the subdirectory`() {
         val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::a..b"))
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("'a..b' cannot be a repository name"), result.output)
-        assertTrue(result.output.contains("end the argument with '::'"), result.output)
         // `::=<name>` would drop the subdirectory the argument gave.
-        assertTrue("give the input a name" !in result.output, result.output)
+        assertTrue(
+            result.output.contains("give the input a name, as '${path("backend.git")}::a..b=<name>'"),
+            result.output,
+        )
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
     }
 
     @Test
@@ -1011,10 +1080,7 @@ class MergeCommandDryRunTest {
         val printed = derived.output.replace(Regex("\\s+"), " ")
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(printed.contains("'my repo' cannot be a repository name"), derived.output)
-        assertTrue(
-            printed.contains("give the input a name, with =<name> at the end of its ::<subdir> suffix"),
-            derived.output,
-        )
+        assertTrue(printed.contains("give the input a name, as '$spaced::=<name>'"), derived.output)
 
         val named = MergeCommand().test(listOf("--dry-run", "$spaced::=myrepo", webui))
         assertEquals(0, named.statusCode, named.output)

@@ -594,9 +594,11 @@ class MergeCommandOptionsTest {
         val transfers = verbose.output.lines().filter { it.contains("fetch --no-tags") }
         assertEquals(2, transfers.size, verbose.output)
         // The source has to be absolute for the line to run: `-C` has already moved the working
-        // directory by the time git reads it. Matched as a word of the line, not as a substring: a
-        // relative spelling that climbs to the root and back down ends in the absolute one.
-        val backend = backendDir.toAbsolutePath().toString()
+        // directory by the time git reads it. It is the real path the input is fetched from, which
+        // on Windows spells a short name such as `RUNNER~1` out in full. Matched as a word of the
+        // line, not as a substring: a relative spelling that climbs to the root and back down ends
+        // in the absolute one.
+        val backend = backendDir.toRealPath().toString()
         val transfer = transfers.single { backend in it.split(' ') }
         assertTrue(transfer.contains("+refs/heads/main:"), transfer)
 

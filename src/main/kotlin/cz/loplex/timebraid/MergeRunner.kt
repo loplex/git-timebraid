@@ -1,5 +1,6 @@
 package cz.loplex.timebraid
 
+import cz.loplex.timebraid.cli.InputRemedy
 import cz.loplex.timebraid.cli.Progress
 import cz.loplex.timebraid.git.BraidInputs
 import cz.loplex.timebraid.git.BraidWriter
@@ -23,25 +24,51 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
-/** One input to the merge, as the CLI layer parsed it. */
-class MergeInput(
+/**
+ * One input to the merge, as the CLI layer parsed it and the filesystem resolved it: once, on the
+ * command line, before anything is cloned or read.
+ */
+class ResolvedInput(
     /**
      * A local filesystem path or a remote URL as the user wrote it, or, for a repository `--scan`
      * found, the absolute path it was found at.
      */
     val location: String,
-    val isRemote: Boolean,
     val name: String,
     /**
      * Where the content lands in the output — one name or a nested path — or `null` for the
      * repository placed at the root.
      */
     val subdir: String?,
+    /** Where a local input is on disk, or `null` for a remote one, which is nowhere until cloned. */
+    val local: LocalPlace?,
+) {
+    val isRemote: Boolean get() = local == null
+}
+
+/** A local input's repository, as the filesystem has it. */
+class LocalPlace(
+    /**
+     * The git directory's real path, so `core`, `core/.git` and a symlink to either are one
+     * directory: what tells two inputs, or an input and the output, apart.
+     */
+    val gitDir: Path,
+    /**
+     * The location's real path, which the input is opened and fetched from, so a symlink or a `..`
+     * past one leads both to the same directory.
+     */
+    val path: Path,
+    /**
+     * What `--keep-remotes` records as the input's URL: the location as [SourceRepository.absolute]
+     * makes it, a symlink in it kept as written unless the text leads somewhere other than [path],
+     * as a `..` past a symlink can; that one is recorded as [path] itself.
+     */
+    val remote: String,
 )
 
 /** Everything the runner needs, already validated by the CLI layer. */
 class MergeRequest(
-    val inputs: List<MergeInput>,
+    val inputs: List<ResolvedInput>,
     val output: Path?,
     val force: Boolean,
     val bare: Boolean,
@@ -90,7 +117,7 @@ class FetchSummary(val repositories: Int, val refs: Int)
 
 /** What a run produced. [fetch] and [write] are `null` for a dry run. */
 class MergeResult(
-    val braid: BraidInputs,
+    val inputs: BraidInputs,
     val plan: MergePlan,
     /**
      * One per splice the plan makes, each checked against every tree before anything was written
@@ -129,13 +156,13 @@ class MergeRunner(
         }
 
     private fun merge(): MergeResult {
-        val locations = resolveInputs()
+        val localInputs = localInputs()
         // Opened inside the try, so that an input refused on opening closes the ones before it.
-        val sources = ArrayList<SourceRepository>(locations.size)
+        val sources = ArrayList<SourceRepository>(localInputs.size)
         try {
-            locations.mapTo(sources) { SourceRepository.open(it.path, it.name) }
+            localInputs.mapTo(sources) { SourceRepository.open(it.path, it.name) }
             progress.phase("reading the inputs and planning the braid")
-            val braid = progress.whileWorking(
+            val inputs = progress.whileWorking(
                 "reading ${sources.size} repositories",
                 finished = { "${sources.size} repositories, ${it.graph.size} commits" },
             ) {
@@ -150,24 +177,24 @@ class MergeRunner(
                 )
             }
 
-            if (braid.labelsAttached > 0 || braid.labelsSkipped > 0) {
+            if (inputs.labelsAttached > 0 || inputs.labelsSkipped > 0) {
                 val skipped =
-                    if (braid.labelsSkipped == 0) ""
-                    else ", skipping ${braid.labelsSkipped} that matched nothing loaded"
-                progress.result("${braid.labelsAttached} refs attached by label$skipped")
+                    if (inputs.labelsSkipped == 0) ""
+                    else ", skipping ${inputs.labelsSkipped} that matched nothing loaded"
+                progress.result("${inputs.labelsAttached} refs attached by label$skipped")
             }
-            if (braid.notesAttached > 0 || braid.notesSkipped > 0) {
+            if (inputs.notesAttached > 0 || inputs.notesSkipped > 0) {
                 val skipped =
-                    if (braid.notesSkipped == 0) ""
-                    else ", skipping ${braid.notesSkipped} attached to objects this run did not write"
-                progress.result("${braid.notesAttached} notes rekeyed onto the new commits$skipped")
+                    if (inputs.notesSkipped == 0) ""
+                    else ", skipping ${inputs.notesSkipped} attached to objects this run did not write"
+                progress.result("${inputs.notesAttached} notes rekeyed onto the new commits$skipped")
             }
             // Through detail and not result: this count is of what --interleave-ref asked for — the
             // commits its refs name, whose ancestry was allowed to widen the scope — and only a
             // reader tuning that option has a use for it.
-            if (braid.interleaveTips.isNotEmpty()) {
+            if (inputs.interleaveTips.isNotEmpty()) {
                 progress.detail(
-                    "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +
+                    "${inputs.interleaveTips.size} commits opted into the interleave, so a merge can " +
                         "wait for them"
                 )
             }
@@ -175,12 +202,12 @@ class MergeRunner(
                 "planning",
                 finished = { "${it.commits.size} commits planned, ${it.braid.size} on the braid" },
             ) {
-                braid.graph
-                    .braid(braid.heads, braid.interleaveTips)
+                inputs.graph
+                    .braid(inputs.heads, inputs.interleaveTips)
                     .plan(
                         // The strands are in the order the inputs were given, so the two are paired
                         // by position here rather than by asking a Source where it sits.
-                        braid.graph.sources
+                        inputs.graph.sources
                             .mapIndexed { index, source -> source to request.inputs[index].subdir }
                             .toMap(),
                         splice = request.splice,
@@ -191,13 +218,13 @@ class MergeRunner(
             // and it gives back one SourceInputs per repository in the same order, each naming the
             // strand that repository became, so they are paired by position here, once. Everything
             // downstream looks a repository up by its Source and never has to know the order again.
-            val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
+            val repoOf = inputs.sources.map { it.source }.zip(sources).toMap()
 
             // Before anything is written into the output, and on a dry run too — a splice that
             // collides does so at one commit of the braid rather than at all of them, so a dry run
             // that skipped this would report a plan it cannot carry out.
             val splices = progress.whileWorking("checking the splices") {
-                SpliceCheck(plan, braid, repoOf, request.dissolveSubmodules, relocation).check()
+                SpliceCheck(plan, inputs, repoOf, request.dissolveSubmodules, relocation).check()
             }
             for (splice in splices) {
                 val dissolved =
@@ -220,29 +247,29 @@ class MergeRunner(
             } else {
                 emptyMap()
             }
-            for (input in locations) {
-                if (input.name !in remotes) continue
-                val url = remotes[input.name]
-                require(url == input.remote) {
-                    "the output already has a remote '${input.name}' at '$url', and --keep-remotes would " +
-                        "record input '${input.name}' there as '${input.remote}' -- remove that remote from " +
-                        "the output, or give the input another name, with =<name> at the end of its " +
-                        "::<subdir> suffix (::=<name> where it has none)"
+            for ((input, local) in request.inputs.zip(localInputs)) {
+                if (local.name !in remotes) continue
+                val url = remotes[local.name]
+                require(url == local.remote) {
+                    "the output already has a remote '${local.name}' at '$url', and --keep-remotes would " +
+                        "record input '${local.name}' there as '${local.remote}' -- remove that remote from " +
+                        "the output, or give the input another name, as " +
+                        InputRemedy(input.location, input.subdir).named()
                 }
             }
             if (request.dryRun || output == null) {
-                return MergeResult(braid, plan, splices, null, null)
+                return MergeResult(inputs, plan, splices, null, null)
             }
 
-            val written = writeOutput(output, repoOf, braid, plan)
-            if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
+            val written = writeOutput(output, repoOf, inputs, plan)
+            if (request.keepRemotes) keepRemotes(output, localInputs.filter { it.name !in remotes })
             if (!request.bare) {
-                progress.phase("checking out ${braid.mainlineBranch}")
+                progress.phase("checking out ${inputs.mainlineBranch}")
                 // Its own progress, drawn as it arrives. Reading the stream is what made it look
                 // as though git had nothing to say here; it had, and now it is passed on.
-                progress.gitProgress().use { git.checkout(output, braid.mainlineBranch, it) }
+                progress.gitProgress().use { git.checkout(output, inputs.mainlineBranch, it) }
             }
-            return MergeResult(braid, plan, splices, written.fetch, written.write)
+            return MergeResult(inputs, plan, splices, written.fetch, written.write)
         } finally {
             sources.forEach { it.close() }
         }
@@ -250,12 +277,15 @@ class MergeRunner(
 
     /**
      * The remedy a refusal about where an input lands offers, for the input at a destination: its
-     * location with another subdirectory, the argument that moves it. A repository `--scan` found
+     * location with another subdirectory, as [InputRemedy.placed] spells it. A repository `--scan` found
      * is moved the same way, by naming its directory, which corrects the finding.
      */
     private val relocation = Relocation { destination ->
         request.inputs.firstOrNull { it.subdir == destination }
-            ?.let { "give the repository at '$destination' another subdirectory, as '${it.location}::<subdir>'" }
+            ?.let {
+                "give the repository at '$destination' another subdirectory, as " +
+                    InputRemedy(it.location, name = it.name).moved()
+            }
             ?: Relocation.UNSPELLED.remedy(destination)
     }
 
@@ -273,7 +303,7 @@ class MergeRunner(
     private fun writeOutput(
         output: Path,
         repoOf: Map<Source, SourceRepository>,
-        braid: BraidInputs,
+        inputs: BraidInputs,
         plan: MergePlan,
     ): Written {
         // Opened before the output is created: creating it is the first thing the run does to the
@@ -282,18 +312,18 @@ class MergeRunner(
         progress.phase("fetching the inputs into the output")
         TargetRepository.create(
             output,
-            braid.mainlineBranch,
+            inputs.mainlineBranch,
             request.force,
             request.bare,
             log = { progress.detail(it) },
         ).use { target ->
-            val fetch = fetchInputs(target, repoOf, braid)
+            val fetch = fetchInputs(target, repoOf, inputs)
 
             progress.phase("writing the braid")
             val write = BraidWriter(
                 target = target,
                 repoOf = repoOf,
-                inputs = braid,
+                inputs = inputs,
                 plan = plan,
                 options = request.writeOptions,
                 mirrorRemotes = request.keepRemotes,
@@ -315,10 +345,10 @@ class MergeRunner(
     private fun fetchInputs(
         target: TargetRepository,
         repoOf: Map<Source, SourceRepository>,
-        braid: BraidInputs,
+        inputs: BraidInputs,
     ): FetchSummary {
         var refs = 0
-        for (input in braid.sources) {
+        for (input in inputs.sources) {
             val repo = repoOf.getValue(input.source)
             // The notes refs ride along: they contribute no commit, but the blobs a note is made
             // of have to be in the output before a tree of the output's own can point at one.
@@ -328,18 +358,18 @@ class MergeRunner(
             progress.result("[${repo.name}] ${wanted.size} refs")
             refs += target.fetchFrom(repo, wanted, progress.monitor(repo.name))
         }
-        return FetchSummary(braid.sources.size, refs)
+        return FetchSummary(inputs.sources.size, refs)
     }
 
     /**
-     * Records each of [locations] as a remote of the output; one the output records already, under
+     * Records each of [localInputs] as a remote of the output; one the output records already, under
      * its own URL, is not among them. The remote-tracking refs themselves are written
      * by [BraidWriter] along with everything else, so all that is left here is the configuration
      * that lets a later `git fetch <name>` pick up what the input has gained since.
      */
-    private fun keepRemotes(output: Path, locations: List<LocalInput>) {
+    private fun keepRemotes(output: Path, localInputs: List<LocalInput>) {
         progress.phase("recording the inputs as remotes")
-        for (input in locations) {
+        for (input in localInputs) {
             git.addRemote(output, input.name, input.remote)
             progress.result("${input.name} -> ${input.remote}")
         }
@@ -352,9 +382,11 @@ class MergeRunner(
      * beside (`--dry-run` with no `-o`), the clones go to a temporary directory instead, which the
      * run removes when it ends.
      */
-    private fun resolveInputs(): List<LocalInput> {
+    private fun localInputs(): List<LocalInput> {
+        // A local input is used where the command line resolved it.
+        fun LocalPlace.input(name: String) = LocalInput(path, name, remote)
         if (request.inputs.none { it.isRemote }) {
-            return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
+            return request.inputs.mapNotNull { input -> input.local?.input(input.name) }
         }
         progress.phase("making every input a local repository")
         val root = cloneRoot().also {
@@ -373,9 +405,7 @@ class MergeRunner(
             }
         }
         return request.inputs.map { input ->
-            if (!input.isRemote) {
-                return@map LocalInput(Path.of(input.location), input.name, localRemote(input.location))
-            }
+            input.local?.let { return@map it.input(input.name) }
 
             val dir = root.resolve("${input.name}.git")
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
@@ -397,27 +427,15 @@ class MergeRunner(
      * forks' `webui`, for one. Refreshing the clone the other one left would braid a repository this
      * run never named, and report it as this input.
      */
-    private fun refuseOtherOrigin(dir: Path, input: MergeInput) {
+    private fun refuseOtherOrigin(dir: Path, input: ResolvedInput) {
         val origin = FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
             it.config.getString("remote", "origin", "url")
         }
         require(origin == input.location) {
             "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
-                "the input another name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
-                "where it has none)"
+                "the input another name, as ${InputRemedy(input.location, input.subdir).named()}"
         }
     }
-
-    /**
-     * A local input recorded as its own remote URL, made absolute.
-     *
-     * `git remote add` stores the string verbatim, and every later `git fetch` runs with the
-     * *output* repository as its working directory — so a relative path, which is the ordinary way
-     * to name a repository on the command line, would be resolved against the wrong directory and
-     * the fetch would fail. A remote input keeps its URL, which needs no such treatment.
-     */
-    private fun localRemote(location: String): String =
-        Path.of(location).toAbsolutePath().normalize().toString()
 
     private fun cloneRoot(): Path =
         request.output?.toAbsolutePath()?.parent?.resolve(CLONE_DIR)
@@ -435,7 +453,14 @@ class MergeRunner(
         }
     }
 
-    /** An input resolved to a local repository, plus the location to record if `--keep-remotes`. */
+    /**
+     * An input resolved to a local repository, plus the location to record if `--keep-remotes`.
+     *
+     * A local input's is the location made absolute, as [LocalPlace.remote] says: `git remote add`
+     * stores the string verbatim, and every later `git fetch` runs with the *output* as its working
+     * directory, so a relative path would be resolved against the wrong directory. A remote input
+     * keeps its URL.
+     */
     private class LocalInput(val path: Path, val name: String, val remote: String)
 
     /** The two halves of filling an output: what was fetched in, and what the braid wrote on top. */

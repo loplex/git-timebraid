@@ -5,9 +5,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.SystemReader
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
@@ -223,6 +226,26 @@ class SourceRepositoryTest {
             Path.of("").toAbsolutePath().fileName.toString(),
             SourceRepository.defaultName(Path.of(".")),
         )
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "Windows resolves a '..' as text, before any symlink, so it leads where its text does",
+    )
+    fun `a dot-dot past a symlink names the directory it leads to, and a symlink keeps its own name`() {
+        val repo = Files.createDirectories(tmp.resolve("repos/backend/sub"))
+        val up = Files.createSymbolicLink(tmp.resolve("up"), repo)
+
+        // As text, `up/..` is the directory `up` sits in; read, it is `backend`.
+        assertEquals("backend", SourceRepository.defaultName(up.resolve("..")))
+        assertEquals("backend", SourceRepository.defaultName(up.resolve("../.git")))
+        assertEquals("up", SourceRepository.defaultName(up))
+        // A `..` that leads where its text does leaves the symlink after it its own name.
+        assertEquals("up", SourceRepository.defaultName(tmp.resolve("repos/../up")))
+        // Nor does one past a symlink leading beside it: `hop/..` is `tmp` both ways.
+        Files.createSymbolicLink(tmp.resolve("hop"), tmp.resolve("repos"))
+        assertEquals("up", SourceRepository.defaultName(tmp.resolve("hop/../up")))
     }
 
     @Test

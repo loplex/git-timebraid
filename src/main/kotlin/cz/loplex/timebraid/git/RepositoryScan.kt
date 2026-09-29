@@ -10,7 +10,7 @@ import kotlin.io.path.name
 
 /** One repository a scan found, with the place in the output its place on disk implies. */
 class ScannedRepository(
-    /** Where the repository is, absolute and normalized. */
+    /** Where the repository is, absolute, as [SourceRepository.absolute] has the base. */
     val path: Path,
     /**
      * Where its content lands: its own path relative to the base directory, the last segment named
@@ -55,7 +55,7 @@ object RepositoryScan {
      * @param output the run's output, left out of the walk, or `null` when there is none.
      */
     fun scan(base: Path, output: Path? = null): List<ScannedRepository> {
-        val root = base.toAbsolutePath().normalize()
+        val root = SourceRepository.absolute(base)
         require(root.isDirectory()) { "--scan '$base' is not a directory" }
         // Not normalized: a `..` past a symlink is the filesystem's to resolve, not the path's.
         val skip = output?.toAbsolutePath()

@@ -95,10 +95,12 @@ class TargetRepository private constructor(
         val specs = refs.map { RefSpec("+$it:" + fetchedName(source.name, it)) }
         // The absolute path rather than the one the caller gave, because `-C` has already moved the
         // working directory by the time the rest of the line is read: a relative source would be
-        // resolved against the output and the command would not run. Every refspec, too, rather
-        // than a count of them — which refs were asked for is the whole question when a commit is
-        // missing from the output, and eliding them says no more than the phase heading already did.
-        val from = source.location.toAbsolutePath().normalize()
+        // resolved against the output and the command would not run. Not normalized: a `..` past a
+        // symlink is the filesystem's, and dropping it as text would fetch from a directory other
+        // than the one the input was read from. Every refspec, too, rather than a count of them —
+        // which refs were asked for is the whole question when a commit is missing from the
+        // output, and eliding them says no more than the phase heading already did.
+        val from = source.location.toAbsolutePath()
         log("git -C $location fetch --no-tags $from ${specs.joinToString(" ")}")
         try {
             // java.io.File spells a path as the single-slash `file:/…` URI that URIish parses back
