@@ -52,8 +52,9 @@ commit refs/tags/webui/v2.0
 
 All five commits, both branches, all three tags. The two `main` branches collapse into the single
 braid; every other ref is prefixed with the repository name (`--branch-prefix` and `--tag-prefix`
-both default to `{repo}/`), which is what stops `backend`'s `v1.0` and a `v1.0` from anywhere else
-colliding — and what makes `backend/release/1.x` called that whatever else the run selects.
+both default to `{repo}/`), which is what stops `backend`'s `v1.0` and a `v1.0` from an input of
+another name colliding — and what makes `backend/release/1.x` called that whatever else the run
+selects.
 `backend/v1.1` is still `objecttype tag` — an annotated tag stays annotated, keeping its tagger and
 message.
 

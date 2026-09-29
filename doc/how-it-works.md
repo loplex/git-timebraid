@@ -290,7 +290,8 @@ merely unnamed.
   exactly — and it therefore selects that branch *and no tags*.
 - The resolved mainline is loaded whatever the patterns say, because the braid is built along it.
 - Every ref is recreated under a prefix, `{repo}/` by default — `--tag-prefix` for a tag,
-  `--branch-prefix` for a branch — so two inputs that both hold `v1.0` do not collide. It applies
+  `--branch-prefix` for a branch — so two inputs that both hold `v1.0` do not collide, unless they
+  share a name, where a prefix holding `{subdir}` is what keeps them apart. It applies
   wherever a pattern has not spelled its destination out, which is what makes an output ref name
   follow from the input it came from and from nothing else the run did; emptying it asks for the
   plain names, and two inputs meeting there is refused rather than resolved.

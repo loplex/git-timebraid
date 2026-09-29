@@ -90,9 +90,11 @@ class TargetRepository private constructor(
         refs: List<String>,
         /** Where JGit reports the transfer; the default discards it, as this did for its whole life. */
         monitor: ProgressMonitor = NullProgressMonitor.INSTANCE,
+        /** What tells this input's parked refs from another's: unique among the inputs fetched. */
+        key: String = source.name,
     ): Int {
         if (refs.isEmpty()) return 0
-        val specs = refs.map { RefSpec("+$it:" + fetchedName(source.name, it)) }
+        val specs = refs.map { RefSpec("+$it:" + fetchedName(key, it)) }
         // The absolute path rather than the one the caller gave, because `-C` has already moved the
         // working directory by the time the rest of the line is read: a relative source would be
         // resolved against the output and the command would not run. Not normalized: a `..` past a
@@ -259,7 +261,8 @@ class TargetRepository private constructor(
     companion object {
 
         /**
-         * Where [fetchFrom] parks the refs it fetches, laid out as `<repo>/<the input's own ref>`.
+         * Where [fetchFrom] parks the refs it fetches, laid out as `<key>/<the input's own ref>`, the
+         * key being the input's position among the inputs, which no two share where a name may be.
          *
          * Its own corner of the ref space rather than `refs/remotes/`, because these refs are not
          * the output's: they exist for the length of the transfer and [dropFetchRefs] removes every
@@ -268,9 +271,9 @@ class TargetRepository private constructor(
          */
         const val FETCH_NAMESPACE = "refs/timebraid-fetch/"
 
-        /** Where the input's [ref] (a full name) lands while the fetch is running. */
-        private fun fetchedName(repo: String, ref: String): String =
-            FETCH_NAMESPACE + repo + "/" + ref.removePrefix(Constants.R_REFS)
+        /** Where the input's [ref] (a full name) lands while the fetch is running, under [key]. */
+        private fun fetchedName(key: String, ref: String): String =
+            FETCH_NAMESPACE + key + "/" + ref.removePrefix(Constants.R_REFS)
 
         /**
          * Whether git accepts [refName] as the full name of a ref, and this platform can hold it.

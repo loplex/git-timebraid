@@ -240,10 +240,6 @@ object CommitGraphReader {
         notes: Boolean = false,
     ): BraidInputs {
         require(repositories.isNotEmpty()) { "no input repositories" }
-        // The command line refuses two inputs of one name; a caller that did not is a bug here.
-        check(repositories.map { it.name }.toSet().size == repositories.size) {
-            "two input repositories have the same name"
-        }
 
         val mainlines = resolveMainlines(repositories, requested)
         val outputBranch = mainlines.output

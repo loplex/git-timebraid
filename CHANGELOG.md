@@ -161,6 +161,15 @@ Thirty changes alter what a command line written for 0.1.0 does:
   `::libs/core` places an input and calls it `core`.\
   `::libs/core=legacy` sets the two apart.
 
+- **A name is a label, and two inputs may share one; the destination tells them apart.**\
+  0.1.0 refused two inputs of one name, which is what two directories called `core` derive.\
+  Two inputs placed at one destination are refused instead, on the command line, naming both and
+  offering each a subdirectory of its own.\
+  A reference to a shared name — a pattern's `<input>::`, `--root-repo` — is refused as naming
+  both, and so are two inputs `--keep-remotes` would add as one remote.\
+  Two of one name meeting on a ref name are refused naming `{subdir}`, which keeps them apart
+  where `{repo}` cannot.
+
 - **Neither the destination nor the name may be written with a `:` or a `=`.**\
   Both are refused rather than escaped.\
   For the name the `:` costs nothing: git refuses one in a ref name, and the name becomes a tag
@@ -170,7 +179,7 @@ Thirty changes alter what a command line written for 0.1.0 does:
 
 - **`--subject-prefix` defaults to `{repo}: `, not `{subdir}: `.**\
   A destination can be nested arbitrarily deep.\
-  The name is one segment, and is what identifies an input everywhere else.
+  The name is one segment.
 
 - **`--tag-prefix` substitutes `{subdir}`, where the input lands, beside `{repo}`.**\
   As `--subject-prefix` already did.\
@@ -476,11 +485,6 @@ Thirty changes alter what a command line written for 0.1.0 does:
   `/some/path::libs` used to report only `/some/path` when nothing is there.\
   The reading is unchanged, and which one was meant is still not guessed at.\
   The run fails on the location either way, so the refusal says what it cut off.
-
-- **A repository name two inputs derive is refused naming every location that derives it.**\
-  The refusal listed every input's name, the repeated one among them, and located none of them.\
-  Under `--scan`, new in this release, that would have left nothing to act on at all, since the
-  directories were never typed.
 
 - **`--keep-remotes` mirrors each input's mainline whether the selection took it or not.**\
   A run narrowed away from the mainline, `-b feature` for one, left its original commits in the

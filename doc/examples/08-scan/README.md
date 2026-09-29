@@ -1,8 +1,8 @@
 # 08 — the layout taken off a directory tree (`--scan`)
 
 Five repositories in a directory, and the layout written nowhere: `--scan` reads it off the disk.
-Shows what the walk finds, what it deliberately does not, the one thing it refuses, and how an
-argument corrects a finding rather than adding a second input.
+Shows what the walk finds, what it deliberately does not, what a name two findings share cannot do,
+and how an argument corrects a finding rather than adding a second input.
 
 ## Input
 
@@ -22,19 +22,20 @@ the scanned tree and takes no part in the run.
 
 ## Refused as it stands
 
-<!-- wide block: the refusal is quoted as the program prints it, one line naming both locations -->
+<!-- wide block: the refusal is quoted as the program prints it, on one line -->
 ```console
 $ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
-    --scan doc/examples/08-scan/input/platform
+    --scan doc/examples/08-scan/input/platform --ref 'core::refs/heads/main'
 
 Usage: git-timebraid [<options>] [<repo>]...
 
-Error: two inputs resolve to the same repository name 'core': doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- give one of them a name, as 'doc/examples/08-scan/input/platform/libs/core::=<name>' or 'doc/examples/08-scan/input/platform/tools/core::=<name>'
+Error: --ref 'core::refs/heads/main' is for input 'core', and two inputs are called that: doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- give one of them another name, as 'doc/examples/08-scan/input/platform/libs/core::=<name>' or 'doc/examples/08-scan/input/platform/tools/core::=<name>'
 ```
 
-`libs/core` and `tools/core` derive the same name, and a name has to be unique — it is the tag
-prefix, the branch prefix, the provenance label and what `--root-repo` matches. The scan cannot
-invent a distinction it was not given, so it refuses and says how to give one.
+`libs/core` and `tools/core` derive the same name. A name is a label, and two inputs may share one:
+where each lands is what tells them apart, so the scan alone would braid both, their commit subjects
+both reading `core: `. What refers to an input by its name — a pattern's scope, `--root-repo` —
+cannot say which of the two it means, so it is refused and says how to give one another name.
 
 ## Command
 
@@ -52,8 +53,8 @@ repositories:
 ```
 
 The `<repo>` argument names a directory the scan already found, so it is a **correction to that
-finding** rather than a sixth input. It gives a name and no destination, which is exactly what was
-needed here.
+finding** rather than a sixth input. It gives a name and no destination, which is exactly what a
+reference to either `core` needs.
 
 ## Result
 

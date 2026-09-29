@@ -83,10 +83,10 @@ internal class InputRemedy(
 /**
  * Splits `<path-or-url>[::[<subdir>][=<name>]]`.
  *
- * The subdirectory and the name answer separate questions. The subdirectory is merely where the
- * content lands. The name is the repository's identity — the tag prefix, the branch prefix, the
- * provenance label, what `--root-repo` matches — and has to be unique, which is the only way two
- * inputs whose directories happen to share a name can be merged at all.
+ * The subdirectory and the name answer separate questions. The subdirectory is where the content
+ * lands, and what tells two inputs apart. The name labels the repository — the tag and branch
+ * prefixes and the provenance label by default, and what `--root-repo` and an `<input>::` scope
+ * match — and two inputs may share one.
  *
  * The subdirectory comes first because placing an input is what most arguments do, and the name
  * follows from it unless it is given: `::apps/webui` places and names in one token. The `=` is for

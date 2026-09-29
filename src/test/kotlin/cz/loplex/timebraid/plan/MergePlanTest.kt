@@ -200,6 +200,19 @@ class MergePlanTest {
     }
 
     @Test
+    fun `an input whose name another shares is named by its destination as well`() {
+        // Two inputs called core; the plan has to say which one each line means, and the name alone
+        // cannot. One no other input shares keeps its name alone.
+        val spec = GraphSpec.parse("core: a1@10 | core: b1@20 | web: w1@30")
+        val plan = spec.graph.braid(spec.commits("a1", "b1", "w1")).plan(spec.subdirs("libs/core", "tools/core", "web"))
+
+        val rendered = plan.render()
+        assertTrue(rendered.contains(" * core(tools/core)/b1 @20 parents=[core(libs/core)/a1] "), rendered)
+        assertTrue(rendered.contains("content=[core(libs/core)=a1, core(tools/core)=b1, web=w1]"), rendered)
+        assertTrue(rendered.contains(" * web/w1 "), rendered)
+    }
+
+    @Test
     fun `marks commits that are not on the braid`() {
         val spec = GraphSpec.parse("A: a1@10 <- a2@30 ; f1(a1)@20")
         val plan = spec.graph.braid(spec.commits("a2")).plan(spec.subdirs())

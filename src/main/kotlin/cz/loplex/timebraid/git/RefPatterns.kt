@@ -321,7 +321,8 @@ class MainlineRequest(val common: String?, val scoped: Map<Int, String>) {
 
 /**
  * The input [value] is scoped to, by its position among [inputs], and the rest of it; or `null`
- * and the whole of it where it names none.
+ * and the whole of it where it names none. A name two inputs share is refused, as is one no input
+ * has.
  *
  * The scope is what stands before the first `::`: an input's name holds no `:`, so the first one
  * ends it, even where the refspec after it opens with a `:` of its own; the `<repo>` grammar takes
@@ -348,12 +349,23 @@ private fun scopeOf(option: String, value: String, inputs: List<String>): Pair<I
                 "the pattern: 'backend::^$pattern' subtracts in one input, '^$pattern' in every one"
         }
     }
-    val index = inputs.indexOf(input)
-    require(index >= 0) {
-        "$option '$value' is for input '$input', which is not one of: " + inputs.joinToString()
+    val named = inputs.indices.filter { inputs[it] == input }
+    require(named.isNotEmpty()) {
+        "$option '$value' is for input '$input', which is not one of: " + inputs.distinct().joinToString()
     }
-    return index to rest
+    // A name is a label two inputs may share, and a scope naming both would speak for either.
+    if (named.size > 1) throw SharedScope(option, value, input, named.size)
+    return named.single() to rest
 }
+
+/**
+ * A scope naming a name [count] inputs share, refused. Its own exception so that a caller that knows
+ * where those inputs are, and how each was written, can say so: [scopeOf] knows only their names.
+ */
+class SharedScope(val option: String, val value: String, val input: String, count: Int) : IllegalArgumentException(
+    "$option '$value' is for input '$input', and $count inputs are called that; give one of them another " +
+        "name, with '=<name>' at the end of its <repo>"
+)
 
 /** The `::` that ends a scope — see [scopeOf]. */
 private const val SCOPE = "::"

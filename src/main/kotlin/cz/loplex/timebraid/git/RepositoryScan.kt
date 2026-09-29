@@ -18,7 +18,7 @@ class ScannedRepository(
      * directory itself, which is the output root.
      */
     val subdir: String?,
-    /** Its identity, derived exactly as it would be from a `<repo>` argument. */
+    /** Its name, derived exactly as it would be from a `<repo>` argument. */
     val name: String,
 )
 

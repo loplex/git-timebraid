@@ -140,9 +140,13 @@ Placement and naming travel together, and can be separated.
 - It may be a nested path (`repo.git::libs/backend`), and inputs sharing a prefix share the
   directory for it — so `backend.git::libs/backend webui.git::apps/webui` gives the output a
   `libs/` and an `apps/`. Both are named after the last segment.
-- The name is the input's identity: the tag prefix, the branch prefix, the provenance label, the
-  commit subject prefix, what `--root-repo` matches, and what has to be unique — it is how two
-  inputs whose directories happen to share a name are told apart.
+- The name labels the input: the tag prefix, the branch prefix, the commit subject prefix and the
+  provenance label by default, and what `--root-repo` and a pattern's `<input>::` match. **Two
+  inputs may share one**; the destination is what tells them apart, and two placed at one are
+  refused, naming both.
+  A reference to a shared name is refused as naming both, and so are two inputs `--keep-remotes`
+  would add as one remote. Where two of one name meet on a ref name, a prefix holding `{subdir}`
+  keeps them apart where `{repo}` cannot.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
   placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
   what the second one is mostly for: the scan already decided where it goes.
@@ -191,8 +195,9 @@ that directory's `.git`, is a **correction to that finding** rather than a secon
 
 - The name it gives wins, and the subdirectory too when it gives one.
 - An argument that gives none leaves the finding where the scan put it.
-- That is what settles two findings that derive the same name — `libs/core` and `tools/core` —
-  which is refused until one of them is named:
+- That is how a finding gets a name of its own. Two findings may derive the same one — `libs/core`
+  and `tools/core` — and are told apart by where they sit, but a reference to that name, a
+  pattern's scope or `--root-repo`, is refused until one of them is named:
 
 ```bash
 git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::=tools-core
@@ -309,7 +314,8 @@ out — the example above, or a narrow one over a release series.
   output has a single branch at the braid's tip, named by the unscoped `--mainline-branch` or else
   after the first input's mainline ([mainlines that do not agree](#mainlines-that-do-not-agree)).
 - Any other branch is prefixed with the repository name (`wip` from `webui` becomes `webui/wip`), so
-  branches from different repositories cannot collide. The prefix is `--branch-prefix`.
+  branches of differently named inputs cannot collide. The prefix is `--branch-prefix`, and one
+  holding `{subdir}` keeps apart two inputs that share a name.
 
 Prefixing every other branch is a change in 0.2.0. The qualifier used to go on a branch only where
 two inputs had used the name, which made the name depend on what the other inputs called theirs:
@@ -344,7 +350,9 @@ else. Without it two inputs can meet on one name, and a run that would write two
 to one ref is **refused** rather than resolved — naming both inputs and the ref they collided on.
 Even with it, an input can meet the braid's own branch, which takes no prefix: under the default,
 input `release`'s branch `x` becomes `release/x`, which is the output's branch where the mainline is
-called `release/x`. That is refused the same way, naming the braid.
+called `release/x`. That is refused the same way, naming the braid. Two inputs that share a name
+can meet even with the default prefix, which `{repo}` spells alike for both, and are refused the
+same way; a prefix holding `{subdir}` keeps them apart.
 
 ### Commit notes
 
@@ -712,7 +720,8 @@ and not this program's.
 
 An indented line is what a bar leaves behind: what it was, how far it got, and how long that took.
 The count is what was *reached*, so a phase that failed half way through says so rather than
-reporting the total it never made. A `[name]` at the front says which input it was for.
+reporting the total it never made. A `[name]` at the front says which input it was for, with its
+destination where another input shares the name: `[core(libs/core)]`.
 
 While a phase runs it draws a bar over that line — how far, how fast, how long is left — or a
 spinner where there is nothing to count, as when a pack is being flushed. The bar goes when the
@@ -801,7 +810,9 @@ per commit in the order the commits are written:
 ```
 
 - Its position in that order, and `*` where the commit is on the braid.
-- The input it comes from and its original sha, which is how every commit is named on the line.
+- The input it comes from and its original sha, which is how every commit is named on the line. The
+  input is named by its name, and where another input shares the name, by its destination as well:
+  `core(libs/core)/<sha>`.
 - Its ordering timestamp, in seconds since the epoch: the committer date, or the author date under
   `--order-by author`.
 - Its parents in the output, a braided edge first.
@@ -972,8 +983,9 @@ Arguments:
           <subdir> is where its content lands, and may be nested (::libs/backend).
           Defaults to <name>.
 
-          <name> is the repository's identity: the tag prefix, the branch prefix, the provenance
-          label, and what --root-repo matches.
+          <name> labels the repository: the tag and branch prefixes and the provenance label by
+          default, and what --root-repo and an <input>:: scope match.
+          Two inputs may share one; <subdir> is what tells them apart.
           Defaults to the last segment of <subdir>, or of the location.
           Neither may be written with a ':' or a '='.
 

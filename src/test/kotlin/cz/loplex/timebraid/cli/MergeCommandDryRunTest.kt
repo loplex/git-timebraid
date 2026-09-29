@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.cli
 
 import com.github.ajalt.clikt.testing.test
+import cz.loplex.timebraid.GitCli
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -549,7 +550,7 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `two inputs whose directories share a name are told apart by naming them`() {
+    fun `two inputs whose directories share a name are told apart by placing them`() {
         for (side in listOf("a", "b")) {
             TestRepoBuilder.create(tmp.resolve("$side/proj.git")).use { repo ->
                 repo.branch("main", repo.commit("$side commit"))
@@ -557,9 +558,10 @@ class MergeCommandDryRunTest {
         }
         val shared = listOf(tmp.resolve("a/proj.git").toString(), tmp.resolve("b/proj.git").toString())
 
+        // Each lands at its name when it gives no place, so the two meet at `proj/`.
         val collided = MergeCommand().test(listOf("--dry-run") + shared)
         assertEquals(1, collided.statusCode, collided.output)
-        assertTrue(collided.output.contains("same repository name"), collided.output)
+        assertTrue(collided.output.contains("two inputs would be placed at 'proj'"), collided.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", shared[0] + "::proj-a", shared[1] + "::proj-b"),
@@ -700,22 +702,98 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `two inputs of one name are each offered a name that keeps the subdirectory they gave`() {
+    fun `two inputs may share a name, and a reference to it is refused as naming both`() {
         corpus()
+        val inputs = listOf(path("backend.git") + "::libs/a", path("webui.git") + "::apps/a")
 
-        val result = MergeCommand().test(
-            listOf("--dry-run", path("backend.git") + "::libs/a", path("webui.git") + "::apps/a"),
-        )
+        // A name is a label: both are called `a`, and where each lands tells them apart.
+        val shared = MergeCommand().test(listOf("--dry-run") + inputs)
+        assertEquals(0, shared.statusCode, shared.output)
+        assertTrue(shared.output.contains("a -> libs/a/"), shared.output)
+        assertTrue(shared.output.contains("a -> apps/a/"), shared.output)
 
-        // `<path-or-url>::=<name>` would move either input from where its argument put it to `<name>/`.
-        val printed = result.output.replace(Regex("\\s+"), " ")
-        assertEquals(1, result.statusCode, result.output)
-        assertTrue(printed.contains("'${path("backend.git")}::libs/a=<name>'"), result.output)
-        assertTrue(printed.contains("'${path("webui.git")}::apps/a=<name>'"), result.output)
+        // What refers to an input by its name cannot say which of the two it means.
+        val scoped = MergeCommand().test(listOf("--dry-run", "--ref", "a::refs/heads/main") + inputs)
+        assertEquals(1, scoped.statusCode, scoped.output)
+        assertTrue(scoped.output.contains("two inputs are called that"), scoped.output)
+        // Said as --root-repo says it: where each is, and each argument's own way out.
+        assertTrue(scoped.output.contains("'${inputs[0].substringBefore("::")}::libs/a=<name>'"), scoped.output)
+        assertTrue(scoped.output.contains("'${inputs[1].substringBefore("::")}::apps/a=<name>'"), scoped.output)
+
+        // And the way out keeps the subdirectory each argument gave: `<path-or-url>::=<name>` would move
+        // either input from where its argument put it to `<name>/`.
+        val root = MergeCommand().test(listOf("--dry-run", "--root-repo", "a") + inputs)
+        val printed = root.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, root.statusCode, root.output)
+        assertTrue(printed.contains("--root-repo 'a' names two inputs"), root.output)
+        assertTrue(printed.contains("'${path("backend.git")}::libs/a=<name>'"), root.output)
+        assertTrue(printed.contains("'${path("webui.git")}::apps/a=<name>'"), root.output)
     }
 
     @Test
-    fun `two inputs of one name are refused naming both locations`() {
+    fun `two inputs sharing a name meet on a ref name, which {subdir} keeps apart`() {
+        for (side in listOf("a", "b")) {
+            TestRepoBuilder.create(tmp.resolve("$side.git")).use { repo ->
+                val c = repo.commit("$side commit")
+                repo.branch("main", c)
+                repo.branch("wip", c)
+            }
+        }
+        val inputs = listOf(path("a.git") + "::a=x", path("b.git") + "::b=x")
+
+        // `{repo}/` qualifies both alike, so their `wip` branches meet on one name.
+        val met = MergeCommand().test(listOf("--dry-run") + inputs)
+        assertEquals(1, met.statusCode, met.output)
+        assertTrue(met.output.contains("two inputs called 'x' would both write 'refs/heads/x/wip'"), met.output)
+        assertTrue(met.output.contains("{subdir}"), met.output)
+
+        val apart = MergeCommand().test(listOf("--dry-run", "--branch-prefix", "{subdir}/") + inputs)
+        assertEquals(0, apart.statusCode, apart.output)
+
+        // A real run labels each input's fetch by where it lands as well, the name being both's.
+        val written = MergeCommand().test(
+            listOf("-o", tmp.resolve("apart.git").toString(), "--branch-prefix", "{subdir}/") + inputs
+        )
+        assertEquals(0, written.statusCode, written.output)
+        assertTrue(written.output.contains("[x(a)] ") && written.output.contains("[x(b)] "), written.output)
+
+        // So does a remote input's clone, which a dry run makes too.
+        GitCli.requireGit()
+        val urls = listOf("a", "b").map { tmp.resolve("$it.git").toUri().toString() + "::$it=x" }
+        val cloned = MergeCommand().test(listOf("--dry-run", "--branch-prefix", "{subdir}/") + urls)
+        assertEquals(0, cloned.statusCode, cloned.output)
+        assertTrue(
+            cloned.output.contains("[x(a)] cloned into") && cloned.output.contains("[x(b)] cloned into"),
+            cloned.output,
+        )
+
+        // A remote is named after its input, and two of one name would be one remote.
+        val remotes = MergeCommand().test(
+            listOf("--dry-run", "--keep-remotes", "--branch-prefix", "{subdir}/") + inputs
+        )
+        assertEquals(1, remotes.statusCode, remotes.output)
+        assertTrue(remotes.output.contains("two are called 'x'"), remotes.output)
+    }
+
+    @Test
+    fun `the --root-repo input meets no other at the place it was written with`() {
+        corpus()
+
+        // backend lands at the root, so webui may have backend/ for itself.
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run", "--root-repo", "backend",
+                tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString() + "::backend=cee",
+            )
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("backend -> <root>"), result.output)
+        assertTrue(result.output.contains("cee -> backend/"), result.output)
+    }
+
+    @Test
+    fun `two inputs placed at one directory are refused naming both locations`() {
         val first = tmp.resolve("libs/core")
         val second = tmp.resolve("tools/core")
         first.createDirectories()
@@ -725,12 +803,13 @@ class MergeCommandDryRunTest {
             listOf("--dry-run", "-o", tmp.resolve("out").toString(), first.toString(), second.toString()),
         )
 
-        // The name alone leaves the reader to work out which two inputs derived it, and under
-        // --scan they typed none of them: the directories are all there is to act on.
+        // The place alone leaves the reader to work out which two inputs it came from.
         val printed = result.output.replace(Regex("\\s+"), " ")
         assertEquals(1, result.statusCode, result.output)
-        assertTrue(printed.contains("the same repository name 'core'"), result.output)
+        assertTrue(printed.contains("two inputs would be placed at 'core'"), result.output)
         assertTrue(printed.contains("$first and $second"), result.output)
+        // Moved, it keeps its name, which the new subdirectory would otherwise give it.
+        assertTrue(printed.contains("'$first::<subdir>=core'"), result.output)
     }
 
     @Test
@@ -938,11 +1017,11 @@ class MergeCommandDryRunTest {
         scanned("libs/core.git")
         scanned("tools/core.git")
 
-        val collided = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
-        assertEquals(1, collided.statusCode, collided.output)
-        assertTrue(collided.output.contains("same repository name"), collided.output)
-        val printed = collided.output.replace(Regex("\\s+"), " ")
-        assertTrue(printed.contains("give one of them a name, as '${path("tree/libs/core.git")}::=<name>'"), collided.output)
+        // Two findings may share a name; where each sits tells them apart.
+        val shared = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
+        assertEquals(0, shared.statusCode, shared.output)
+        assertTrue(shared.output.contains("core -> libs/core/"), shared.output)
+        assertTrue(shared.output.contains("core -> tools/core/"), shared.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core.git") + "::=tools-core"),

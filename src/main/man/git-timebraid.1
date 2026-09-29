@@ -69,13 +69,17 @@ appended to say where it ends.
 is where that input's content lands, and may be nested, as in
 .BR ::libs/backend .
 It defaults to
-.IR <name> .
+.IR <name> ,
+and is what tells two inputs apart: two placed at one are refused.
 .PP
 .I <name>
-is the input's identity: the prefix on its recreated refs, the label in its provenance trailers, and
-what
+labels the input: the prefix on its recreated refs and the label in its provenance trailers by
+default, and what
 .B \-\-root\-repo
-matches. It defaults to the last segment of
+and a pattern's
+.IB <input> ::
+match. Two inputs may share one, and a reference to a shared name is refused as naming both. It
+defaults to the last segment of
 .IR <subdir> ,
 or of the location. Neither field may be written with a
 .B :
@@ -113,10 +117,9 @@ name begins with a dot, and one reached through a symlink, are skipped along wit
 them.
 .TP
 \fB\-\-root\-repo\fR=\fI<text>\fR
-The input whose content lands at the output root rather than in a subdirectory of its own. Named by
-identity, so it is the
+The input whose content lands at the output root rather than in a subdirectory of its own. It is the
 .I <name>
-of an input and not its path.
+of an input and not its path, and one two inputs share is refused.
 .TP
 \fB\-\-splice\fR
 Allow one input's subdirectory to lie inside another's, splicing the two into one directory. Without
