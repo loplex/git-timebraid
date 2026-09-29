@@ -113,8 +113,7 @@ internal class InputRemedy(
  * There was nothing on the other side of that trade.
  *
  * Nor can a name hold a `/`, a written `=`, or anything else git refuses in a ref name;
- * the `/` is not a gap either: the name is a directory name for the clone of a remote input and a segment of a tag,
- * and single-segment is what it means.
+ * the `/` is not a gap either: the name is a segment of a tag name, and single-segment is what it means.
  */
 internal fun parseRepoSpec(raw: String): RepoSpec {
     val at = raw.lastIndexOf(SEPARATOR)
@@ -152,10 +151,8 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
     // and, under the default templates, the tag prefix, the branch prefix and the provenance label,
     // so an input that yields none is rejected here rather than failing later as an unusable subdirectory.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
-    // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
-    // `Path.resolve` on a name that is rooted or carries a separator
-    // leaves the clone root instead of descending into it,
-    // so such a name is refused before anything is written anywhere.
+    // It is also one segment of a tag name,
+    // so a name that is rooted or holds a separator is refused before anything is written anywhere.
     if (!isOneSegment(derived)) throw unusableName(derived, raw, fromSuffix = false)
     val spec = RepoSpec(location, remote, at >= 0, derived, subdir, name)
     if (!isRefComponent(derived)) throw unusableRefName(spec, raw)
