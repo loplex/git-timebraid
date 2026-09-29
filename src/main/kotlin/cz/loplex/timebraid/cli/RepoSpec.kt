@@ -24,7 +24,61 @@ internal class RepoSpec(
      * level, and two repositories placed inside each other.
      */
     val subdir: String?,
-)
+    /** The name as the argument wrote it after `=`, or `null` where it wrote none. */
+    val given: String? = null,
+) {
+    /**
+     * The argument this is read from: the exact inverse of [parseRepoSpec], so that changing one
+     * field and formatting the rest back keeps every part the argument wrote.
+     */
+    fun format(): String =
+        if (!split) location else location + SEPARATOR + (subdir ?: "") + (given?.let { "=$it" } ?: "")
+}
+
+/**
+ * The way out a refusal about one input offers, spelled from the argument as it was written.
+ *
+ * Every form is [RepoSpec.format] over that argument with the field the refusal is about changed,
+ * so a remedy keeps the parts it is not about — a subdirectory the argument gave, a location
+ * holding a `::` — where one spelled by hand drops them. [moved] also writes out the input's
+ * name, which the argument may have left to be derived.
+ */
+internal class InputRemedy(
+    private val location: String,
+    private val subdir: String? = null,
+    /** The input's name, which [moved] keeps; `null` where none is known. */
+    private val name: String? = null,
+) {
+
+    constructor(spec: RepoSpec) : this(spec.location, spec.subdir, spec.name)
+
+    /** The argument with a name given, quoted: `'<location>::<subdir>=<name>'`. */
+    fun named(): String = quoted(RepoSpec(location, false, split = true, NAME, subdir, given = NAME))
+
+    /**
+     * The argument with another subdirectory and the input's name, quoted: `'<location>::<subdir>=<name>'`,
+     * or `'<location>::<subdir>'` where no name is known. The name is spelled out because without it
+     * the name would follow from the new subdirectory, and moving the input would rename it.
+     */
+    fun moved(): String = quoted(RepoSpec(location, false, split = true, name ?: SUBDIR, SUBDIR, given = name))
+
+    /**
+     * What to do when the `::` a refusal is about was never meant as the separator: the whole of
+     * the argument, here the location, ended by a bare `::` — and with a name, where its own last
+     * segment cannot be one.
+     */
+    fun wholeLocation(): String =
+        "if that '::' belongs to the location, end the argument with '::' to say so, as " +
+            "${quoted(RepoSpec(location, false, split = true, "", null))}, or " +
+            "${InputRemedy(location).named()} where its own last segment cannot be a ref name"
+
+    private fun quoted(spec: RepoSpec) = "'${spec.format()}'"
+
+    private companion object {
+        const val NAME = "<name>"
+        const val SUBDIR = "<subdir>"
+    }
+}
 
 /**
  * Splits `<path-or-url>[::[<subdir>][=<name>]]`.
@@ -70,14 +124,14 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
     val subdir = subdirText.ifEmpty { null }?.also { text ->
         refuseSeparators(text, "subdirectory", raw)
         if (!text.split('/').all(::isOneSegment)) {
-            throw UsageError("'$text' is not a usable subdirectory (in '$raw')" + REMEDY)
+            throw UsageError("'$text' is not a usable subdirectory (in '$raw') -- " + InputRemedy(raw).wholeLocation())
         }
     }
     val name = nameText?.also { text ->
         if (text.isEmpty()) {
             throw UsageError(
                 "'$raw' names no repository after its '=' (leave the '=' out to name it after " +
-                    "the subdirectory)" + REMEDY
+                    "the subdirectory) -- " + InputRemedy(raw).wholeLocation()
             )
         }
         refuseSeparators(text, "name", raw)
@@ -99,10 +153,9 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
     // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
     // of descending into it, so such a name is refused before anything is written anywhere.
     if (!isOneSegment(derived)) throw unusableName(derived, raw, fromSuffix = false)
-    if (!isRefComponent(derived)) {
-        throw unusableRefName(derived, raw, fromSuffix = name != null || subdir != null)
-    }
-    return RepoSpec(location, remote, at >= 0, derived, subdir)
+    val spec = RepoSpec(location, remote, at >= 0, derived, subdir, name)
+    if (!isRefComponent(derived)) throw unusableRefName(spec, raw)
+    return spec
 }
 
 /** The `::` that separates the location from the suffix — see [parseRepoSpec]. */
@@ -123,7 +176,7 @@ private const val SEPARATOR = "::"
  */
 private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageError {
     val said = "'$name' is not a usable name (in '$raw')"
-    return UsageError(if (fromSuffix) said + REMEDY else said)
+    return UsageError(if (fromSuffix) "$said -- " + InputRemedy(raw).wholeLocation() else said)
 }
 
 /**
@@ -132,17 +185,18 @@ private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageE
  * Said here rather than left to the write, which is where it used to surface: the first ref
  * carrying the name, an input's tag under the default prefix, was refused once the braid was
  * written, and an input no such ref carried went through.
+ *
+ * Giving the input a name is the way out whichever part the name came from, and the remedy spells
+ * it on the argument as written, its subdirectory kept: `::a..b` names the input `a..b` and places
+ * it at `a..b/`, and only `::a..b=<name>` keeps the one while changing the other. A name the suffix
+ * gave, or took from its subdirectory, is refused like the suffix's other parts too, since the `::`
+ * may have belonged to the location.
  */
-private fun unusableRefName(name: String, raw: String, fromSuffix: Boolean): UsageError {
-    val said = "'$name' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
-        "git will not have it in a ref name"
-    // A name the suffix gave, or took from its subdirectory, is refused like the suffix's other
-    // parts; one derived from the location is the one case where giving a name is the way out.
-    return UsageError(
-        if (fromSuffix) said + REMEDY
-        else "$said -- give the input a name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
-            "where it has none)"
-    )
+private fun unusableRefName(spec: RepoSpec, raw: String): UsageError {
+    val said = "'${spec.name}' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
+        "git will not have it in a ref name -- give the input a name, as ${InputRemedy(spec).named()}"
+    val fromSuffix = spec.given != null || spec.subdir != null
+    return UsageError(if (fromSuffix) "$said; or, " + InputRemedy(raw).wholeLocation() else said)
 }
 
 /**
@@ -160,19 +214,12 @@ private fun unusableRefName(name: String, raw: String, fromSuffix: Boolean): Usa
 private fun refuseOpenBracket(location: String, raw: String) {
     val opened = location.lastIndexOf('[')
     if (opened >= 0 && location.indexOf(']', opened) < 0) {
-        throw UsageError("'$location' is not a usable location (in '$raw'): it stops inside a '['" + REMEDY)
+        throw UsageError(
+            "'$location' is not a usable location (in '$raw'): it stops inside a '[' -- " +
+                InputRemedy(raw).wholeLocation()
+        )
     }
 }
-
-/**
- * What to do when the `::` a refusal is about was never meant as the separator.
- *
- * Appended to every refusal that comes out of the suffix, because for all of them the likeliest
- * cause is the same and the way out is not obvious.
- */
-private const val REMEDY =
-    " -- if that '::' belongs to the location, end the argument with '::' to say so, and add " +
-        "'=<name>' where its own last segment cannot be a ref name"
 
 /**
  * [suffix] split at its first `=`: the subdirectory, and the name or `null` when there is no `=`.
@@ -192,8 +239,9 @@ private fun splitAtEquals(suffix: String): Pair<String, String?> {
  * A second `=` reaches this only in the name, the first one having ended the subdirectory.
  */
 private fun refuseSeparators(text: String, part: String, raw: String) {
-    if (':' in text) throw UsageError("a ':' cannot appear in the $part (in '$raw')" + REMEDY)
-    if ('=' in text) throw UsageError("a '=' cannot appear in the $part (in '$raw')" + REMEDY)
+    val remedy = " -- " + InputRemedy(raw).wholeLocation()
+    if (':' in text) throw UsageError("a ':' cannot appear in the $part (in '$raw')$remedy")
+    if ('=' in text) throw UsageError("a '=' cannot appear in the $part (in '$raw')$remedy")
 }
 
 /**
@@ -298,12 +346,10 @@ internal fun checkSplit(spec: RepoSpec, raw: String) {
     throw UsageError(
         if (whole.isDirectory()) {
             "'$raw' is a directory, but its name holds a '::', so it was read as the location " +
-                "'${spec.location}' with '$dropped' as its suffix -- end the argument with '::' " +
-                "to mean the whole path"
+                "'${spec.location}' with '$dropped' as its suffix -- " + InputRemedy(raw).wholeLocation()
         } else {
             "there is nothing at '${spec.location}', which is '$raw' with '$dropped' read off " +
-                "its end as the suffix -- end the argument with '::' if the location itself " +
-                "holds the '::'"
+                "its end as the suffix -- " + InputRemedy(raw).wholeLocation()
         }
     )
 }

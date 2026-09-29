@@ -563,8 +563,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             val local = if (spec.isRemote) null else placeOf(spec.location)
             val found = local?.let { byGitDir[it.gitDir] }
             if (found == null) {
-                extras += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local)
-            } else if (overrides.put(found, Landing(spec.location, false, spec.name, spec.subdir ?: found.subdir, local)) != null) {
+                extras += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local, InputRemedy(spec))
+            } else if (overrides.put(found, Landing(spec.location, false, spec.name, spec.subdir ?: found.subdir, local, InputRemedy(spec))) != null) {
                 throw UsageError(
                     "two input arguments name '${shownPath(found.path.toString())}', which --scan already found"
                 )
@@ -587,7 +587,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         for (found in scanned) {
             merged += overrides[found] ?: run {
                 refuseScannedName(found.name, found.path)
-                Landing(found.path.toString(), isRemote = false, found.name, found.subdir, foundPlaces[found])
+                Landing(
+                    found.path.toString(), isRemote = false, found.name, found.subdir, foundPlaces[found],
+                    // The argument that corrects a finding is its directory, named.
+                    InputRemedy(shownPath(found.path.toString()), name = found.name),
+                )
             }
         }
         merged += extras
@@ -600,7 +604,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 throw UsageError(
                     "--root-repo '$root' conflicts with --scan: the base directory is itself a " +
                         "repository ('${base.name}') and lands at the output root -- give that one " +
-                        "a subdirectory to move it off, as '${shownPath(base.location)}::<subdir>'"
+                        "a subdirectory, as ${base.remedy.moved()}, to move it off"
                 )
             }
         }
@@ -627,6 +631,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val name: String,
         val subdir: String?,
         val local: LocalPlace?,
+        /** The way out of a refusal about this input, spelled on the argument that gave it. */
+        val remedy: InputRemedy,
     )
 
     /**
@@ -663,8 +669,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val dir = shownPath(path.toString())
         throw UsageError(
             "'$name' cannot be a repository name (found by --scan at $dir): it becomes a " +
-                "tag prefix, and git will not have it in a ref name -- give it a name with " +
-                "'$dir::=<name>'"
+                "tag prefix, and git will not have it in a ref name -- give it a name, as " +
+                InputRemedy(dir).named()
         )
     }
 
@@ -688,17 +694,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      *
      * Both sides named: under `--scan` the user wrote no argument at all, so the directories the
      * scan found are the only thing there is to act on, and a name alone says nothing about which
-     * of them they were. Naming an input is how the clash is settled either way, and with a scan
-     * the form is spelled out rather than left to the reader of the `<repo>` grammar.
+     * of them they were. Naming an input is how the clash is settled either way, and the form is
+     * spelled out on each input's own argument, or on the directory a finding is corrected by,
+     * rather than left to the reader of the `<repo>` grammar.
      */
     private fun duplicateNames(inputs: List<Landing>): UsageError {
-        val remedy = if (placement.scan == null) {
-            " -- give one of them a name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
-                "where it has none)"
-        } else {
-            " -- name a scanned repository by giving its directory as an argument, " +
-                "e.g. '<base>/libs/core::=libs-core'"
-        }
         val clashes = inputs.groupBy { it.name }.filterValues { it.size > 1 }.toSortedMap()
         val described = clashes.map { (name, sharing) ->
             val where = sharing.map { shownPath(it.location) }
@@ -709,9 +709,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 3 -> "three"
                 else -> sharing.size.toString()
             }
-            "$count inputs resolve to the same repository name '$name': $listed"
+            val remedies = sharing.joinToString(" or ") { it.remedy.named() }
+            "$count inputs resolve to the same repository name '$name': $listed -- give one of " +
+                "them a name, as $remedies"
         }
-        return UsageError(described.joinToString("; ") + remedy)
+        return UsageError(described.joinToString("; "))
     }
 
     private fun report(result: MergeResult) {

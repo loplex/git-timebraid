@@ -1,5 +1,6 @@
 package cz.loplex.timebraid
 
+import cz.loplex.timebraid.cli.InputRemedy
 import cz.loplex.timebraid.cli.Progress
 import cz.loplex.timebraid.git.BraidInputs
 import cz.loplex.timebraid.git.BraidWriter
@@ -246,14 +247,14 @@ class MergeRunner(
             } else {
                 emptyMap()
             }
-            for (input in localInputs) {
-                if (input.name !in remotes) continue
-                val url = remotes[input.name]
-                require(url == input.remote) {
-                    "the output already has a remote '${input.name}' at '$url', and --keep-remotes would " +
-                        "record input '${input.name}' there as '${input.remote}' -- remove that remote from " +
-                        "the output, or give the input another name, with =<name> at the end of its " +
-                        "::<subdir> suffix (::=<name> where it has none)"
+            for ((input, local) in request.inputs.zip(localInputs)) {
+                if (local.name !in remotes) continue
+                val url = remotes[local.name]
+                require(url == local.remote) {
+                    "the output already has a remote '${local.name}' at '$url', and --keep-remotes would " +
+                        "record input '${local.name}' there as '${local.remote}' -- remove that remote from " +
+                        "the output, or give the input another name, as " +
+                        InputRemedy(input.location, input.subdir).named()
                 }
             }
             if (request.dryRun || output == null) {
@@ -276,12 +277,15 @@ class MergeRunner(
 
     /**
      * The remedy a refusal about where an input lands offers, for the input at a destination: its
-     * location with another subdirectory, the argument that moves it. A repository `--scan` found
+     * location with another subdirectory, as [InputRemedy.placed] spells it. A repository `--scan` found
      * is moved the same way, by naming its directory, which corrects the finding.
      */
     private val relocation = Relocation { destination ->
         request.inputs.firstOrNull { it.subdir == destination }
-            ?.let { "give the repository at '$destination' another subdirectory, as '${it.location}::<subdir>'" }
+            ?.let {
+                "give the repository at '$destination' another subdirectory, as " +
+                    InputRemedy(it.location, name = it.name).moved()
+            }
             ?: Relocation.UNSPELLED.remedy(destination)
     }
 
@@ -429,8 +433,7 @@ class MergeRunner(
         }
         require(origin == input.location) {
             "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
-                "the input another name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
-                "where it has none)"
+                "the input another name, as ${InputRemedy(input.location, input.subdir).named()}"
         }
     }
 

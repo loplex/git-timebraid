@@ -563,10 +563,7 @@ class MergeCommandDryRunTest {
         val derived = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(derived.output.contains("cannot be a repository name"), derived.output)
-        assertTrue(
-            derived.output.contains("give the input a name, with =<name> at the end of its ::<subdir> suffix"),
-            derived.output,
-        )
+        assertTrue(derived.output.contains("give the input a name, as '$holding::=<name>'"), derived.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "$holding::=oddname", path("webui.git"))
@@ -652,6 +649,21 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `two inputs of one name are each offered a name that keeps the subdirectory they gave`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf("--dry-run", path("backend.git") + "::libs/a", path("webui.git") + "::apps/a"),
+        )
+
+        // `<path-or-url>::=<name>` would move either input from where its argument put it to `<name>/`.
+        val printed = result.output.replace(Regex("\\s+"), " ")
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(printed.contains("'${path("backend.git")}::libs/a=<name>'"), result.output)
+        assertTrue(printed.contains("'${path("webui.git")}::apps/a=<name>'"), result.output)
+    }
+
+    @Test
     fun `two inputs of one name are refused naming both locations`() {
         val first = tmp.resolve("libs/core")
         val second = tmp.resolve("tools/core")
@@ -727,9 +739,13 @@ class MergeCommandDryRunTest {
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("cannot be a repository name"), result.output)
-        // The name came out of the suffix, so the remedy is the suffix's, not a name to give.
+        // Another name is the way out, the subdirectory kept; and since the name came out of the
+        // suffix, so is the suffix's own remedy.
+        assertTrue(
+            result.output.contains("give the input a name, as '${path("backend.git")}::ok=<name>'"),
+            result.output,
+        )
         assertTrue(result.output.contains("end the argument with '::'"), result.output)
-        assertTrue("give the input a name" !in result.output, result.output)
     }
 
     @Test
@@ -873,7 +889,8 @@ class MergeCommandDryRunTest {
         val collided = MergeCommand().test(listOf("--dry-run", "--scan", path("tree")))
         assertEquals(1, collided.statusCode, collided.output)
         assertTrue(collided.output.contains("same repository name"), collided.output)
-        assertTrue(collided.output.contains("giving its directory as an argument"), collided.output)
+        val printed = collided.output.replace(Regex("\\s+"), " ")
+        assertTrue(printed.contains("give one of them a name, as '${path("tree/libs/core.git")}::=<name>'"), collided.output)
 
         val named = MergeCommand().test(
             listOf("--dry-run", "--scan", path("tree"), path("tree/tools/core.git") + "::=tools-core"),
@@ -1027,14 +1044,17 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `a name taken from the suffix's subdirectory is refused with the suffix's remedy`() {
+    fun `a name taken from the suffix's subdirectory is refused with a name that keeps the subdirectory`() {
         val result = MergeCommand().test(listOf("--dry-run", path("backend.git") + "::a..b"))
 
         assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("'a..b' cannot be a repository name"), result.output)
-        assertTrue(result.output.contains("end the argument with '::'"), result.output)
         // `::=<name>` would drop the subdirectory the argument gave.
-        assertTrue("give the input a name" !in result.output, result.output)
+        assertTrue(
+            result.output.contains("give the input a name, as '${path("backend.git")}::a..b=<name>'"),
+            result.output,
+        )
+        assertTrue(result.output.contains("end the argument with '::'"), result.output)
     }
 
     @Test
@@ -1060,10 +1080,7 @@ class MergeCommandDryRunTest {
         val printed = derived.output.replace(Regex("\\s+"), " ")
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(printed.contains("'my repo' cannot be a repository name"), derived.output)
-        assertTrue(
-            printed.contains("give the input a name, with =<name> at the end of its ::<subdir> suffix"),
-            derived.output,
-        )
+        assertTrue(printed.contains("give the input a name, as '$spaced::=<name>'"), derived.output)
 
         val named = MergeCommand().test(listOf("--dry-run", "$spaced::=myrepo", webui))
         assertEquals(0, named.statusCode, named.output)

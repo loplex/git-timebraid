@@ -29,7 +29,7 @@ $ ./git-timebraid -o doc/examples/08-scan/output-unnamed --no-bare \
 
 Usage: git-timebraid [<options>] [<repo>]...
 
-Error: two inputs resolve to the same repository name 'core': doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- name a scanned repository by giving its directory as an argument, e.g. '<base>/libs/core::=libs-core'
+Error: two inputs resolve to the same repository name 'core': doc/examples/08-scan/input/platform/libs/core and doc/examples/08-scan/input/platform/tools/core -- give one of them a name, as 'doc/examples/08-scan/input/platform/libs/core::=<name>' or 'doc/examples/08-scan/input/platform/tools/core::=<name>'
 ```
 
 `libs/core` and `tools/core` derive the same name, and a name has to be unique — it is the tag
