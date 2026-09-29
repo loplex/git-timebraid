@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Three changes alter what a command line written for 0.1.0 does:
+Four changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -22,6 +22,12 @@ Three changes alter what a command line written for 0.1.0 does:
   and so is an `-o x/.git` inside a bare input `x`.\
   0.1.0 passed the first on a dry run and under `--force` wrote the braid into the input itself;
   the second it ran without `--force`, as a new repository inside `x` that git then opens for `x`.
+
+- `--dry-run` refuses an `-o` the run could not write into:
+  one that is not a directory, is not empty without `--force`, or cannot be created.\
+  0.1.0's dry run passed it, and the run stopped on it only once the inputs were read and the braid planned.\
+  Beside a remote input, one that could not be created stopped a dry run and a run alike,
+  earlier, on the directory for the clones.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\

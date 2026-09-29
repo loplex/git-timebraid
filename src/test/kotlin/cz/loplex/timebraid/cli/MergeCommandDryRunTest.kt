@@ -109,7 +109,7 @@ class MergeCommandDryRunTest {
     }
 
     @Test
-    fun `an -o that cannot be created is reported when a remote input is cloned beside it too`() {
+    fun `an -o that cannot be created is reported before a remote input is cloned beside it`() {
         corpus()
         tmp.resolve("afile").toFile().writeText("a file, not a directory")
         val out = tmp.resolve("afile/merged.git")
@@ -123,7 +123,63 @@ class MergeCommandDryRunTest {
         )
 
         assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("cannot create the output at '$out'"), result.output)
+        assertTrue(!result.output.contains("git-timebraid: cloning "), result.output)
+    }
+
+    @Test
+    fun `a clones directory that cannot be made beside a usable -o is reported with that -o`() {
+        corpus()
+        tmp.resolve(".timebraid-clones").toFile().writeText("a file, not a directory")
+        val out = tmp.resolve("merged.git")
+
+        val result = MergeCommand().test(
+            listOf(
+                "-o", out.toString(),
+                tmp.resolve("backend.git").toUri().toString(),
+                tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
         assertTrue(result.output.contains("for the remote inputs' clones, beside the output '$out'"), result.output)
+    }
+
+    @Test
+    fun `a dry run refuses an -o the real run would refuse, and creates nothing`() {
+        corpus()
+        val inputs = listOf(tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+        val occupied = Files.createDirectories(tmp.resolve("occupied"))
+        Files.writeString(occupied.resolve("keep.txt"), "somebody's")
+        val file = tmp.resolve("afile").also { it.toFile().writeText("a file, not a directory") }
+        val refusals = listOf(
+            occupied to "already exists and is not empty; pass --force",
+            file to "exists and is not a directory",
+            file.resolve("merged.git") to "cannot create the output at '${file.resolve("merged.git")}'",
+        )
+        for ((out, refusal) in refusals) {
+            for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+                val result = MergeCommand().test(dryRun + listOf("-o", out.toString()) + inputs)
+
+                assertEquals(1, result.statusCode, "$dryRun -o $out: ${result.output}")
+                assertTrue(result.output.contains(refusal), "$dryRun -o $out: ${result.output}")
+                // Refused before the inputs are read, where every other command-line refusal is.
+                assertTrue(!result.output.contains("git-timebraid: reading "), result.output)
+            }
+        }
+        assertEquals(listOf("keep.txt"), occupied.toFile().list()?.toList())
+
+        // An empty -o is no place at all, and is refused before anything is read, a dry run's too.
+        for (dryRun in listOf(listOf("--dry-run"), emptyList())) {
+            val empty = MergeCommand().test(dryRun + listOf("-o", "") + inputs)
+            assertEquals(1, empty.statusCode, empty.output)
+            assertTrue(empty.output.contains("-o/--output names no directory"), empty.output)
+            assertTrue(!empty.output.contains("git-timebraid: reading "), empty.output)
+        }
+
+        // --force takes the occupied directory, a dry run as well as a real one.
+        val forced = MergeCommand().test(listOf("--dry-run", "--force", "-o", occupied.toString()) + inputs)
+        assertEquals(0, forced.statusCode, forced.output)
     }
 
     @Test
@@ -232,7 +288,7 @@ class MergeCommandDryRunTest {
         Files.createDirectories(tmp.resolve("backend/.git"))
         val broken = MergeCommand().test(
             listOf(
-                "--dry-run", "-o", tmp.resolve("backend").toString(),
+                "--dry-run", "--force", "-o", tmp.resolve("backend").toString(),
                 backend.toString(), tmp.resolve("webui.git").toString(),
             )
         )
