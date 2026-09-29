@@ -23,6 +23,7 @@ import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
+import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
@@ -144,6 +145,11 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         if (output == null && !dryRun) {
             throw UsageError("-o/--output is required unless --dry-run is given")
         }
+        // An empty path is the working directory to `Path` and nothing at all to `File`, so the
+        // checks below would pass it and the creation fail on it, once every input was read.
+        if (output?.toString()?.isEmpty() == true) {
+            throw UsageError("-o/--output names no directory; give the path the output is written to")
+        }
         // Asked now rather than left to the write: the plan is written after the output, and a path
         // that cannot take it would fail a run whose braid is already in place.
         planOut?.let { file ->
@@ -170,6 +176,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             input?.let {
                 throw UsageError("'${it.location}' is the output (-o), which a run cannot braid into itself")
             }
+            // Asked now rather than when the output is created, after every input is read and the
+            // braid planned: a dry run never reaches that, and would pass an -o the real run refuses.
+            // After the inputs, so that one of them being the output is said as that.
+            TargetRepository.refusal(out, force, bare)?.let { throw CliktError(it) }
         }
 
         val request = MergeRequest(

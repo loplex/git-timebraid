@@ -441,6 +441,28 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `create reports an output it cannot create by the location given`() {
+        // The command line asks refusal() first and so rarely lets a run get this far, but the
+        // directory can change between the two checks, and a caller other than the command line
+        // asks nothing first.
+        val file = tmp.resolve("afile")
+        file.toFile().writeText("a file, where a directory would have to be")
+        val out = file.resolve("merged.git")
+
+        val error = assertThrows<IllegalArgumentException> { TargetRepository.create(out, "main").close() }
+        assertTrue(error.message!!.startsWith("cannot create the output at '$out': "), error.message)
+    }
+
+    @Test
+    fun `an empty location is refused as no directory, not asked of the working directory's parent`() {
+        // The command line refuses an empty -o first; another caller gets the same answer here.
+        assertEquals(
+            "an empty location names no directory for the output",
+            TargetRepository.refusal(Path.of(""), force = false, bare = true),
+        )
+    }
+
+    @Test
     fun `an empty directory is accepted as the output without --force`() {
         val out = tmp.resolve("merged.git")
         assertTrue(out.toFile().mkdir())

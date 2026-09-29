@@ -202,8 +202,10 @@ class MergeRunner(
             try {
                 it.createDirectories()
             } catch (e: IOException) {
-                // Beside the output, so an -o whose parent is a file fails here, before the output
-                // itself is asked for; the refusal says which -o put the clones there.
+                // Beside the output. The command line asked whether it could write there only for an -o
+                // not there yet, so what fails here is the clones' own directory, a file in its place
+                // say, or the parent of an -o that already exists. The refusal says which -o put the
+                // clones there.
                 throw IllegalArgumentException(
                     "cannot create '$it' for the remote inputs' clones, beside the output " +
                         "'${request.output}': ${e.message}",

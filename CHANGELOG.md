@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Two changes alter what a command line written for 0.1.0 does:
+Three changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -22,6 +22,13 @@ Two changes alter what a command line written for 0.1.0 does:
   `-o x/.git` inside a bare input `x`.\
   0.1.0 passed the first on a dry run and under `--force` wrote the braid into the input itself;
   the second it ran without `--force`, as a new repository inside `x` that git then opens for `x`.
+
+- `--dry-run` refuses an `-o` the run could not write into: one that is not a directory, is not
+  empty without `--force`, or cannot be created.\
+  0.1.0's dry run passed it, and the run stopped on it only once the inputs were read and the braid
+  planned.\
+  Beside a remote input, one that could not be created stopped a dry run and a run alike, earlier,
+  on the directory for the clones.
 
 ### Fixed
 
