@@ -42,6 +42,7 @@ import cz.loplex.timebraid.git.ScannedRepository
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
+import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
@@ -457,6 +458,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
         val specs = inputs.map(::parseRepoSpec)
+        for (spec in specs) refuseUnusableName(spec.name, spec, spec.location, InputRemedy(spec))
         for ((spec, raw) in specs.zip(inputs)) checkSplit(spec, raw)
 
         val merged = resolveInputs(specs)
@@ -580,6 +582,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
             extras += Landing(
                 spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name, local, InputRemedy(spec),
+                spec = spec,
             )
         }
         // Two arguments naming one git directory are one repository, which braided as two inputs would
@@ -595,7 +598,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
 
         val merged = ArrayList<Landing>(scanned.size + extras.size)
         for (found in scanned) {
-            val name = renamed[found] ?: found.name.also { refuseScannedName(it, found) }
+            val name = renamed[found]
+                ?: found.name.also {
+                    refuseUnusableName(it, null, found.path.toString(), InputRemedy("", found.subdir))
+                }
             merged += Landing(
                 found.path.toString(), isRemote = false, name, found.subdir, foundPlaces[found],
                 // What renames a finding is a correction naming where it sits; nothing moves one.
@@ -626,6 +632,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                         "repository"
                 )
             }
+        }
+        // The input at the root lends its name to `{subdir}` too, and only now is it known which.
+        for (input in merged.filter { it.name == placement.rootRepo || it.subdir == null }) {
+            refuseUnusableName(input.name, input.spec, input.location, input.remedy, atRoot = true)
         }
         val resolved = merged.map { input ->
             // Refused only now, after the refusals that speak of the whole command line.
@@ -698,6 +708,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val remedy: InputRemedy,
         /** Whether an argument placed this input and another can place it elsewhere; not a finding. */
         val movable: Boolean = true,
+        /** The argument that gave this input, which a refusal quotes; `null` for a finding. */
+        val spec: RepoSpec? = null,
     )
 
     /**
@@ -721,22 +733,69 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
 
     /**
-     * Refuses a name the scan derived that git would not accept inside a ref, as [parseRepoSpec]
-     * refuses one derived from an argument, naming the directory and the correction that renames it.
+     * Refuses a name git would not accept where the options put it in a ref name, naming the
+     * option, the ref, and the way out; and, wherever the name is used, one holding whitespace or a
+     * `:`, or opening with `^`.
      *
-     * Only a finding no correction renamed is asked: a renamed one carries the correction's own
-     * name, which the parser has checked already. Left to the run, the name would be refused only
+     * Those are refused always because an `<input>::` scope has to be able to spell every input's
+     * name: the scope ends at the first `::`, which a `:` in the name could bring too early, a
+     * pattern option splits its value on whitespace, and it reads a `^` before the scope as a
+     * subtraction written a scope too early.
+     *
+     * A name is a label, and only a template that substitutes it makes it part of a ref: `{repo}`
+     * in a prefix (the notes prefix only under `--notes`) or in a pattern's destination, `{subdir}`
+     * for the input at the root, and under `--keep-remotes` the remote named after the input. Those
+     * prefixes and the remote are asked here, on the command line, with nothing yet read, so the tag
+     * and branch prefixes count whether or not the run writes a ref of their kind; `{subdir}` in a
+     * prefix is asked of the input at the root, [atRoot], once the inputs say which that is. The rest,
+     * and a template that fails whatever the name, as `{repo}.lock/` does, are left to the check
+     * every ref name gets once the refs are known. Left to the run, a name would be refused only
      * once every input was read, with the first ref carrying it, or not at all where no ref carried
      * it.
+     *
+     * Giving the input a name is the way out whichever part the name came from, and the remedy spells
+     * it on the argument as written, its subdirectory kept: `::a..b` names the input `a..b` and
+     * places it at `a..b/`, and only `::a..b=<name>` keeps the one while changing the other. A name
+     * the suffix gave, or took from its subdirectory, is refused like the suffix's other parts too,
+     * since the `::` may have belonged to the location.
      */
-    private fun refuseScannedName(name: String, found: ScannedRepository) {
-        if (isRefComponent(name)) return
-        val dir = shownPath(found.path.toString())
-        throw UsageError(
-            "'$name' cannot be a repository name (found by --scan at $dir): it becomes a " +
-                "tag prefix, and git will not have it in a ref name -- give it a name, as " +
-                InputRemedy("", found.subdir).named()
-        )
+    private fun refuseUnusableName(
+        name: String,
+        spec: RepoSpec?,
+        location: String,
+        remedy: InputRemedy,
+        atRoot: Boolean = false,
+    ) {
+        val where = if (spec == null) "found by --scan at ${shownPath(location)}" else "in '${spec.format()}'"
+        // A name the suffix gave, or took from its subdirectory, may be one the location meant to keep.
+        val orLocation = spec?.takeIf { !it.isCorrection && (it.given != null || it.subdir != null) }
+            ?.let { "; or, " + InputRemedy(it.format()).wholeLocation() } ?: ""
+        fun refuse(said: String): Nothing = throw UsageError(said + orLocation)
+        if (name.any(Char::isWhitespace) || ':' in name || name.startsWith('^')) {
+            refuse(
+                "'$name' cannot be a repository name ($where): an <input>:: scope has to be able to spell " +
+                    "it, and a scope ends at the first '::', a pattern option splits its value on whitespace " +
+                    "and reads a leading '^' as a subtraction -- give the input a name, as ${remedy.named()}"
+            )
+        }
+        val uses = listOfNotNull(
+            Triple("--tag-prefix '${outputContent.tagPrefix}'", Constants.R_TAGS, outputContent.tagPrefix),
+            Triple("--branch-prefix '${outputContent.branchPrefix}'", Constants.R_HEADS, outputContent.branchPrefix),
+            Triple("--notes-prefix '${outputContent.notesPrefix}'", Constants.R_NOTES, outputContent.notesPrefix)
+                .takeIf { outputContent.notes },
+            Triple("--keep-remotes", Constants.R_REMOTES, "{repo}/").takeIf { outputContent.keepRemotes },
+        ).filter { (_, _, template) -> "{repo}" in template || atRoot && "{subdir}" in template }
+        fun refName(namespace: String, template: String, name: String) =
+            namespace + template.replace("{repo}", name).replace("{subdir}", if (atRoot) name else "x") + "x"
+        for ((option, namespace, template) in uses) {
+            if (TargetRepository.isRefName(refName(namespace, template, name))) continue
+            if (!TargetRepository.isRefName(refName(namespace, template, "x"))) continue
+            val ref = refName(namespace, template, name).removeSuffix("x")
+            refuse(
+                "'$name' cannot be a repository name ($where): $option puts it in '$ref', and " +
+                    "git will not have that in a ref name -- give the input a name, as ${remedy.named()}"
+            )
+        }
     }
 
     /**
@@ -784,18 +843,31 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     /**
-     * Refuses two inputs `--keep-remotes` would add as one remote, naming both and the way out.
+     * Refuses two inputs `--keep-remotes` would add as one remote, or as a remote and one below it,
+     * naming both and the way out.
      *
      * A remote is named after its input, and two sharing a name would be one remote whose refspec
      * covers both inputs' mirrors, the first fetch deleting whichever of them the URL does not have.
      */
     private fun refuseSharedRemotes(inputs: List<Landing>) {
-        val sharing = inputs.groupBy { it.name }.values.firstOrNull { it.size > 1 } ?: return
-        throw UsageError(
-            "--keep-remotes adds each input as a remote named after it, and ${count(sharing)} are " +
-                "called '${sharing.first().name}': ${listed(sharing)} -- give one of them another " +
-                "name, as ${sharing.joinToString(" or ") { it.remedy.named() }}"
-        )
+        inputs.groupBy { it.name }.values.firstOrNull { it.size > 1 }?.let { sharing ->
+            throw UsageError(
+                "--keep-remotes adds each input as a remote named after it, and ${count(sharing)} are " +
+                    "called '${sharing.first().name}': ${listed(sharing)} -- give one of them another " +
+                    "name, as ${sharing.joinToString(" or ") { it.remedy.named() }}"
+            )
+        }
+        // Remotes `libs` and `libs/core` share remote-tracking refs: `fetch --prune libs` deletes
+        // what `libs/core` fetched, and a branch `core` of `libs` cannot be fetched at all, its ref
+        // being the directory `libs/core`'s refs are in.
+        for (outer in inputs) {
+            val inner = inputs.firstOrNull { it.name.startsWith(outer.name + "/") } ?: continue
+            throw UsageError(
+                "--keep-remotes adds each input as a remote named after it, and '${outer.name}' " +
+                    "would hold the refs of '${inner.name}' among its own: ${listed(listOf(outer, inner))} " +
+                    "-- give one of them another name, as ${outer.remedy.named()} or ${inner.remedy.named()}"
+            )
+        }
     }
 
     /** [inputs]' locations as a refusal lists them: `a, b and c`. */

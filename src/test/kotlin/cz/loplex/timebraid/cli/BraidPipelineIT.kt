@@ -704,9 +704,10 @@ class BraidPipelineIT {
 
     @Test
     fun `one quoted argument may hold several space-separated values`() {
-        // A space cannot occur in a ref name, so splitting on it can never cut a pattern or a branch
-        // name in half. That is what lets one shell word carry a list — and it has to mean exactly
-        // what repeating the option means, which is what this asserts rather than assumes.
+        // A space cannot occur in a ref name or in an input's name, so splitting on it can never cut
+        // a pattern, its scope or a branch name in half. That is what lets one shell word carry a
+        // list — and it has to mean exactly what repeating the option means, which is what this
+        // asserts rather than assumes.
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
             r.branch("main", a1)

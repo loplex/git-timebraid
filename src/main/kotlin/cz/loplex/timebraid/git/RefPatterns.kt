@@ -401,9 +401,10 @@ private fun destinationOf(
  * `--mainline-branch 'A::main B::trunk'`, `-b 'main develop'`.
  *
  * Splitting is safe for the same reason the `::` scope is: git refuses a space anywhere in a ref
- * name, as it refuses a colon, while it accepts `,`, `;` and `|` — so whitespace can never cut a
- * pattern or a branch name in half, and none of the obvious separators could have been used
- * instead. Repeating the option still works and means the same thing.
+ * name, as it refuses a colon, while it accepts `,`, `;` and `|`, and an input's name holds no
+ * whitespace either — so whitespace can never cut a pattern, its scope or a branch name in half,
+ * and none of the obvious separators could have been used instead. Repeating the option still
+ * works and means the same thing.
  */
 fun words(values: List<String>, option: String): List<String> =
     values.flatMap { value ->

@@ -94,10 +94,10 @@ Three rules follow — two about the location, one about what comes after:
   `\` in it is just a backslash.
 - **A location that holds a `::` of its own** ends with a bare `::`, which says where it stops:
   `~/repos/odd::name::` is that whole path with nothing said after it. That settles the location,
-  not the name: a name derived from a last segment git would not take in a ref is refused, so the
-  working spelling here is `~/repos/odd::name::=oddname`. An IPv6 URL needs the bare `::` and
-  nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal name. Every
-  refusal that comes out of the suffix of an argument with a location suggests the `::`.
+  not the name: a name holding a `:` is refused wherever it is used, so the working spelling here is
+  `~/repos/odd::name::=oddname`. An IPv6 URL needs
+  the bare `::` and nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal
+  name. Every refusal that comes out of the suffix of an argument with a location suggests the `::`.
 - **A subdirectory or a name written after the `::` holds no `:` and no `=`.** Neither is escaped;
   both are refused. That is what guarantees a suffix can never hold a `::` of its own, so the last
   `::` in the argument is always the separator. A name derived from the location may hold a `=`,
@@ -113,8 +113,8 @@ Three rules follow — two about the location, one about what comes after:
 ~/repos/odd::name::=oddname           # a location holding a '::', so the name is given
 ```
 
-Refusing the colon rather than escaping it costs nothing, because a `:` is illegal in a git ref name
-and the name becomes a tag prefix. A name that needed one could never have been used.
+Refusing the colon rather than escaping it costs little, because a `:` is illegal in a git ref name
+and under the default prefixes the name becomes a tag prefix.
 
 A **remote input**, one whose location is a URL (`file://` included) or git's scp-like
 `user@host:path`, is cloned before anything is read: into `.timebraid-clones/`, in the directory
@@ -124,9 +124,9 @@ same directory refreshes that clone rather than downloading it again, whatever i
 the input. A clone of another URL found there is refused, naming both. A `--dry-run` without `-o`
 clones into a temporary directory instead, and removes it when the run ends.
 
-Beyond the `:` and the `=` it may not be written with, a name cannot hold a `/`, nor anything else
-git refuses in a ref name.
-The `/` is no gap: the name is a segment of a tag name, so one segment is what it means.
+A name holds no whitespace and no `:`, and opens with no `^`, wherever it is used, since a
+pattern's `<input>::` has to be able to spell it. What else it may hold is under
+[naming and placement](#naming-and-placement).
 
 ## Naming and placement
 
@@ -147,6 +147,14 @@ Placement and naming travel together, and can be separated.
   A reference to a shared name is refused as naming both, and so are two inputs `--keep-remotes`
   would add as one remote. Where two of one name meet on a ref name, a prefix holding `{subdir}`
   keeps them apart where `{repo}` cannot.
+- A name may hold a `/` — `libs/core` is a fine label — each of its segments one a directory could
+  be called. What else it may hold follows from where it is used: a prefix holding `{repo}`, or
+  `{subdir}` for the input at the root, puts it in a ref name — the tag and branch prefixes whether
+  or not the run writes a tag or a branch, the notes prefix only under `--notes` — and so does
+  `--keep-remotes`, which names a remote after it, so there git's rules for a ref name apply and a
+  name they refuse is refused, naming the option. A pattern's destination holding `{repo}`, and
+  `{subdir}` for the input at the root, put it in a ref name too, checked with every other ref name
+  before the output exists. Where none of these puts it in a ref, a name is only a label.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
   placing it, which then lands at `<name>/`. Renaming a repository
   [`--scan`](#taking-the-layout-off-a-directory-tree) found is a correction instead,
@@ -417,8 +425,8 @@ which of the two it means.
 What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
 
 **One quoted argument may hold several values, separated by spaces**: a space cannot occur in a ref
-name, as a `:` and a `^` cannot, so the split can never cut a pattern in half. These two are the
-same run:
+name, as a `:` and a `^` cannot, nor in an input's name, so the split can never cut a pattern or its
+scope in half. These two are the same run:
 
 ```bash
 --ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
@@ -672,9 +680,9 @@ They are in the output too, with their own shas intact, next to the rewritten on
 `webui: fix the date picker`.
 
 The prefix is `--subject-prefix`, substituting `{repo}` and `{subdir}` — the name and the
-destination. The default is `{repo}: ` and not `{subdir}: ` deliberately: a name is one segment,
-while a destination can be arbitrarily deep. An input placed at the root has no destination, and
-`{subdir}` gives its name there too.
+destination. The default is `{repo}: ` and not `{subdir}: ` deliberately: a name defaults to one
+segment, while a destination can be arbitrarily deep. An input placed at the root has no
+destination, and `{subdir}` gives its name there too.
 [Example 05](examples/05-nested-layout/README.md) places `backend` at `libs/backend`, and its
 subjects still read `backend: `.
 

@@ -597,8 +597,8 @@ class MergeCommandDryRunTest {
         val holding = tmp.resolve("odd::name")
         tmp.resolve("backend.git").toFile().renameTo(holding.toFile())
 
-        // The location is now whole — but the name derived from it is not one git would take in a
-        // ref, so the argument has to say what the input is called.
+        // The location is now whole — but the name derived from it holds a ':', which an <input>::
+        // scope could not spell, so the argument has to say what the input is called.
         val derived = MergeCommand().test(listOf("--dry-run", "$holding::", path("webui.git")))
         assertEquals(1, derived.statusCode, derived.output)
         assertTrue(derived.output.contains("cannot be a repository name"), derived.output)
@@ -773,6 +773,105 @@ class MergeCommandDryRunTest {
         )
         assertEquals(1, remotes.statusCode, remotes.output)
         assertTrue(remotes.output.contains("two are called 'x'"), remotes.output)
+    }
+
+    @Test
+    fun `a name may hold a slash, and what else it may hold follows from where it is used`() {
+        corpus()
+        val backend = path("backend.git")
+        val webui = path("webui.git")
+
+        // Each segment one a directory could be called, and the ref names it makes are git's.
+        val slashed = MergeCommand().test(listOf("--dry-run", "$backend::libs/b=libs/backend", webui))
+        assertEquals(0, slashed.statusCode, slashed.output)
+        assertTrue(slashed.output.contains("libs/backend -> libs/b/"), slashed.output)
+        val empty = MergeCommand().test(listOf("--dry-run", "$backend::=libs//backend", webui))
+        assertEquals(1, empty.statusCode, empty.output)
+        assertTrue(empty.output.contains("is not a usable name"), empty.output)
+
+        // A name no template puts in a ref is a label: git's rules for a ref name are not asked.
+        val label = listOf("$backend::b=b~ck", webui)
+        val refused = MergeCommand().test(listOf("--dry-run") + label)
+        assertEquals(1, refused.statusCode, refused.output)
+        assertTrue(refused.output.contains("--tag-prefix '{repo}/' puts it in 'refs/tags/b~ck/'"), refused.output)
+        val unused = MergeCommand().test(
+            listOf("--dry-run", "--tag-prefix", "{subdir}/", "--branch-prefix", "{subdir}/") + label
+        )
+        assertEquals(0, unused.statusCode, unused.output)
+        // --keep-remotes names a remote after it, so there it is a ref name again.
+        val remote = MergeCommand().test(
+            listOf("--dry-run", "--keep-remotes", "--tag-prefix", "{subdir}/", "--branch-prefix", "{subdir}/") + label
+        )
+        assertEquals(1, remote.statusCode, remote.output)
+        assertTrue(remote.output.contains("--keep-remotes puts it in 'refs/remotes/b~ck/'"), remote.output)
+
+        // And two remotes, one a directory of the other, are refused: a pruning fetch of the outer
+        // deletes what the inner fetched.
+        val nested = MergeCommand().test(
+            listOf("--dry-run", "--keep-remotes", "$backend::b=libs", "$webui::w=libs/core"),
+        )
+        assertEquals(1, nested.statusCode, nested.output)
+        assertTrue(nested.output.contains("'libs' would hold the refs of 'libs/core'"), nested.output)
+    }
+
+    @Test
+    fun `a name holding whitespace or opening with a caret is refused, since a scope could not spell it`() {
+        corpus()
+        val backend = path("backend.git")
+        val webui = path("webui.git")
+
+        // Refused even where no template puts the name in a ref: a pattern option splits its value
+        // on whitespace, and reads a '^' before a scope as a subtraction.
+        val label = listOf("--dry-run", "--tag-prefix", "{subdir}/", "--branch-prefix", "{subdir}/")
+        for (name in listOf("my repo", "^core")) {
+            val result = MergeCommand().test(label + listOf("$backend::b=$name", webui))
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("'$name' cannot be a repository name"), result.output)
+            assertTrue(result.output.contains("an <input>:: scope has to be able to spell it"), result.output)
+        }
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",
+    )
+    fun `a name holding a colon is refused, since a scope ends at the first double colon`() {
+        corpus()
+        val webui = path("webui.git")
+
+        // Named after the directory, and put in no ref: 'x:::refs/heads/main' would read the scope
+        // 'x'. Every ':' is refused, 'a:b' too, so that which one ends a scope never matters.
+        val label = listOf("--dry-run", "--tag-prefix", "v/", "--branch-prefix", "")
+        for (name in listOf("x:", "a:b")) {
+            val dir = tmp.resolve(name)
+            tmp.resolve("backend.git").toFile().copyRecursively(dir.toFile())
+            val result = MergeCommand().test(label + listOf(dir.toString(), webui))
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("'$name' cannot be a repository name"), result.output)
+            assertTrue(result.output.contains("a scope ends at the first '::'"), result.output)
+        }
+    }
+
+    @Test
+    fun `the input at the root is asked for {subdir} in a prefix, and the notes prefix only under --notes`() {
+        corpus()
+        val backend = path("backend.git")
+        val webui = path("webui.git")
+        val label = listOf("--tag-prefix", "{subdir}/", "--branch-prefix", "{subdir}/", "$backend::b=b~ck", webui)
+
+        // At the root the name stands for {subdir} too, so a prefix holding it puts the name in a
+        // ref, and the refusal names the option on the command line.
+        val root = MergeCommand().test(listOf("--dry-run", "--root-repo", "b~ck") + label)
+        assertEquals(1, root.statusCode, root.output)
+        assertTrue(root.output.contains("--tag-prefix '{subdir}/' puts it in 'refs/tags/b~ck/'"), root.output)
+
+        // The notes prefix is asked only where notes are written.
+        val plain = MergeCommand().test(listOf("--dry-run") + label)
+        assertEquals(0, plain.statusCode, plain.output)
+        val notes = MergeCommand().test(listOf("--dry-run", "--notes") + label)
+        assertEquals(1, notes.statusCode, notes.output)
+        assertTrue(notes.output.contains("--notes-prefix '"), notes.output)
     }
 
     @Test
@@ -1129,7 +1228,8 @@ class MergeCommandDryRunTest {
             printed.contains("'x~y' cannot be a repository name (found by --scan at "),
             refused.output,
         )
-        assertTrue(printed.contains("give it a name, as '::apps/x~y=<name>'"), refused.output)
+        assertTrue(printed.contains("--tag-prefix '{repo}/' puts it in 'refs/tags/x~y/'"), refused.output)
+        assertTrue(printed.contains("give the input a name, as '::apps/x~y=<name>'"), refused.output)
 
         val renamed = MergeCommand().test(listOf("--dry-run", "--scan", path("tree"), "::apps/x~y=xy"))
         assertEquals(0, renamed.statusCode, renamed.output)
@@ -1273,7 +1373,9 @@ class MergeCommandDryRunTest {
     @Test
     fun `a name derived from a location git would not take in a ref is refused, and naming it works`() {
         corpus()
-        val spaced = tmp.resolve("my repo")
+        // A '~', which only git's own rule refuses in a ref: a space or a ':' is refused earlier, by
+        // the rules every name is held to, and would not show that this one is asked at all.
+        val spaced = tmp.resolve("my~repo")
         tmp.resolve("backend.git").toFile().renameTo(spaced.toFile())
         val webui = tmp.resolve("webui.git").toString()
 
@@ -1282,7 +1384,7 @@ class MergeCommandDryRunTest {
         val derived = MergeCommand().test(listOf("--dry-run", spaced.toString(), webui))
         val printed = derived.output.replace(Regex("\\s+"), " ")
         assertEquals(1, derived.statusCode, derived.output)
-        assertTrue(printed.contains("'my repo' cannot be a repository name"), derived.output)
+        assertTrue(printed.contains("'my~repo' cannot be a repository name"), derived.output)
         assertTrue(printed.contains("give the input a name, as '$spaced::=<name>'"), derived.output)
 
         val named = MergeCommand().test(listOf("--dry-run", "$spaced::=myrepo", webui))

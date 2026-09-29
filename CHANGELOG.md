@@ -171,16 +171,30 @@ Thirty changes alter what a command line written for 0.1.0 does:
   Two of one name meeting on a ref name are refused naming `{subdir}`, which keeps them apart
   where `{repo}` cannot.
 
+- **A name may hold a `/`, and is held to git's rules only where it lands in a ref name.**\
+  A prefix holding `{repo}`, or `{subdir}` for the input at the root, puts it in one — the tag and
+  branch prefixes whether or not the run writes a tag or a branch, the notes prefix only under
+  `--notes` — and so does `--keep-remotes`, naming a remote after it; a name those refuse is refused
+  on the command line, naming the option.\
+  A pattern's destination holding `{repo}`, and `{subdir}` for the input at the root, put it in one
+  too, checked with every other ref name before the output exists. Where none of these puts it in a
+  ref, a name is a label.\
+  It holds no whitespace and no `:`, and opens with no `^`, wherever it is used, since a pattern's
+  `<input>::` has to be able to spell it.\
+  Two `--keep-remotes` remotes one of which is a directory of the other, `libs` and `libs/core`,
+  are refused: a pruning fetch of the outer one deletes what the inner one fetched, and a branch of
+  the outer named after the inner's last segment cannot be fetched at all.
+
 - **Neither the destination nor the name may be written with a `:` or a `=`.**\
   Both are refused rather than escaped.\
-  For the name the `:` costs nothing: git refuses one in a ref name, and the name becomes a tag
-  prefix.\
+  For the name the `:` costs little: git refuses one in a ref name, and under the default prefixes
+  the name becomes a tag prefix.\
   The `=` is what separates the subdirectory from the name, so it is refused in both although git
   accepts one in a ref; a name derived from the location keeps a `=` its last segment holds.
 
 - **`--subject-prefix` defaults to `{repo}: `, not `{subdir}: `.**\
   A destination can be nested arbitrarily deep.\
-  The name is one segment.
+  A name defaults to one segment, the last of the destination or of the location.
 
 - **`--tag-prefix` substitutes `{subdir}`, where the input lands, beside `{repo}`.**\
   As `--subject-prefix` already did.\
@@ -568,7 +582,8 @@ Thirty changes alter what a command line written for 0.1.0 does:
   counted them.\
   Such a name is refused now, by git's rules.
 
-- **A name git would not accept inside a ref is refused when it is read.**\
+- **A name git would not accept where a prefix holding `{repo}` or `--keep-remotes` puts it in a
+  ref is refused when it is read.**\
   0.1.0 let one through, `my repo` from the location `/path/my repo` among them.\
   An input whose name a ref carried (a tag, a branch shared with another input, a `--keep-remotes`
   mirror) then failed at the write of that ref, the braid already written; one no ref carried went

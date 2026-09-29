@@ -30,7 +30,7 @@ The suffix gives the destination, and each name follows its last segment — `ba
 
 That name is what the commit subjects below distinguish the repositories by, and it is deliberately
 *not* the destination: `--subject-prefix` defaults to `{repo}: `, which is why they read `backend: `
-and not `libs/backend: `. A destination can be arbitrarily deep; a name is one segment.
+and not `libs/backend: `. A destination can be arbitrarily deep; a name defaults to one segment.
 
 ## Result
 
