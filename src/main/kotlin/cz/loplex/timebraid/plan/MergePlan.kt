@@ -61,6 +61,12 @@ class MergePlan private constructor(
     /** Subdirectory [source] occupies in the output, `null` for the repository placed at the root. */
     fun subdirOf(source: Source): String? = subdirs.getValue(source)
 
+    /** [source] as the plan and the run's progress name it: see [inputLabel]. */
+    fun labelOf(source: Source): String =
+        inputLabel(source.name, subdirs.getValue(source), graph.sources.count { it.name == source.name } > 1)
+
+    private fun labelOf(commit: Commit): String = "${labelOf(commit.source)}/${commit.id}"
+
     private fun rowOf(commit: Commit): Array<Commit?> = content[positionOf(commit)]!!
 
     /**
@@ -125,14 +131,14 @@ class MergePlan private constructor(
             val row = rowOf(commit)
             append(position.toString().padStart(6, '0'))
             append(if (isOnBraid(commit)) " * " else "   ")
-            append(commit)
+            append(labelOf(commit))
             append(" @").append(commit.time)
             append(" parents=[")
-            append(newParents[commit].joinToString(", "))
+            append(newParents[commit].joinToString(", ") { labelOf(it) })
             append("] content=[")
             append(
                 graph.sources
-                    .mapNotNull { source -> row[columns.getValue(source)]?.let { "${source.name}=${it.id}" } }
+                    .mapNotNull { source -> row[columns.getValue(source)]?.let { "${labelOf(source)}=${it.id}" } }
                     .joinToString(", ")
             )
             appendLine("]")
@@ -284,3 +290,11 @@ class MergePlan private constructor(
             }
     }
 }
+
+/**
+ * How the plan and the run's progress name an input: by its [name], which two inputs may share, and
+ * where another input [shares] it, by its destination as well, `core(libs/core)`, which no two
+ * inputs share. [subdir] is `null` for the input placed at the root.
+ */
+fun inputLabel(name: String, subdir: String?, shares: Boolean): String =
+    if (!shares) name else "$name(${subdir ?: "<root>"})"

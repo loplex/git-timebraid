@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.cli
 
 import com.github.ajalt.clikt.testing.test
+import cz.loplex.timebraid.GitCli
 import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TestRepoBuilder
 import org.eclipse.jgit.internal.storage.file.ObjectDirectory
@@ -500,15 +501,21 @@ class MergeCommandOptionsTest {
             tmp.resolve("webui.git").toString(),
         )
 
-        val clone = tmp.resolve(".timebraid-clones/backend.git")
+        val clone = clonesOf("backend").single()
         assertTrue(RepositoryCache.FileKey.isGitRepository(clone.toFile(), FS.DETECTED), "input was not cloned")
         SourceRepository.open(out).use { repo ->
             assertTrue(repo.branches().any { it.name == "main" })
         }
     }
 
+    /** The clones under `.timebraid-clones/` beside the outputs, of URLs ending in [segment]. */
+    private fun clonesOf(segment: String): List<Path> =
+        tmp.resolve(".timebraid-clones").toFile().listFiles().orEmpty()
+            .filter { it.name.startsWith("$segment-") && it.name.endsWith(".git") }
+            .map { it.toPath() }
+
     @Test
-    fun `a clone another URL made is refused rather than refreshed`() {
+    fun `two URLs deriving one name each get a clone of their own`() {
         corpus()
         // A second repository whose location derives the same name, `backend`.
         TestRepoBuilder.create(tmp.resolve("fork/backend.git")).use { repo ->
@@ -518,14 +525,31 @@ class MergeCommandOptionsTest {
         val fork = tmp.resolve("fork/backend.git").toUri().toString()
         val webui = tmp.resolve("webui.git").toString()
         run("-o", tmp.resolve("first.git").toString(), url, webui)
+        run("-o", tmp.resolve("second.git").toString(), fork, webui)
 
-        val refused = MergeCommand().test(listOf("-o", tmp.resolve("second.git").toString(), fork, webui))
+        // A clone is named by its URL, so the fork's is a directory of its own rather than the
+        // first one's refreshed and braided in its place.
+        assertEquals(2, clonesOf("backend").size, clonesOf("backend").toString())
+        GitCli.requireGit()
+        val subjects = GitCli.run(tmp.resolve("second.git"), "log", "--format=%s", "main")
+        assertTrue(subjects.contains("f1"), subjects)
 
-        assertEquals(1, refused.statusCode, refused.output)
-        val clone = tmp.resolve(".timebraid-clones/backend.git")
-        assertTrue(refused.output.contains("$clone is a clone of $url, not of $fork"), refused.output)
-        // The same URL is still refreshed rather than refused.
+        // The same URL finds its clone again, and a clone of another URL left in its place is
+        // refused rather than refreshed.
         run("-o", tmp.resolve("third.git").toString(), url, webui)
+        assertEquals(2, clonesOf("backend").size, clonesOf("backend").toString())
+        val mine = clonesOf("backend").single { dir ->
+            FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
+                it.config.getString("remote", "origin", "url") == url
+            }
+        }
+        FileRepositoryBuilder().setGitDir(mine.toFile()).build().use {
+            it.config.setString("remote", "origin", "url", fork)
+            it.config.save()
+        }
+        val refused = MergeCommand().test(listOf("-o", tmp.resolve("fourth.git").toString(), url, webui))
+        assertEquals(1, refused.statusCode, refused.output)
+        assertTrue(refused.output.contains("$mine is a clone of $fork, not of $url"), refused.output)
     }
 
     @Test
@@ -552,7 +576,7 @@ class MergeCommandOptionsTest {
 
         // With -o it sits beside the output, where the real run will refresh it rather than clone.
         run("--dry-run", "-o", tmp.resolve("merged.git").toString(), url, webui)
-        val kept = tmp.resolve(".timebraid-clones/backend.git")
+        val kept = clonesOf("backend").single()
         assertTrue(RepositoryCache.FileKey.isGitRepository(kept.toFile(), FS.DETECTED), "the clone beside -o is gone")
     }
 

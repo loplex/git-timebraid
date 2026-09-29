@@ -19,12 +19,14 @@ import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
 import cz.loplex.timebraid.plan.Source
 import cz.loplex.timebraid.plan.MergePlan
+import cz.loplex.timebraid.plan.inputLabel
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import kotlin.io.path.createDirectories
 
 /**
@@ -45,6 +47,8 @@ class ResolvedInput(
     val subdir: String?,
     /** Where a local input is on disk, or `null` for a remote one, which is nowhere until cloned. */
     val local: LocalPlace?,
+    /** Whether an argument placed this input and can place it elsewhere; not one `--scan` found. */
+    val movable: Boolean = true,
 ) {
     val isRemote: Boolean get() = local == null
 }
@@ -286,15 +290,19 @@ class MergeRunner(
     /**
      * The remedy a refusal about where an input lands offers, for the input at a destination: its
      * location with another subdirectory, as [InputRemedy.placed] spells it. A repository `--scan` found
-     * is moved the same way, by naming its directory, which corrects the finding.
+     * sits where its directory does, and nothing on the command line places it elsewhere.
      */
     private val relocation = Relocation { destination ->
-        request.inputs.firstOrNull { it.subdir == destination }
-            ?.let {
+        val input = request.inputs.firstOrNull { it.subdir == destination }
+        when {
+            input == null -> Relocation.UNSPELLED.remedy(destination)
+            !input.movable ->
+                "rename the directory of the repository at '$destination', which --scan found there and " +
+                    "which cannot be given another subdirectory"
+            else ->
                 "give the repository at '$destination' another subdirectory, as " +
-                    InputRemedy(it.location, name = it.name).moved()
-            }
-            ?: Relocation.UNSPELLED.remedy(destination)
+                    InputRemedy(input.location, name = input.name).moved()
+        }
     }
 
     /**
@@ -325,7 +333,7 @@ class MergeRunner(
             request.bare,
             log = { progress.detail(it) },
         ).use { target ->
-            val fetch = fetchInputs(target, repoOf, inputs)
+            val fetch = fetchInputs(target, repoOf, inputs, plan::labelOf)
 
             progress.phase("writing the braid")
             val write = BraidWriter(
@@ -354,17 +362,21 @@ class MergeRunner(
         target: TargetRepository,
         repoOf: Map<Source, SourceRepository>,
         inputs: BraidInputs,
+        /** What each input's lines are labelled with: see [MergePlan.labelOf]. */
+        labelOf: (Source) -> String,
     ): FetchSummary {
         var refs = 0
-        for (input in inputs.sources) {
+        for ((index, input) in inputs.sources.withIndex()) {
             val repo = repoOf.getValue(input.source)
             // The notes refs ride along: they contribute no commit, but the blobs a note is made
             // of have to be in the output before a tree of the output's own can point at one.
             val wanted = input.readRefs + input.noteRefs
             // Ahead of the transfer, because it says what is about to be asked for; what came of
             // it is what the transfer's own tasks leave behind.
-            progress.result("[${repo.name}] ${wanted.size} refs")
-            refs += target.fetchFrom(repo, wanted, progress.monitor(repo.name))
+            val label = labelOf(input.source)
+            progress.result("[$label] ${wanted.size} refs")
+            // Parked under the input's position, which no two inputs share, where a name may be.
+            refs += target.fetchFrom(repo, wanted, progress.monitor(label), key = index.toString())
         }
         return FetchSummary(inputs.sources.size, refs)
     }
@@ -415,14 +427,15 @@ class MergeRunner(
         return request.inputs.map { input ->
             input.local?.let { return@map it.input(input.name) }
 
-            val dir = root.resolve("${input.name}.git")
+            val dir = root.resolve(cloneDirOf(input.location))
+            val label = inputLabel(input.name, input.subdir, request.inputs.count { it.name == input.name } > 1)
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
                 refuseOtherOrigin(dir, input)
-                progress.gitProgress(input.name).use { git.fetch(dir, it) }
-                progress.result("[${input.name}] refreshed in $dir")
+                progress.gitProgress(label).use { git.fetch(dir, it) }
+                progress.result("[$label] refreshed in $dir")
             } else {
-                progress.gitProgress(input.name).use { git.cloneMirror(input.location, dir, it) }
-                progress.result("[${input.name}] cloned into $dir")
+                progress.gitProgress(label).use { git.cloneMirror(input.location, dir, it) }
+                progress.result("[$label] cloned into $dir")
             }
             LocalInput(dir, input.name, input.location)
         }
@@ -431,18 +444,37 @@ class MergeRunner(
     /**
      * Refuses to refresh [dir] for [input] when it is a clone of another location.
      *
-     * A clone is found by the input's name alone, and two locations can derive one name — two
-     * forks' `webui`, for one. Refreshing the clone the other one left would braid a repository this
-     * run never named, and report it as this input.
+     * A clone is found by its URL ([cloneDirOf]), so two locations meet on one only where their
+     * hashes do, or where somebody put another clone there. Refreshing it would braid a repository
+     * this run never named, and report it as this input.
      */
     private fun refuseOtherOrigin(dir: Path, input: ResolvedInput) {
         val origin = FileRepositoryBuilder().setGitDir(dir.toFile()).build().use {
             it.config.getString("remote", "origin", "url")
         }
         require(origin == input.location) {
-            "$dir is a clone of $origin, not of ${input.location}; remove that directory, or give " +
-                "the input another name, as ${InputRemedy(input.location, input.subdir).named()}"
+            "$dir is a clone of $origin, not of ${input.location}; remove that directory"
         }
+    }
+
+    /**
+     * The directory under the clone root that [location] is cloned into: its last segment, for a
+     * reader looking in, and a hash of the whole URL, which is what tells two apart.
+     *
+     * Named by the URL rather than by the input's name, which is a label two inputs may share: the
+     * same URL finds its clone again whatever the run calls it or wherever it places it, and two
+     * forks' `webui` never meet on one directory.
+     */
+    private fun cloneDirOf(location: String): String {
+        val segment = location.trimEnd('/', '\\')
+            .substringAfterLast('/').substringAfterLast('\\').substringAfterLast(':')
+            .removeSuffix(".git")
+            .filter { it.isLetterOrDigit() || it in "-_." }
+            .trimStart('.')
+            .ifEmpty { "clone" }
+        val digest = MessageDigest.getInstance("SHA-256").digest(location.toByteArray(Charsets.UTF_8))
+        val hash = digest.take(6).joinToString("") { "%02x".format(it) }
+        return "$segment-$hash.git"
     }
 
     private fun cloneRoot(): Path =

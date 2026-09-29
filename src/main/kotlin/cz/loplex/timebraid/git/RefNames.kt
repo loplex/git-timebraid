@@ -2,6 +2,7 @@ package cz.loplex.timebraid.git
 
 import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.MergePlan
+import cz.loplex.timebraid.plan.Source
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
@@ -52,17 +53,17 @@ class OutputName(
     companion object {
 
         /**
-         * What [ref], of the input named [repo], is called in the output under the pattern that
-         * took it.
+         * What [ref], of the input named [repo] and placed at [subdir], is called in the output under
+         * the pattern that took it.
          *
          * The three destination forms land here as the two halves of a name plus one boolean. A
          * namespace destination swaps the namespace and leaves the rest to that namespace's
          * prefix; a spelled-out destination fills both halves and turns the prefix off; no
          * destination at all keeps the ref exactly where it was.
          */
-        fun of(ref: BraidOutRef, repo: String): OutputName {
+        fun of(ref: BraidOutRef, repo: String, subdir: String = repo): OutputName {
             val pattern = ref.takenBy
-            val spelled = pattern?.resolve(ref.fullName, repo)
+            val spelled = pattern?.resolve(ref.fullName, repo, subdir)
             val namespace = pattern?.destination?.takeIf { pattern.toNamespace }
             return when {
                 // Split at the last separator so the two halves still join back, and so a name
@@ -126,7 +127,7 @@ class RefNames(
     fun resolve(): Named {
         val refs = LinkedHashMap<String, RefSource>()
         // Who claimed each name, so a collision can name both sides rather than the loser alone.
-        val claimed = HashMap<String, String>()
+        val claimed = HashMap<String, Holder>()
 
         val braidTip = plan.braid.lastOrNull()
             ?: error("the braid is empty -- there is nothing to point a branch at")
@@ -135,21 +136,22 @@ class RefNames(
         // The braid's own name is in the running too: an input whose mainline is `master` may carry
         // an ordinary branch called `main`, and with nothing to qualify it that is the output's
         // mainline being overwritten by a side branch.
-        claimed[mainline] = BRAID
+        claimed[mainline] = Holder.BRAID
         var branches = 1
 
         var tags = 0
         var foreign = 0
         for (input in inputs.sources) {
             val repo = input.source.name
+            val subdir = subdirOf(input.source)
             for (ref in input.refs) {
                 // Its own mainline, not the output's: two inputs may braid along differently named
                 // branches, and each is the one already spoken for by the braid rather than a ref to
                 // write. Matched on the input's full name, which is the only name that still says
                 // so once a destination may have renamed it.
                 if (ref.isMainlineOf(input)) continue
-                val name = named(ref, repo)
-                claim(claimed, name, repo, prefixFlag(OutputName.of(ref, repo)))
+                val name = named(ref, repo, subdir)
+                claim(claimed, name, Holder(input.source), prefixFlag(OutputName.of(ref, repo, subdir)))
                 refs[name] = RefSource.Of(ref)
                 when {
                     name.startsWith(Constants.R_HEADS) -> branches++
@@ -161,10 +163,9 @@ class RefNames(
 
         var notes = 0
         for (input in inputs.sources) {
-            val repo = input.source.name
             for (notesRef in input.notes) {
-                val name = Constants.R_NOTES + options.notesPrefix.replace("{repo}", repo) + notesRef.name
-                claim(claimed, name, repo, "--notes-prefix")
+                val name = Constants.R_NOTES + expand(options.notesPrefix, input.source) + notesRef.name
+                claim(claimed, name, Holder(input.source), "--notes-prefix")
                 refs[name] = RefSource.Notes(notesRef)
                 notes++
             }
@@ -188,11 +189,24 @@ class RefNames(
      * destination and a prefix get along — the prefix is the naming rule, and a destination
      * overrides exactly the part of it that it wrote.
      */
-    private fun named(ref: BraidOutRef, repo: String): String {
-        val out = OutputName.of(ref, repo)
-        val prefix = if (!out.prefixed) "" else prefixOf(out.namespace).replace("{repo}", repo)
+    private fun named(ref: BraidOutRef, repo: String, subdir: String): String {
+        val out = OutputName.of(ref, repo, subdir)
+        val prefix = if (!out.prefixed) "" else expand(prefixOf(out.namespace), repo, subdir)
         return out.namespace + prefix + out.name
     }
+
+    /**
+     * Where [source] lands, for a `{subdir}` in a template: its destination, or its name for the
+     * input placed at the output root, as a commit subject has it.
+     */
+    private fun subdirOf(source: Source): String = plan.subdirOf(source) ?: source.name
+
+    /** [template] with `{repo}` and `{subdir}` substituted for [source]. */
+    private fun expand(template: String, source: Source): String =
+        expand(template, source.name, subdirOf(source))
+
+    private fun expand(template: String, repo: String, subdir: String): String =
+        template.replace("{repo}", repo).replace("{subdir}", subdir)
 
     /**
      * The prefix template belonging to a namespace.
@@ -214,41 +228,48 @@ class RefNames(
     }
 
     /**
-     * Records that [repo] wants [name], refusing a name already taken.
+     * Records that [holder] wants [name], refusing a name already taken.
      *
-     * Reached four ways. A prefix that has stopped telling two inputs apart, such as an emptied one
+     * Reached five ways. A prefix that has stopped telling two inputs apart, such as an emptied one
      * or one holding no `{repo}`: the default qualifies every ref with the name of its input, and
-     * so keeps them apart. The braid's own branch, which takes no prefix, so an input can meet it
-     * under any prefix: under the default, input `release`'s branch `x` meets a mainline called
-     * `release/x`. A destination spelled out in full, which takes the prefix off whatever it holds.
-     * And one input sending two of its refs to one name — a branch `v1.0` written as a tag beside
-     * its tag `v1.0`, or a destination with no `*` given a pattern that matches more than one ref.
+     * so keeps them apart unless two share a name. The braid's own branch, which takes no prefix,
+     * so an input can meet it under any prefix: under the default, input `release`'s branch `x`
+     * meets a mainline called `release/x`. A destination spelled out in full, which takes the prefix
+     * off whatever it holds. One input sending two of its refs to one name — a branch `v1.0` written
+     * as a tag beside its tag `v1.0`, or a destination with no `*` given a pattern that matches more
+     * than one ref. And two inputs that share a name, which a name is free to do: `{repo}` then
+     * qualifies them alike, and `{subdir}`, where each lands, is what still tells them apart.
      * The braid's own mainline claims its name first, so the side already holding one may be it.
      * Refused rather than resolved: the two refs can point at different commits, so silently keeping
      * either would publish one ref's history under a name the other's reader would look up.
      */
-    private fun claim(claimed: MutableMap<String, String>, name: String, repo: String, prefixOption: String) {
+    private fun claim(claimed: MutableMap<String, Holder>, name: String, holder: Holder, prefixOption: String) {
         // The run's own corner of the ref space: the fetch parks the inputs' refs there, and
         // everything under it is deleted once the braid is written, so a ref of the braid's there
         // would be counted as written and then be gone.
         require(!name.startsWith(TargetRepository.FETCH_NAMESPACE)) {
-            "'$repo' would write '$name', under ${TargetRepository.FETCH_NAMESPACE}, where this run " +
-                "parks the refs it fetches and which it empties once the braid is written; give it " +
+            "'${holder.name}' would write '$name', under ${TargetRepository.FETCH_NAMESPACE}, where this " +
+                "run parks the refs it fetches and which it empties once the braid is written; give it " +
                 "another destination"
         }
-        val first = claimed.put(name, repo) ?: return
+        val first = claimed.put(name, holder) ?: return
+        val repo = holder.name
         throw IllegalArgumentException(
             // A prefix that keeps inputs apart can still spell the braid's own name, as `{repo}/`
             // does for input `release` and a mainline `release/x`, so advising one is not enough.
-            if (first == BRAID) {
-                "'$first' and '$repo' would both write '$name'; " +
+            if (first.source == null) {
+                "'${first.name}' and '$repo' would both write '$name'; " +
                     "give $prefixOption a template, or the input a name, that moves its refs off the " +
                     "braid's, or narrow the run"
-            } else if (first == repo) {
+            } else if (first.source === holder.source) {
                 "two refs of '$repo' would both write '$name'; " +
                     "give one of them another destination, or narrow the run"
+            } else if (first.name == repo) {
+                "two inputs called '$repo' would both write '$name'; " +
+                    "give $prefixOption a template holding {subdir}, which tells them apart where {repo} " +
+                    "cannot, or one of them another name, or narrow the run"
             } else {
-                "'$first' and '$repo' would both write '$name'; " +
+                "'${first.name}' and '$repo' would both write '$name'; " +
                     "give $prefixOption a template that keeps {repo} apart from the name, as {repo}/ " +
                     "does, or narrow the run"
             }
@@ -307,9 +328,9 @@ class RefNames(
      * @param claimed who wrote each of the braid's own names, as [resolve] recorded them.
      * @return how many remote-tracking refs were added.
      */
-    private fun mirrorInputs(refs: MutableMap<String, RefSource>, claimed: Map<String, String>): Int {
+    private fun mirrorInputs(refs: MutableMap<String, RefSource>, claimed: Map<String, Holder>): Int {
         fun refuseClaimed(name: String, input: SourceInputs, prefix: String) {
-            val first = claimed[name] ?: return
+            val first = claimed[name]?.name ?: return
             throw IllegalArgumentException(
                 "'$first' and the --keep-remotes mirror of '${input.source.name}' would both " +
                     "write '$name'; spell that destination outside $prefix, or drop --keep-remotes"
@@ -368,7 +389,7 @@ class RefNames(
             val prefix = Constants.R_REMOTES + input.source.name + "/"
             val name = claimed.keys.filter { it.startsWith(prefix) }.minOrNull() ?: continue
             throw IllegalArgumentException(
-                "'${claimed.getValue(name)}' would write '$name' among the --keep-remotes mirrors " +
+                "'${claimed.getValue(name).name}' would write '$name' among the --keep-remotes mirrors " +
                     "of '${input.source.name}', where a pruning fetch deletes it; spell that " +
                     "destination outside $prefix, or drop --keep-remotes"
             )
@@ -376,10 +397,21 @@ class RefNames(
         return added
     }
 
+    /**
+     * Who wants a name: an input, told apart from another by identity since two may share a name,
+     * or the braid's own branch.
+     */
+    private class Holder(val source: Source?, val name: String) {
+        constructor(source: Source) : this(source, source.name)
+
+        companion object {
+            /** The holder [claim] records for the braid's own branch, and names when it is met. */
+            val BRAID = Holder(null, "the braid")
+        }
+    }
+
     companion object {
 
-        /** The holder [claim] records for the braid's own branch, and names when it is met. */
-        private const val BRAID = "the braid"
 
         /**
          * Refs are paths, so `refs/heads/a` and `refs/heads/a/b` cannot both exist — git would have

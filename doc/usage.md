@@ -94,10 +94,10 @@ Three rules follow — two about the location, one about what comes after:
   `\` in it is just a backslash.
 - **A location that holds a `::` of its own** ends with a bare `::`, which says where it stops:
   `~/repos/odd::name::` is that whole path with nothing said after it. That settles the location,
-  not the name: a name derived from a last segment git would not take in a ref is refused, so the
-  working spelling here is `~/repos/odd::name::=oddname`. An IPv6 URL needs the bare `::` and
-  nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal name. Every
-  refusal that comes out of a suffix suggests the `::`.
+  not the name: a name holding a `:` is refused wherever it is used, so the working spelling here is
+  `~/repos/odd::name::=oddname`. An IPv6 URL needs
+  the bare `::` and nothing more — `https://[fe80::1]/repo.git::` derives `repo`, which is a legal
+  name. Every refusal that comes out of the suffix of an argument with a location suggests the `::`.
 - **A subdirectory or a name written after the `::` holds no `:` and no `=`.** Neither is escaped;
   both are refused. That is what guarantees a suffix can never hold a `::` of its own, so the last
   `::` in the argument is always the separator. A name derived from the location may hold a `=`,
@@ -113,20 +113,20 @@ Three rules follow — two about the location, one about what comes after:
 ~/repos/odd::name::=oddname           # a location holding a '::', so the name is given
 ```
 
-Refusing the colon rather than escaping it costs nothing, because a `:` is illegal in a git ref name
-and the name becomes a tag prefix. A name that needed one could never have been used.
+Refusing the colon rather than escaping it costs little, because a `:` is illegal in a git ref name
+and under the default prefixes the name becomes a tag prefix.
 
 A **remote input**, one whose location is a URL (`file://` included) or git's scp-like
-`user@host:path`, is cloned before anything is read: into `.timebraid-clones/<name>.git`, in the
-directory that holds the output, and a later run over the same URL whose output sits in the same
-directory refreshes that clone rather than downloading it again. A clone that another URL left under
-that name is refused, naming both. A `--dry-run` without `-o` clones into a temporary directory
-instead, and removes it when the run ends.
+`user@host:path`, is cloned before anything is read: into `.timebraid-clones/`, in the directory
+that holds the output, under a directory named by the URL — its last segment and a hash of the
+whole, as `backend-<hash>.git` — and a later run over the same URL whose output sits in the
+same directory refreshes that clone rather than downloading it again, whatever it names or places
+the input. A clone of another URL found there is refused, naming both. A `--dry-run` without `-o`
+clones into a temporary directory instead, and removes it when the run ends.
 
-Beyond the `:` and the `=` it may not be written with, a name cannot hold a `/`, nor anything else
-git refuses in a ref name.
-The `/` is no gap: the name is a directory name for the clone of a remote input and a segment of a
-tag name, so one segment is what it means.
+A name holds no whitespace and no `:`, and opens with no `^`, wherever it is used, since a
+pattern's `<input>::` has to be able to spell it. What else it may hold is under
+[naming and placement](#naming-and-placement).
 
 ## Naming and placement
 
@@ -140,12 +140,25 @@ Placement and naming travel together, and can be separated.
 - It may be a nested path (`repo.git::libs/backend`), and inputs sharing a prefix share the
   directory for it — so `backend.git::libs/backend webui.git::apps/webui` gives the output a
   `libs/` and an `apps/`. Both are named after the last segment.
-- The name is the input's identity: the tag prefix, the branch prefix, the provenance label, the
-  commit subject prefix, what `--root-repo` matches, and what has to be unique — it is how two
-  inputs whose directories happen to share a name are told apart.
+- The name labels the input: the tag prefix, the branch prefix, the commit subject prefix and the
+  provenance label by default, and what `--root-repo` and a pattern's `<input>::` match. **Two
+  inputs may share one**; the destination is what tells them apart, and two placed at one are
+  refused, naming both.
+  A reference to a shared name is refused as naming both, and so are two inputs `--keep-remotes`
+  would add as one remote. Where two of one name meet on a ref name, a prefix holding `{subdir}`
+  keeps them apart where `{repo}` cannot.
+- A name may hold a `/` — `libs/core` is a fine label — each of its segments one a directory could
+  be called. What else it may hold follows from where it is used: a prefix holding `{repo}`, or
+  `{subdir}` for the input at the root, puts it in a ref name — the tag and branch prefixes whether
+  or not the run writes a tag or a branch, the notes prefix only under `--notes` — and so does
+  `--keep-remotes`, which names a remote after it, so there git's rules for a ref name apply and a
+  name they refuse is refused, naming the option. A pattern's destination holding `{repo}`, and
+  `{subdir}` for the input at the root, put it in a ref name too, checked with every other ref name
+  before the output exists. Where none of these puts it in a ref, a name is only a label.
 - **`repo.git::subdir=name` sets the two apart**, and `repo.git::=name` names an input without
-  placing it. Naming a repository found by [`--scan`](#taking-the-layout-off-a-directory-tree) is
-  what the second one is mostly for: the scan already decided where it goes.
+  placing it, which then lands at `<name>/`. Renaming a repository
+  [`--scan`](#taking-the-layout-off-a-directory-tree) found is a correction instead,
+  `::<subdir>=<name>`, with no location.
 - One local repository is one input. Given as two arguments, however the second spells its
   location — through a symlink, or by its `.git` — it is refused, naming it and where each argument
   would place it.
@@ -186,20 +199,28 @@ The run's own `-o` is never a finding either, however it is spelled, so rerunnin
 `merged.git` beside the inputs does not braid it into itself; an argument naming the output, or an
 `-o` naming the `.git` of a working tree the scan finds, is refused.
 
-A `<repo>` argument may be given alongside, and one whose location is a directory the scan found, or
-that directory's `.git`, is a **correction to that finding** rather than a second input.
+A finding is renamed by a **correction**: `::<subdir>=<name>`, a `<repo>` with no location, naming
+the place the scan found it at.
 
-- The name it gives wins, and the subdirectory too when it gives one.
-- An argument that gives none leaves the finding where the scan put it.
-- That is what settles two findings that derive the same name — `libs/core` and `tools/core` —
-  which is refused until one of them is named:
+- It renames and does not move: where the scan put a finding is where the directory sits.
+  `--root-repo` is the one thing that moves an input, to the root.
+- `::=<name>` renames the base directory, the finding at the output root.
+- It is matched by the text of the subdirectory, so one naming a place the scan found nothing at is
+  refused, listing the places it did.
+- That is how a finding gets a name of its own. Two findings may derive the same one — `libs/core`
+  and `tools/core` — and are told apart by where they sit, but a reference to that name, a
+  pattern's scope or `--root-repo`, is refused until one of them is named:
 
 ```bash
-git-timebraid -o out.git --scan ~/repos ~/repos/tools/core::=tools-core
+git-timebraid -o out.git --scan ~/repos ::tools/core=tools-core
 ```
 
-Anything the scan skipped, or a repository from outside the tree entirely, is added the same way:
-as an ordinary argument.
+**An argument with a location is always another input.** One naming a repository the scan already
+found — by its path, its `.git` or a symlink to either — is refused rather than read as that
+finding, and the refusal names the correction that renames it.
+
+Anything the scan skipped, or a repository from outside the tree entirely, is added as an ordinary
+argument.
 
 [Example 08](examples/08-scan/README.md) scans a tree holding all of these cases at once — a bare
 repository, a dot-name, a repository nested inside another, and the two findings that derive the
@@ -309,7 +330,8 @@ out — the example above, or a narrow one over a release series.
   output has a single branch at the braid's tip, named by the unscoped `--mainline-branch` or else
   after the first input's mainline ([mainlines that do not agree](#mainlines-that-do-not-agree)).
 - Any other branch is prefixed with the repository name (`wip` from `webui` becomes `webui/wip`), so
-  branches from different repositories cannot collide. The prefix is `--branch-prefix`.
+  branches of differently named inputs cannot collide. The prefix is `--branch-prefix`, and one
+  holding `{subdir}` keeps apart two inputs that share a name.
 
 Prefixing every other branch is a change in 0.2.0. The qualifier used to go on a branch only where
 two inputs had used the name, which made the name depend on what the other inputs called theirs:
@@ -344,7 +366,9 @@ else. Without it two inputs can meet on one name, and a run that would write two
 to one ref is **refused** rather than resolved — naming both inputs and the ref they collided on.
 Even with it, an input can meet the braid's own branch, which takes no prefix: under the default,
 input `release`'s branch `x` becomes `release/x`, which is the output's branch where the mainline is
-called `release/x`. That is refused the same way, naming the braid.
+called `release/x`. That is refused the same way, naming the braid. Two inputs that share a name
+can meet even with the default prefix, which `{repo}` spells alike for both, and are refused the
+same way; a prefix holding `{subdir}` keeps them apart.
 
 ### Commit notes
 
@@ -392,17 +416,17 @@ The first `::` is the separator, since an input's name holds no `:`. What the sc
 
 **A value git takes as a refspec means the same here.** The differences are few, and each is on
 purpose: a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may
-hold `{repo}`; a pattern with stars may go without a destination, which `git fetch` allows only in a
-negative refspec, or name one ref as its destination; and there is no `+`, no empty pattern or
-destination, and no short name — a pattern matches full ref names. git resolves a single short name,
-tags before branches, and never a short pattern; `-b` is the short form here, and says which of the
-two it means.
+hold `{repo}` and `{subdir}`; a pattern with stars may go without a destination, which `git fetch`
+allows only in a negative refspec, or name one ref as its destination; and there is no `+`, no empty
+pattern or destination, and no short name — a pattern matches full ref names. git resolves a single
+short name, tags before branches, and never a short pattern; `-b` is the short form here, and says
+which of the two it means.
 
 What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
 
 **One quoted argument may hold several values, separated by spaces**: a space cannot occur in a ref
-name, as a `:` and a `^` cannot, so the split can never cut a pattern in half. These two are the
-same run:
+name, as a `:` and a `^` cannot, nor in an input's name, so the split can never cut a pattern or its
+scope in half. These two are the same run:
 
 ```bash
 --ref 'backend::refs/heads/main' --ref 'webui::refs/heads/release/*'
@@ -495,9 +519,9 @@ overrides exactly the part of the name it writes out** — nothing, the namespac
   git refspec, what the `*` matched may hold a slash, and carries it into the destination.
 - A destination **ending in `/` with no `*`** is a namespace, handed back to that namespace's prefix
   rule. Only `refs/heads/` and `refs/tags/` have one, so only those two can be written that way.
-- `{repo}` is substituted, which is what makes an unscoped pattern safe: a destination naming a ref
-  outright, with neither `{repo}` nor a `*`, gives every input's match the same name, and the run
-  would be refused for the collision.
+- `{repo}` and `{subdir}` are substituted — the input's name and where it lands — which is what
+  makes an unscoped pattern safe: a destination naming a ref outright, with neither of them nor a
+  `*`, gives every input's match the same name, and the run would be refused for the collision.
 - Where you spell the name out, **unique names are yours to arrange**. The collision check still
   refuses two inputs meeting on one ref, naming both, and under `--keep-remotes` it refuses any
   destination under an input's `refs/remotes/<name>/`, where the mirrors are, meeting one or not.
@@ -656,9 +680,9 @@ They are in the output too, with their own shas intact, next to the rewritten on
 `webui: fix the date picker`.
 
 The prefix is `--subject-prefix`, substituting `{repo}` and `{subdir}` — the name and the
-destination. The default is `{repo}: ` and not `{subdir}: ` deliberately: a name is one segment,
-while a destination can be arbitrarily deep. An input placed at the root has no destination, and
-`{subdir}` gives its name there too.
+destination. The default is `{repo}: ` and not `{subdir}: ` deliberately: a name defaults to one
+segment, while a destination can be arbitrarily deep. An input placed at the root has no
+destination, and `{subdir}` gives its name there too.
 [Example 05](examples/05-nested-layout/README.md) places `backend` at `libs/backend`, and its
 subjects still read `backend: `.
 
@@ -677,8 +701,8 @@ This is what makes the braid's promise checkable rather than merely claimed, the
 original parents of every commit are recorded, so a script can verify that no edge went missing.
 
 `--provenance-trailer` sets the line — the one above is its default — substituting `{repo}`,
-`{commit}` and `{parents}`. A template that leaves out `{commit}` or `{parents}` keeps the
-trailer and gives up that check, since it is those two that a script reads.
+`{subdir}`, `{commit}` and `{parents}`. A template that leaves out `{commit}` or `{parents}` keeps
+the trailer and gives up that check, since it is those two that a script reads.
 
 ---
 
@@ -712,7 +736,8 @@ and not this program's.
 
 An indented line is what a bar leaves behind: what it was, how far it got, and how long that took.
 The count is what was *reached*, so a phase that failed half way through says so rather than
-reporting the total it never made. A `[name]` at the front says which input it was for.
+reporting the total it never made. A `[name]` at the front says which input it was for, with its
+destination where another input shares the name: `[core(libs/core)]`.
 
 While a phase runs it draws a bar over that line — how far, how fast, how long is left — or a
 spinner where there is nothing to count, as when a pack is being flushed. The bar goes when the
@@ -801,7 +826,9 @@ per commit in the order the commits are written:
 ```
 
 - Its position in that order, and `*` where the commit is on the braid.
-- The input it comes from and its original sha, which is how every commit is named on the line.
+- The input it comes from and its original sha, which is how every commit is named on the line. The
+  input is named by its name, and where another input shares the name, by its destination as well:
+  `core(libs/core)/<sha>`.
 - Its ordering timestamp, in seconds since the epoch: the committer date, or the author date under
   `--order-by author`.
 - Its parents in the output, a braided edge first.
@@ -857,6 +884,8 @@ Finding the inputs, and placing their content:
   --scan=<path>          Take the layout from this directory.
                          Every repository under it becomes an input, placed in the output where it
                          sits on disk.
+                         '::<subdir>=<name>', with no location, renames the one it found at
+                         <subdir>.
   --root-repo=<text>     Name of the repository whose content lands at the output root.
   --splice               Allow one input's subdirectory to lie inside another's, splicing the two
                          into one directory.
@@ -905,9 +934,9 @@ Which refs a pattern speaks for:
 
 What the output repository holds:
 
-  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} is
-  substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
-  rather than resolved.
+  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} and
+  {subdir} are substituted, an empty value qualifies nothing, and two inputs then meeting on one
+  name is refused rather than resolved.
 
   --[no-]bare                  Write a bare output repository.
                                --no-bare checks out a working tree instead.
@@ -935,7 +964,7 @@ What the output repository holds:
   --[no-]provenance            Record each commit's original sha and parents in a trailer.
                                Default: on.
   --provenance-trailer=<text>  The trailer --provenance writes, as its own paragraph.
-                               {repo}, {commit} and {parents} are substituted.
+                               {repo}, {subdir}, {commit} and {parents} are substituted.
                                Default: "[timebraid: repo="{repo}" commit={commit}
                                parents={parents}]"
 
@@ -972,8 +1001,9 @@ Arguments:
           <subdir> is where its content lands, and may be nested (::libs/backend).
           Defaults to <name>.
 
-          <name> is the repository's identity: the tag prefix, the branch prefix, the provenance
-          label, and what --root-repo matches.
+          <name> labels the repository: the tag and branch prefixes and the provenance label by
+          default, and what --root-repo and an <input>:: scope match.
+          Two inputs may share one; <subdir> is what tells them apart.
           Defaults to the last segment of <subdir>, or of the location.
           Neither may be written with a ':' or a '='.
 

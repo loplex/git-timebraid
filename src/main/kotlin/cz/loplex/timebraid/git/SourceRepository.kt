@@ -29,8 +29,8 @@ import java.nio.file.Path
  */
 class SourceRepository private constructor(
     /**
-     * Short name of the repository, and its identity in the output: the default subdirectory, and
-     * wherever the output names or labels the input.
+     * Short name of the repository, and its label in the output: wherever the output names or
+     * labels the input. Two inputs may share one.
      */
     val name: String,
     /** Where the repository was opened from, which the output fetches it from too. */

@@ -148,5 +148,5 @@ what the tool declines to guess.
 | [05-nested-layout](05-nested-layout/README.md)                     | Destinations that are paths, two inputs sharing a prefix, tree reuse   | —                                                            |
 | [06-splice](06-splice/README.md)                                   | `--splice`: one input's destination inside another's                   | The pair without the flag, and a real collision with it      |
 | [07-dissolve-submodule](07-dissolve-submodule/README.md)           | `--dissolve-submodules`: a gitlink giving way to the input's history   | The gitlink as an ordinary collision without the flag        |
-| [08-scan](08-scan/README.md)                                       | `--scan`: the layout read off a directory tree, and a finding renamed  | Two findings deriving the same name                          |
+| [08-scan](08-scan/README.md)                                       | `--scan`: the layout read off a directory tree, and a finding renamed  | A reference to a name two findings share                     |
 | [09-ref-selection](09-ref-selection/README.md)                     | `-b`/`--ref`: five selections, and what each output ends up holding    | — (nothing is refused; what is dropped is the point)         |

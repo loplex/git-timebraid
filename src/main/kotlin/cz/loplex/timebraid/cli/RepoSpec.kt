@@ -2,8 +2,6 @@ package cz.loplex.timebraid.cli
 
 import com.github.ajalt.clikt.core.UsageError
 import cz.loplex.timebraid.git.SourceRepository
-import cz.loplex.timebraid.git.TargetRepository
-import org.eclipse.jgit.lib.Constants
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -27,6 +25,12 @@ internal class RepoSpec(
     /** The name as the argument wrote it after `=`, or `null` where it wrote none. */
     val given: String? = null,
 ) {
+    /**
+     * Whether this names no location at all, `::<subdir>=<name>`: a correction, renaming the
+     * repository `--scan` found at that subdirectory rather than adding an input.
+     */
+    val isCorrection: Boolean get() = split && location.isEmpty()
+
     /**
      * The argument this is read from: the exact inverse of [parseRepoSpec], so that changing one
      * field and formatting the rest back keeps every part the argument wrote.
@@ -83,10 +87,10 @@ internal class InputRemedy(
 /**
  * Splits `<path-or-url>[::[<subdir>][=<name>]]`.
  *
- * The subdirectory and the name answer separate questions. The subdirectory is merely where the
- * content lands. The name is the repository's identity — the tag prefix, the branch prefix, the
- * provenance label, what `--root-repo` matches — and has to be unique, which is the only way two
- * inputs whose directories happen to share a name can be merged at all.
+ * The subdirectory and the name answer separate questions. The subdirectory is where the content
+ * lands, and what tells two inputs apart. The name labels the repository — the tag and branch
+ * prefixes and the provenance label by default, and what `--root-repo` and an `<input>::` scope
+ * match — and two inputs may share one.
  *
  * The subdirectory comes first because placing an input is what most arguments do, and the name
  * follows from it unless it is given: `::apps/webui` places and names in one token. The `=` is for
@@ -106,12 +110,11 @@ internal class InputRemedy(
  *   a `::` of its own, so the last one in the argument is always the separator.
  *
  * Refusing the colon costs less than escaping it would, and not only in a parser nobody reads: a
- * `:` is illegal in a git ref name, so a name holding one could never become the tag prefix it
- * exists to be. There was nothing on the other side of that trade.
+ * `:` is illegal in a git ref name, and under the default prefixes the name becomes a tag prefix.
  *
- * Nor can a name hold a `/`, a written `=`, or anything else git refuses in a ref name; the `/` is
- * not a gap either: the name is a directory name for the clone of a remote input and a segment of a
- * tag, and single-segment is what it means.
+ * A name may hold a `/`, each of its segments one a directory could be called: it is a label, and
+ * `libs/core` is a fine one. Whether it can stand in a ref name as well is asked later, where the
+ * templates that put it in one are known; git's rules for a ref name are asked only there.
  */
 internal fun parseRepoSpec(raw: String): RepoSpec {
     val at = raw.lastIndexOf(SEPARATOR)
@@ -124,18 +127,22 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
     val subdir = subdirText.ifEmpty { null }?.also { text ->
         refuseSeparators(text, "subdirectory", raw)
         if (!text.split('/').all(::isOneSegment)) {
-            throw UsageError("'$text' is not a usable subdirectory (in '$raw') -- " + InputRemedy(raw).wholeLocation())
+            throw UsageError("'$text' is not a usable subdirectory (in '$raw')" + suffixRemedy(raw))
         }
     }
     val name = nameText?.also { text ->
         if (text.isEmpty()) {
-            throw UsageError(
-                "'$raw' names no repository after its '=' (leave the '=' out to name it after " +
-                    "the subdirectory) -- " + InputRemedy(raw).wholeLocation()
-            )
+            // A correction has nothing else to be named after: without the '=' it would give no
+            // name, which is all a correction does.
+            val advice = when {
+                at >= 0 && location.isEmpty() -> "a correction gives one, as ${InputRemedy("", subdir).named()}"
+                subdir == null -> "leave the '=' out to name it after the location"
+                else -> "leave the '=' out to name it after the subdirectory"
+            }
+            throw UsageError("'$raw' names no repository after its '=' ($advice)" + suffixRemedy(raw))
         }
         refuseSeparators(text, "name", raw)
-        if (!isOneSegment(text)) throw unusableName(text, raw, fromSuffix = true)
+        if (!text.split('/').all(::isOneSegment)) throw unusableName(text, raw, fromSuffix = true)
     }
 
     val remote = isRemoteLocation(location)
@@ -147,15 +154,11 @@ internal fun parseRepoSpec(raw: String): RepoSpec {
         else SourceRepository.defaultName(localPath(location, raw))
     // The name becomes the default subdirectory and, under the default templates, the tag prefix,
     // the branch prefix and the provenance label, so an input that yields none is rejected here
-    // rather than failing later as an unusable subdirectory.
+    // rather than failing later as an unusable subdirectory. Whether it can stand in a ref is asked
+    // later, where the templates that put it in one are known.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
-    // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
-    // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
-    // of descending into it, so such a name is refused before anything is written anywhere.
-    if (!isOneSegment(derived)) throw unusableName(derived, raw, fromSuffix = false)
-    val spec = RepoSpec(location, remote, at >= 0, derived, subdir, name)
-    if (!isRefComponent(derived)) throw unusableRefName(spec, raw)
-    return spec
+    if (!derived.split('/').all(::isOneSegment)) throw unusableName(derived, raw, fromSuffix = false)
+    return RepoSpec(location, remote, at >= 0, derived, subdir, name)
 }
 
 /** The `::` that separates the location from the suffix — see [parseRepoSpec]. */
@@ -176,28 +179,17 @@ private const val SEPARATOR = "::"
  */
 private fun unusableName(name: String, raw: String, fromSuffix: Boolean): UsageError {
     val said = "'$name' is not a usable name (in '$raw')"
-    return UsageError(if (fromSuffix) "$said -- " + InputRemedy(raw).wholeLocation() else said)
+    return UsageError(if (fromSuffix) said + suffixRemedy(raw) else said)
 }
 
 /**
- * A name git would not accept inside a ref.
+ * The location remedy a refusal out of [raw]'s suffix carries, or nothing for a correction.
  *
- * Said here rather than left to the write, which is where it used to surface: the first ref
- * carrying the name, an input's tag under the default prefix, was refused once the braid was
- * written, and an input no such ref carried went through.
- *
- * Giving the input a name is the way out whichever part the name came from, and the remedy spells
- * it on the argument as written, its subdirectory kept: `::a..b` names the input `a..b` and places
- * it at `a..b/`, and only `::a..b=<name>` keeps the one while changing the other. A name the suffix
- * gave, or took from its subdirectory, is refused like the suffix's other parts too, since the `::`
- * may have belonged to the location.
+ * A correction, `::<subdir>=<name>`, has no location for its `::` to have belonged to, so the
+ * advice to end the argument with one would name an argument that cannot mean anything.
  */
-private fun unusableRefName(spec: RepoSpec, raw: String): UsageError {
-    val said = "'${spec.name}' cannot be a repository name (in '$raw'): it becomes a tag prefix, and " +
-        "git will not have it in a ref name -- give the input a name, as ${InputRemedy(spec).named()}"
-    val fromSuffix = spec.given != null || spec.subdir != null
-    return UsageError(if (fromSuffix) "$said; or, " + InputRemedy(raw).wholeLocation() else said)
-}
+private fun suffixRemedy(raw: String): String =
+    if (raw.lastIndexOf(SEPARATOR) == 0) "" else " -- " + InputRemedy(raw).wholeLocation()
 
 /**
  * Refuses a location cut short inside a bracketed host.
@@ -234,27 +226,16 @@ private fun splitAtEquals(suffix: String): Pair<String, String?> {
  *
  * Both are refused rather than escaped, and the grammar rests on the first of them: with no colon
  * anywhere in a suffix, a suffix cannot hold a `::`, so the last `::` in the argument is always the
- * separator. An escape would have bought a name git could not use in a ref anyway.
+ * separator. An escaped `:` would have bought a name git could not use in a ref, which under the
+ * default prefixes is where a name goes.
  *
  * A second `=` reaches this only in the name, the first one having ended the subdirectory.
  */
 private fun refuseSeparators(text: String, part: String, raw: String) {
-    val remedy = " -- " + InputRemedy(raw).wholeLocation()
+    val remedy = suffixRemedy(raw)
     if (':' in text) throw UsageError("a ':' cannot appear in the $part (in '$raw')$remedy")
     if ('=' in text) throw UsageError("a '=' cannot appear in the $part (in '$raw')$remedy")
 }
-
-/**
- * Whether [name] can stand as one component of a ref name.
- *
- * The name becomes a tag prefix (`refs/tags/<name>/v1.2`), a branch prefix
- * (`refs/heads/<name>/wip`), and the namespace under `refs/remotes/` that `--keep-remotes` writes. A
- * spelling git will not accept in a ref is therefore not a quirk of taste but an argument that
- * cannot be carried out.
- * Asked of [TargetRepository.isRefName], the rule every ref the output is given is held to.
- */
-internal fun isRefComponent(name: String): Boolean =
-    TargetRepository.isRefName(Constants.R_TAGS + name + "/x")
 
 /**
  * [location] as a path, or a usage error naming it.
@@ -329,7 +310,7 @@ private fun repoNameFromLocation(location: String): String {
  * What is on disk never changes the reading — this only refuses to go on, naming the remedy.
  */
 internal fun checkSplit(spec: RepoSpec, raw: String) {
-    if (spec.isRemote || !spec.split) return
+    if (spec.isRemote || !spec.split || spec.isCorrection) return
     val whole = try {
         Path.of(raw)
     } catch (e: InvalidPathException) {

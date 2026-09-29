@@ -306,6 +306,39 @@ class BraidPipelineIT {
     }
 
     @Test
+    fun `every template takes {subdir}, where each input lands`() {
+        val ids = reference()
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { it.notes(notes = mapOf(ids.getValue("a1") to "n\n")) }
+        val out = tmp.resolve("by-subdir.git")
+
+        // The subject prefix has its own test; every other template is here, each written so that
+        // only {subdir} can produce what is asserted.
+        braid(
+            "-o", out.toString(),
+            "--tag-prefix", "{subdir}/",
+            "--branch-prefix", "{subdir}/",
+            "--notes", "--notes-prefix", "{subdir}/",
+            "--provenance-trailer", "From: {subdir}",
+            "--ref", "refs/tags/* backend::refs/heads/feature:refs/heads/{subdir}/feat",
+            "--ref", "webui::refs/heads/esbuild-experiment",
+            path("backend.git") + "::libs/backend", path("webui.git") + "::apps/webui",
+        )
+
+        GitCli.requireGit()
+        assertEquals(
+            listOf(
+                "refs/heads/apps/webui/esbuild-experiment", "refs/heads/libs/backend/feat", "refs/heads/main",
+                "refs/notes/libs/backend/commits",
+                "refs/tags/apps/webui/v2.0", "refs/tags/libs/backend/v1.0",
+            ),
+            GitCli.run(out, "for-each-ref", "--format=%(refname)").lines().sorted(),
+        )
+        val trailers = GitCli.run(out, "log", "--format=%(trailers:key=From,valueonly)", "main").lines()
+            .filter { it.isNotBlank() }.toSet()
+        assertEquals(setOf("libs/backend", "apps/webui"), trailers)
+    }
+
+    @Test
     fun `--keep-remotes mirrors a mainline the selection never took`() {
         val ids = reference()
         val out = tmp.resolve("narrowed.git")
@@ -671,9 +704,10 @@ class BraidPipelineIT {
 
     @Test
     fun `one quoted argument may hold several space-separated values`() {
-        // A space cannot occur in a ref name, so splitting on it can never cut a pattern or a branch
-        // name in half. That is what lets one shell word carry a list — and it has to mean exactly
-        // what repeating the option means, which is what this asserts rather than assumes.
+        // A space cannot occur in a ref name or in an input's name, so splitting on it can never cut
+        // a pattern, its scope or a branch name in half. That is what lets one shell word carry a
+        // list — and it has to mean exactly what repeating the option means, which is what this
+        // asserts rather than assumes.
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
             r.branch("main", a1)

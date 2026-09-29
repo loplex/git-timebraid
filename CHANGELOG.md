@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Twenty-nine changes alter what a command line written for 0.1.0 does:
+Thirty changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -77,8 +77,10 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   0.1.0 read an input named by its working tree, or by a path holding no repository, from the one
   `GIT_DIR` named.
 
-- A remote input whose name finds a clone of another URL under `.timebraid-clones/` is refused.\
-  0.1.0 refreshed that clone and braided it in place of the URL given.
+- A remote input's clone under `.timebraid-clones/` is named by its URL, not by the input's name.\
+  0.1.0's clones there are not reused, and the first run downloads each URL again.\
+  Two URLs deriving one name no longer share a clone: 0.1.0 refreshed the first one's and braided
+  it in place of the URL given.
 
 - A ref name with a component ending in `.lock` is refused, from `--tag-prefix '{repo}.lock/'` or
   an input named `x.lock` alike.\
@@ -143,6 +145,9 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   0.1.0 braided it as two inputs, each against the other, wherever the two arguments gave it
   different names.
 
+- `--tag-prefix` substitutes `{subdir}` as well as `{repo}`.\
+  0.1.0 substituted only `{repo}` there, and wrote a `{subdir}` into the tag's name as it stood.
+
 ### Changed
 
 - **`<path-or-url>=<subdir>` is now `<path-or-url>::<subdir>`.**\
@@ -156,16 +161,44 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   `::libs/core` places an input and calls it `core`.\
   `::libs/core=legacy` sets the two apart.
 
+- **A name is a label, and two inputs may share one; the destination tells them apart.**\
+  0.1.0 refused two inputs of one name, which is what two directories called `core` derive.\
+  Two inputs placed at one destination are refused instead, on the command line, naming both and
+  offering each argument among them a subdirectory of its own; a `--scan` finding stays where it
+  sits.\
+  A reference to a shared name — a pattern's `<input>::`, `--root-repo` — is refused as naming
+  both, and so are two inputs `--keep-remotes` would add as one remote.\
+  Two of one name meeting on a ref name are refused naming `{subdir}`, which keeps them apart
+  where `{repo}` cannot.
+
+- **A name may hold a `/`, and is held to git's rules only where it lands in a ref name.**\
+  A prefix holding `{repo}`, or `{subdir}` for the input at the root, puts it in one — the tag and
+  branch prefixes whether or not the run writes a tag or a branch, the notes prefix only under
+  `--notes` — and so does `--keep-remotes`, naming a remote after it; a name those refuse is refused
+  on the command line, naming the option.\
+  A pattern's destination holding `{repo}`, and `{subdir}` for the input at the root, put it in one
+  too, checked with every other ref name before the output exists. Where none of these puts it in a
+  ref, a name is a label.\
+  It holds no whitespace and no `:`, and opens with no `^`, wherever it is used, since a pattern's
+  `<input>::` has to be able to spell it.\
+  Two `--keep-remotes` remotes one of which is a directory of the other, `libs` and `libs/core`,
+  are refused: a pruning fetch of the outer one deletes what the inner one fetched, and a branch of
+  the outer named after the inner's last segment cannot be fetched at all.
+
 - **Neither the destination nor the name may be written with a `:` or a `=`.**\
   Both are refused rather than escaped.\
-  For the name the `:` costs nothing: git refuses one in a ref name, and the name becomes a tag
-  prefix.\
+  For the name the `:` costs little: git refuses one in a ref name, and under the default prefixes
+  the name becomes a tag prefix.\
   The `=` is what separates the subdirectory from the name, so it is refused in both although git
   accepts one in a ref; a name derived from the location keeps a `=` its last segment holds.
 
 - **`--subject-prefix` defaults to `{repo}: `, not `{subdir}: `.**\
   A destination can be nested arbitrarily deep.\
-  The name is one segment, and is what identifies an input everywhere else.
+  A name defaults to one segment, the last of the destination or of the location.
+
+- **`--tag-prefix` substitutes `{subdir}`, where the input lands, beside `{repo}`.**\
+  As `--subject-prefix` already did.\
+  The input at the output root gives its name there.
 
 - **The branch qualifier applies to every branch, not only a shared one.**\
   It used to go on only where two inputs had used the name.\
@@ -214,6 +247,7 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   note carried over unchanged would be attached to nothing.\
   `--notes-prefix` qualifies the refs, `{repo}/` by default: an input with notes usually has
   `refs/notes/commits`.\
+  It substitutes `{repo}` and `{subdir}`, as every template does.\
   A note on an object the run did not write is skipped, and the closing report says how many.\
   The history of a notes ref is not carried over — the output's is one commit, keeping the input's
   author, committer and message.
@@ -232,7 +266,7 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   it.\
   `refs/tags/` and `refs/heads/` may be given as a bare namespace, handing the rest to
   `--tag-prefix` or `--branch-prefix`.\
-  `{repo}` is substituted, which is what makes an unscoped destination safe.\
+  `{repo}` and `{subdir}` are substituted, which is what makes an unscoped destination safe.\
   A destination meeting another input's ref is refused naming both, and under `--keep-remotes` so
   is one under an input's `refs/remotes/<name>/`, where a pruning fetch would delete it.\
   One under `refs/timebraid-fetch/` is refused as well: the run parks the refs it fetches there,
@@ -241,9 +275,10 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   without dropping the commits only they reach.\
   Available on `-b`, `--ref` and `--label-ref`, the three that write refs; refused on
   `--interleave-ref`, which writes none.\
-  Unlike git's fetch, a destination may be a namespace and may hold `{repo}`, a pattern with stars
-  may go without a destination, which git's fetch allows only in a negative refspec, or name one
-  ref as its destination, and there is no `+`, no empty pattern or destination and no short name.
+  Unlike git's fetch, a destination may be a namespace and may hold `{repo}` and `{subdir}`, a
+  pattern with stars may go without a destination, which git's fetch allows only in a negative
+  refspec, or name one ref as its destination, and there is no `+`, no empty pattern or destination
+  and no short name.
 
 - **A namespace beyond `refs/heads/` and `refs/tags/` is read when a pattern names it.**\
   A Gerrit `refs/changes/`, a forge's `refs/pull/`, the branches an ordinary clone keeps under
@@ -258,11 +293,12 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   A pattern aimed at `refs/notes/` is still refused, naming `--notes`.
 
 - **`--branch-prefix TEMPLATE`** — the qualifier on every recreated branch.\
-  `{repo}` is substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
+  `{repo}` and `{subdir}` are substituted; the default `{repo}/` matches what `--tag-prefix` does
+  for tags.\
   An empty value asks for the plain names, and refuses two inputs meeting on one.
 
 - **`--provenance-trailer TEMPLATE`** — the line `--provenance` writes.\
-  `{repo}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
+  `{repo}`, `{subdir}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
   Leaving out `{commit}` or `{parents}` keeps the trailer and gives up what makes it checkable.
 
 - **A destination may be a nested path.**\
@@ -345,7 +381,10 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   Every repository under `DIR` becomes an input, placed in the output where it sits on disk.\
   `DIR` itself lands at the output root when it is a repository.\
   A repository is not descended into, and the run's own output is left out.\
-  A `<repo>` argument naming one corrects that finding rather than adding a second input.
+  `::<subdir>=<name>`, with no location, renames what it found at `<subdir>`, and `::=<name>` the
+  base directory; a correction never moves a finding.\
+  An argument with a location is always another input, and one naming a repository the scan found
+  is refused, naming the correction.
 
 - **`--dissolve-submodules`** — let an input take the place of the gitlink it lands on.\
   The `[submodule]` section naming that path is left out of `.gitmodules` with it.\
@@ -465,11 +504,6 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   The reading is unchanged, and which one was meant is still not guessed at.\
   The run fails on the location either way, so the refusal says what it cut off.
 
-- **A repository name two inputs derive is refused naming every location that derives it.**\
-  The refusal listed every input's name, the repeated one among them, and located none of them.\
-  Under `--scan`, new in this release, that would have left nothing to act on at all, since the
-  directories were never typed.
-
 - **`--keep-remotes` mirrors each input's mainline whether the selection took it or not.**\
   A run narrowed away from the mainline, `-b feature` for one, left its original commits in the
   output with nothing naming them.\
@@ -534,10 +568,13 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
 - **A dry run without `-o` removes the clones it made.**\
   Each such run cloned every URL input into a new temporary directory and left it there.
 
-- **A clone that another URL left under `.timebraid-clones/` is refused, not refreshed.**\
-  A clone is found by the input's name, and two locations can derive one: 0.1.0 refreshed the
+- **Two URLs never share a clone under `.timebraid-clones/`.**\
+  A clone was found by the input's name, and two locations can derive one: 0.1.0 refreshed the
   first one's clone and braided it as the second.\
-  The refusal names both URLs and the directory to remove.
+  A clone is now named by its URL, its last segment and a hash of the whole, so the same URL finds
+  it again whatever the run names or places the input.\
+  A clone of another URL found in its place is refused, naming both URLs and the directory to
+  remove.
 
 - **A ref name git refuses is no longer written.**\
   0.1.0 asked JGit, which lets a component ending in `.lock` through where git does not:
@@ -545,7 +582,8 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   counted them.\
   Such a name is refused now, by git's rules.
 
-- **A name git would not accept inside a ref is refused when it is read.**\
+- **A name git would not accept where a prefix holding `{repo}` or `--keep-remotes` puts it in a
+  ref is refused when it is read.**\
   0.1.0 let one through, `my repo` from the location `/path/my repo` among them.\
   An input whose name a ref carried (a tag, a branch shared with another input, a `--keep-remotes`
   mirror) then failed at the write of that ref, the braid already written; one no ref carried went

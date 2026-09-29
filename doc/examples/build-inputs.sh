@@ -262,7 +262,7 @@ commit_path_at "$EX/platform/libs/backend" a1 20 src/Main.kt
 new_repo "$EX/platform/libs/core"
 commit_path_at "$EX/platform/libs/core" c1 25 core.kt
 
-new_repo "$EX/platform/tools/core" # derives the same name as libs/core, which the scan refuses
+new_repo "$EX/platform/tools/core" # derives the same name as libs/core, so a reference to it names both
 commit_path_at "$EX/platform/tools/core" t1 30 tool.sh
 
 new_repo "$EX/platform/.cache/mirror" # skipped: a dot-name is never walked
