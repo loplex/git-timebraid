@@ -275,9 +275,9 @@ class RefNames(
      * once git's grace period for unreachable objects, two weeks by default, has passed. They go
      * under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
      * input do not land on the same name. That keeps the usual pair apart, and not every pair git
-     * accepts: a branch the selection took that is literally named `tags/v1.0` still meets the tag
-     * `v1.0` here, and that is refused, since either write winning would leave the other ref's
-     * originals with no mirror.
+     * accepts: a branch literally named `tags/v1.0` still meets the tag `v1.0` here, and that is
+     * refused, since either write winning would leave the other ref's originals with no mirror —
+     * the mainline's included, which is mirrored whether the selection took it or not.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
      * What an annotated tag holds beyond its target — its tagger, its message — is recreated in
@@ -344,10 +344,23 @@ class RefNames(
                 added++
             }
             // Its own sha, not one the graph has to be asked for: a selection that never took the
-            // mainline has no [BraidOutRef] to read an original off.
+            // mainline has no [BraidOutRef] to read an original off. A selection that did has
+            // mirrored it above; any other ref holding its name is a meeting like the one there.
             val mainline = prefix + input.mainlineBranch
             refuseClaimed(mainline, input, prefix)
-            if (refs.putIfAbsent(mainline, RefSource.Original(input.mainlineTip)) == null) added++
+            val home = Constants.R_HEADS + input.mainlineBranch
+            when (val first = mirroredFrom[mainline]) {
+                null -> {
+                    refs[mainline] = RefSource.Original(input.mainlineTip)
+                    added++
+                }
+                home -> Unit
+                else -> throw IllegalArgumentException(
+                    "'$first' and '$home' of '${input.source.name}' would both be mirrored as " +
+                        "'$mainline'; rename one of them in the input, narrow the run, or drop " +
+                        "--keep-remotes"
+                )
+            }
         }
         // A destination meeting no mirror can still sit among them, and the first pruning fetch
         // deletes it for naming no branch of the input: the same loss as a meeting, only later.

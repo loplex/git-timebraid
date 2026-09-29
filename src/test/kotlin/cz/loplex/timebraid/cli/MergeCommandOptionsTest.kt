@@ -459,6 +459,35 @@ class MergeCommandOptionsTest {
     }
 
     @Test
+    fun `a mainline whose mirror name a selected tag takes is refused, not left unnamed`() {
+        TestRepoBuilder.create(tmp.resolve("backend.git")).use { repo ->
+            val a1 = repo.commit("a1", at = Instant.parse("2021-01-01T09:00:00Z"))
+            val a2 = repo.commit("a2", parents = listOf(a1), at = Instant.parse("2021-01-01T10:00:00Z"))
+            // The mainline is the branch `tags/v1.0`, and the tag `v1.0` mirrors to its name.
+            repo.branch("tags/v1.0", a2)
+            repo.lightweightTag("v1.0", a1)
+        }
+
+        // The selection takes the tag and not the mainline, which is read and mirrored all the
+        // same: before, the tag's mirror won and the mainline's was dropped without a word.
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run", "--keep-remotes", "--mainline-branch", "tags/v1.0", "--ref", "refs/tags/*",
+                tmp.resolve("backend.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(
+            result.output.contains(
+                "'refs/tags/v1.0' and 'refs/heads/tags/v1.0' of 'backend' would both be mirrored as " +
+                    "'refs/remotes/backend/tags/v1.0'"
+            ),
+            result.output,
+        )
+    }
+
+    @Test
     fun `a file URL input is cloned next to the output`() {
         corpus()
         val out = tmp.resolve("merged.git")

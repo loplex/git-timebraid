@@ -92,9 +92,8 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
 - `--keep-remotes` beside a `-b` that leaves the mainline out mirrors each input's mainline too.\
   0.1.0 wrote a remote-tracking ref only for the branches `-b` took, beside every tag.
 
-- `--keep-remotes` refuses to mirror both a branch `tags/<name>` that `-b` took and a tag `<name>`
-  of one input.\
-  0.1.0 mirrored both to one name, and kept the tag's.
+- `--keep-remotes` refuses to mirror both a branch `tags/<name>` and a tag `<name>` of one input.\
+  0.1.0 kept the tag's mirror and left the branch with none, whether `-b` took it or not.
 
 - A `--tag-prefix` that does not keep `{repo}` apart from the tag name, `''` and any without
   `{repo}` among them, refuses two inputs whose tags meet on a name.\
@@ -477,11 +476,11 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   They were fetched and rewritten under the output's own branch, and `git gc` pruned them once
   they were older than its grace period for unreachable objects, two weeks by default.
 
-- **A branch the selection took and a tag of one input meeting on one `--keep-remotes` mirror
-  name are refused.**\
+- **Two refs of one input meeting on one `--keep-remotes` mirror name are refused.**\
   A branch literally called `tags/v1.0` mirrors to the name the tag `v1.0` does.\
   0.1.0 kept the tag's mirror, leaving the branch's originals unnamed, and the closing report
   counted both.\
+  The mainline is one of those refs whether the selection took it or not.\
   The refusal names both refs.
 
 - **A logged subprocess names the repository it ran in.**\
