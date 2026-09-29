@@ -94,7 +94,7 @@ class CommitGraphReaderTest {
 
         open("backend", "webui").useAll { repos ->
             val error = assertThrows<IllegalArgumentException> {
-                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlineBranch = listOf("develop"))
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, mainlines(repos, listOf("develop")))
             }
             assertTrue(error.message!!.contains("webui"))
         }
@@ -119,10 +119,11 @@ class CommitGraphReaderTest {
 
         open("backend", "webui").useAll { repos ->
             fun read(vararg patterns: String) =
-                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = refPatterns(repos, patterns.toList()))
 
             // By the namespace each ref lands in, which is what the output actually holds.
             fun under(inputs: BraidInputs, namespace: String) = inputs.sources[0].refs
+                .map { OutputName.of(it, inputs.sources[0].source.name) }
                 .filter { it.namespace == namespace }
                 .map { it.name }
                 .sorted()
@@ -178,9 +179,10 @@ class CommitGraphReaderTest {
 
         open("backend", "webui").useAll { repos ->
             fun read(vararg patterns: String) =
-                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = patterns.toList())
+                CommitGraphReader.read(repos, OrderBy.COMMITTER, refs = refPatterns(repos, patterns.toList()))
 
             fun under(inputs: BraidInputs, index: Int, namespace: String) = inputs.sources[index].refs
+                .map { OutputName.of(it, inputs.sources[index].source.name) }
                 .filter { it.namespace == namespace }
                 .map { it.name }
                 .sorted()
@@ -282,7 +284,7 @@ class CommitGraphReaderTest {
                 val inputs = CommitGraphReader.read(
                     repos,
                     OrderBy.COMMITTER,
-                    interleaveRefs = patterns.toList(),
+                    interleaveRefs = interleavePatterns(repos, patterns.toList()),
                 )
                 return inputs.interleaveTips.map { it.id }.toSet()
             }
