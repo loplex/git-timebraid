@@ -374,8 +374,7 @@ private fun scopeOf(option: String, value: String, inputs: List<String>): Pair<I
  * [scopeOf] knows only their names.
  */
 class SharedScope(val option: String, val value: String, val input: String, count: Int) : IllegalArgumentException(
-    "$option '$value' is for input '$input', and $count inputs are called that; give one of them another " +
-        "name, with '=<name>' at the end of its <repo>"
+    "$option '$value' is for input '$input', and $count inputs are called that; give one of them another name"
 )
 
 /** The `::` that ends a scope — see [scopeOf]. */
