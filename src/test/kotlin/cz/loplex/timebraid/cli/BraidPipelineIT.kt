@@ -15,8 +15,11 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.createDirectories
@@ -248,6 +251,58 @@ class BraidPipelineIT {
         braid(*(listOf("-o", out.toString()) + inputs).toTypedArray())
         GitCli.requireGit()
         GitCli.run(out, "rev-parse", "--verify", "refs/remotes/backend/x")
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "Windows resolves a '..' as text, before any symlink, so it leads where its text does",
+    )
+    fun `an input spelled with a dot-dot past a symlink is fetched and kept from where it is read`() {
+        val ids = reference()
+        val out = tmp.resolve("merged.git")
+        // `hop/..` is backend.git as the filesystem has it, `hop` leading into it; as text it is the
+        // directory `hop` sits in, which holds no repository at all.
+        Files.createSymbolicLink(tmp.resolve("hop"), tmp.resolve("backend.git/refs"))
+
+        braid("-o", out.toString(), "--keep-remotes", "${path("hop")}/..::=backend", path("webui.git"))
+
+        GitCli.requireGit()
+        GitCli.fsck(out)
+        assertEquals(ids.getValue("a3").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/main"))
+        assertEquals(
+            tmp.resolve("backend.git").toRealPath().toString(),
+            GitCli.run(out, "config", "remote.backend.url"),
+        )
+    }
+
+    @Test
+    fun `an input spelled through a symlink with no dot-dot is kept as it was written`() {
+        reference()
+        val out = tmp.resolve("merged.git")
+        // Nothing here leads a text elsewhere than the filesystem does, so the remote keeps the
+        // symlink, as 0.1.0 recorded it, and follows it wherever it is pointed later.
+        val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), tmp.resolve("backend.git"))
+
+        braid("-o", out.toString(), "--keep-remotes", "${alias}::=backend", path("webui.git"))
+
+        GitCli.requireGit()
+        assertEquals(alias.toAbsolutePath().normalize().toString(), GitCli.run(out, "config", "remote.backend.url"))
+    }
+
+    @Test
+    fun `a dot-dot that leads where its text does keeps the symlink after it`() {
+        reference()
+        val out = tmp.resolve("merged.git")
+        // `hop/..` is the same directory as text and on disk, `hop` leading to a directory beside
+        // it, so the symlink after it is kept, as it is with no dot-dot at all.
+        Files.createSymbolicLink(tmp.resolve("hop"), Files.createDirectories(tmp.resolve("sub")))
+        val alias = Files.createSymbolicLink(tmp.resolve("alias.git"), tmp.resolve("backend.git"))
+
+        braid("-o", out.toString(), "--keep-remotes", "${tmp.resolve("hop/../alias.git")}::=backend", path("webui.git"))
+
+        GitCli.requireGit()
+        assertEquals(alias.toAbsolutePath().normalize().toString(), GitCli.run(out, "config", "remote.backend.url"))
     }
 
     @Test
@@ -2515,7 +2570,7 @@ class BraidPipelineIT {
 
             assertEquals(1, result.statusCode, result.output)
             assertTrue(
-                result.output.contains("'webui' at ${path("webui.git")} is a shallow clone"),
+                result.output.contains("'webui' at ${tmp.resolve("webui.git").toRealPath()} is a shallow clone"),
                 result.output,
             )
             assertTrue(!out.toFile().exists(), "the output should not have been created")

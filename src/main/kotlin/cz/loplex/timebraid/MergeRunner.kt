@@ -33,19 +33,36 @@ class ResolvedInput(
      * found, the absolute path it was found at.
      */
     val location: String,
-    val isRemote: Boolean,
     val name: String,
     /**
      * Where the content lands in the output — one name or a nested path — or `null` for the
      * repository placed at the root.
      */
     val subdir: String?,
+    /** Where a local input is on disk, or `null` for a remote one, which is nowhere until cloned. */
+    val local: LocalPlace?,
+) {
+    val isRemote: Boolean get() = local == null
+}
+
+/** A local input's repository, as the filesystem has it. */
+class LocalPlace(
     /**
-     * The git directory of a local input, as the filesystem has it: its real path, so `core`,
-     * `core/.git` and a symlink to either are one directory. `null` for a remote input, which has
-     * none until it is cloned.
+     * The git directory's real path, so `core`, `core/.git` and a symlink to either are one
+     * directory: what tells two inputs, or an input and the output, apart.
      */
-    val gitDir: Path?,
+    val gitDir: Path,
+    /**
+     * The location's real path, which the input is opened and fetched from, so a symlink or a `..`
+     * past one leads both to the same directory.
+     */
+    val path: Path,
+    /**
+     * What `--keep-remotes` records as the input's URL: the location made absolute and normalized
+     * as text, a symlink in it kept as written, unless that text leads somewhere other than [path],
+     * as a `..` past a symlink can; that one is recorded as [path] itself.
+     */
+    val remote: String,
 )
 
 /** Everything the runner needs, already validated by the CLI layer. */
@@ -362,8 +379,10 @@ class MergeRunner(
      * run removes when it ends.
      */
     private fun localInputs(): List<LocalInput> {
+        // A local input is used where the command line resolved it.
+        fun LocalPlace.input(name: String) = LocalInput(path, name, remote)
         if (request.inputs.none { it.isRemote }) {
-            return request.inputs.map { LocalInput(Path.of(it.location), it.name, localRemote(it.location)) }
+            return request.inputs.mapNotNull { input -> input.local?.input(input.name) }
         }
         progress.phase("making every input a local repository")
         val root = cloneRoot().also {
@@ -382,9 +401,7 @@ class MergeRunner(
             }
         }
         return request.inputs.map { input ->
-            if (!input.isRemote) {
-                return@map LocalInput(Path.of(input.location), input.name, localRemote(input.location))
-            }
+            input.local?.let { return@map it.input(input.name) }
 
             val dir = root.resolve("${input.name}.git")
             if (RepositoryCache.FileKey.isGitRepository(dir.toFile(), FS.DETECTED)) {
@@ -417,17 +434,6 @@ class MergeRunner(
         }
     }
 
-    /**
-     * A local input recorded as its own remote URL, made absolute.
-     *
-     * `git remote add` stores the string verbatim, and every later `git fetch` runs with the
-     * *output* repository as its working directory — so a relative path, which is the ordinary way
-     * to name a repository on the command line, would be resolved against the wrong directory and
-     * the fetch would fail. A remote input keeps its URL, which needs no such treatment.
-     */
-    private fun localRemote(location: String): String =
-        Path.of(location).toAbsolutePath().normalize().toString()
-
     private fun cloneRoot(): Path =
         request.output?.toAbsolutePath()?.parent?.resolve(CLONE_DIR)
             ?: Files.createTempDirectory("timebraid-clones-").also { temporaryClones = it }
@@ -444,7 +450,14 @@ class MergeRunner(
         }
     }
 
-    /** An input resolved to a local repository, plus the location to record if `--keep-remotes`. */
+    /**
+     * An input resolved to a local repository, plus the location to record if `--keep-remotes`.
+     *
+     * A local input's is the location made absolute, as [LocalPlace.remote] says: `git remote add`
+     * stores the string verbatim, and every later `git fetch` runs with the *output* as its working
+     * directory, so a relative path would be resolved against the wrong directory. A remote input
+     * keeps its URL.
+     */
     private class LocalInput(val path: Path, val name: String, val remote: String)
 
     /** The two halves of filling an output: what was fetched in, and what the braid wrote on top. */

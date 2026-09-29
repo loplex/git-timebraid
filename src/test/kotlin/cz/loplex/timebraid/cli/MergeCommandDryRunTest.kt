@@ -383,16 +383,12 @@ class MergeCommandDryRunTest {
         TestRepoBuilder.create(separateStore).use { it.branch("main", it.commit("s1")) }
         Files.createDirectories(separate)
         Files.writeString(separate.resolve(".git"), "gitdir: $separateStore\n")
-        Files.createDirectories(pointed.resolve("sub"))
         val same = listOf(
             tree.resolve(".git") to tree, tree to tree.resolve(".git"), alias to backend,
             gitDir to tree, tree to gitDir,
             kept to linked, linked to kept, linked.resolve(".git") to linked,
             pointedStore to pointed, pointed to pointedStore,
             separateStore to separate, separate to separateStore,
-            // A `..` past a symlink from inside `tree`: read from `pointed`, but fetched from `tree`,
-            // which the fetch names by the path normalized as text.
-            tree to Files.createSymbolicLink(tree.resolve("sym"), pointed.resolve("sub")).resolve(".."),
             tree.resolve(".git") to worktree, worktree to tree,
             // A bare repository and a `.git` inside it: git would take the new one for it.
             backend.resolve(".git") to backend,
@@ -443,7 +439,7 @@ class MergeCommandDryRunTest {
         Files.createDirectories(pointed)
         Files.writeString(pointed.resolve(".git"), "gitdir: $pointedStore\n")
         // A `..` past a symlink into a working tree whose git directory is kept elsewhere: its graph
-        // is read from the one `pointed/.git` names, though its objects are fetched by the path.
+        // and its objects both come from the one `pointed/.git` names.
         Files.createDirectories(pointed.resolve("sub"))
         val up = Files.createSymbolicLink(tmp.resolve("up"), pointed.resolve("sub"))
         // A `..` past a symlink: `dotdot/..` is backend.git itself, not the directory `dotdot` sits in.
@@ -459,6 +455,19 @@ class MergeCommandDryRunTest {
             assertEquals(1, result.statusCode, "-o $o, input $input: ${result.output}")
             assertTrue(result.output.contains("is the output (-o)"), "-o $o, input $input: ${result.output}")
         }
+
+        // The same kind of `..` from inside `tree` is `pointed`, read and fetched alike, and so is
+        // not the output `tree`: a lexical `..` would have fetched it from `tree`.
+        val tree = tmp.resolve("tree")
+        TestRepoBuilder.create(tree, bare = false).use { it.branch("main", it.commit("t1")) }
+        val inside = Files.createSymbolicLink(tree.resolve("sym"), pointed.resolve("sub")).resolve("..")
+        val apart = MergeCommand().test(
+            listOf(
+                "--dry-run", "--force", "-o", tree.toString(),
+                inside.toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+        assertEquals(0, apart.statusCode, apart.output)
     }
 
     @Test
@@ -920,7 +929,7 @@ class MergeCommandDryRunTest {
         assertEquals(0, aliased.statusCode, aliased.output)
         assertTrue(!aliased.output.contains("merged -> "), aliased.output)
 
-        val named = MergeCommand().test(listOf("--dry-run", "-o", out, path("libs.git"), out))
+        val named = MergeCommand().test(listOf("--dry-run", "-o", out, path("tree/libs/backend.git"), out))
         assertEquals(1, named.statusCode, named.output)
         assertTrue(named.output.contains("is the output (-o)"), named.output)
 

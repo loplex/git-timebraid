@@ -27,6 +27,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import com.github.ajalt.mordant.terminal.Terminal
 import cz.loplex.timebraid.MergeRequest
 import cz.loplex.timebraid.MergeResult
+import cz.loplex.timebraid.LocalPlace
 import cz.loplex.timebraid.MergeRunner
 import cz.loplex.timebraid.ResolvedInput
 import cz.loplex.timebraid.git.CommitGraphReader
@@ -37,7 +38,6 @@ import cz.loplex.timebraid.git.SourceRepository
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import org.eclipse.jgit.lib.Constants
-import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
 import java.io.IOException
 import java.nio.file.Files
@@ -552,7 +552,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         val outputPlaces = outputRepo.output?.let { placesOf(it, withGitDir = !outputContent.bare) }
         // The scan leaves the output itself out, however it is spelled, but not a working tree whose
         // git directory the output is: `-o tree/x/.git` beside a found `tree/x` is refused here.
-        scanned.firstOrNull { outputPlaces != null && meet(inputPlacesOf(it.path), outputPlaces) }?.let {
+        scanned.firstOrNull { outputPlaces != null && meet(placesOf(it.path), outputPlaces) }?.let {
             throw UsageError(
                 "'${shownPath(it.path.toString())}', which --scan found, is the output (-o), which a run " +
                     "cannot braid into itself"
@@ -560,11 +560,6 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         }
         for (spec in specs) {
             val path = localPathOf(spec)
-            if (path != null && outputPlaces != null && meet(inputPlacesOf(Path.of(spec.location)), outputPlaces)) {
-                throw UsageError(
-                    "'${spec.location}' is the output (-o), which a run cannot braid into itself"
-                )
-            }
             if (path == null || path !in byPath) {
                 extras += spec
             } else if (overrides.put(path, spec) != null) {
@@ -598,9 +593,14 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
                 )
             }
         }
-        return merged.map { input ->
+        val resolved = merged.map { input ->
             resolved(input.location, input.isRemote, input.name, input.subdir.takeIf { input.name != placement.rootRepo })
         }
+        resolved.firstOrNull { input ->
+            val local = input.local
+            local != null && outputPlaces != null && meet(placesOf(local.path), outputPlaces)
+        }?.let { throw UsageError("'${it.location}' is the output (-o), which a run cannot braid into itself") }
+        return resolved
     }
 
     /**
@@ -631,21 +631,21 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * made it: the command line is well formed, and what it names is not there.
      */
     private fun resolved(location: String, isRemote: Boolean, name: String, subdir: String?): ResolvedInput {
-        if (isRemote) return ResolvedInput(location, isRemote = true, name, subdir, gitDir = null)
-        val gitDir = try {
-            SourceRepository.gitDirOf(Path.of(location))?.toPath()?.toRealPath()
+        if (isRemote) return ResolvedInput(location, name, subdir, local = null)
+        val local = try {
+            val path = Path.of(location)
+            SourceRepository.gitDirOf(path)?.let { gitDir ->
+                val real = path.toRealPath()
+                val text = path.toAbsolutePath().normalize()
+                val remote = if (Files.exists(text) && text.toRealPath() == real) text else real
+                LocalPlace(gitDir.toPath().toRealPath(), real, remote.toString())
+            }
         } catch (e: InvalidPathException) {
             null
         } catch (e: IOException) {
             throw CliktError("cannot read '$location': ${e.message}")
         }
-        return ResolvedInput(
-            location,
-            isRemote = false,
-            name,
-            subdir,
-            gitDir ?: throw CliktError("no git repository at $location"),
-        )
+        return ResolvedInput(location, name, subdir, local ?: throw CliktError("no git repository at $location"))
     }
 
     /**
@@ -1145,20 +1145,6 @@ private fun placesOf(location: Path, withGitDir: Boolean = false): Set<Path> {
     if (location.fileName?.toString() == ".git") location.toAbsolutePath().parent?.let { places.add(resolved(it)) }
     for (place in places.toList()) {
         if (place.fileName?.toString() == ".git") place.parent?.let { places.add(it) }
-    }
-    return places
-}
-
-/**
- * The directories an input at [location] takes up ([placesOf]), and those of the git directory its
- * objects are fetched from: `TargetRepository.fetchFrom` names the input by its path normalized as
- * text, which JGit's local transport resolves with `FileKey.resolve`, a sibling `<location>.git` it
- * guesses included. The run reads the input in both places, so the output may meet neither.
- */
-private fun inputPlacesOf(location: Path): Set<Path> {
-    val places = placesOf(location).toMutableSet()
-    RepositoryCache.FileKey.resolve(location.toAbsolutePath().normalize().toFile(), FS.DETECTED)?.let { gitDir ->
-        places.addAll(placesOf(gitDir.toPath()))
     }
     return places
 }

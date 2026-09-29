@@ -31,7 +31,7 @@ class SourceRepository private constructor(
      * wherever the output names or labels the input.
      */
     val name: String,
-    /** Where the repository was opened from, for diagnostics. */
+    /** Where the repository was opened from, which the output fetches it from too. */
     val location: Path,
     private val repository: Repository,
 ) : AutoCloseable {
