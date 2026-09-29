@@ -25,10 +25,10 @@ import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.ajalt.mordant.terminal.Terminal
-import cz.loplex.timebraid.MergeInput
 import cz.loplex.timebraid.MergeRequest
 import cz.loplex.timebraid.MergeResult
 import cz.loplex.timebraid.MergeRunner
+import cz.loplex.timebraid.ResolvedInput
 import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommandException
 import cz.loplex.timebraid.git.OrderBy
@@ -38,9 +38,7 @@ import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.RepositoryCache
-import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.util.FS
-import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
@@ -538,7 +536,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * makes the two composable rather than merely both allowed: renaming is the answer two findings
      * that derive the same name need, and there is no other way to reach one of them.
      */
-    private fun resolveInputs(specs: List<RepoSpec>): List<MergeInput> {
+    private fun resolveInputs(specs: List<RepoSpec>): List<ResolvedInput> {
         val scanned = placement.scan?.let { base ->
             try {
                 RepositoryScan.scan(base, outputRepo.output)
@@ -574,18 +572,18 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
         }
 
-        val merged = ArrayList<MergeInput>(scanned.size + extras.size)
+        val merged = ArrayList<Landing>(scanned.size + extras.size)
         for (found in scanned) {
             val spec = overrides[found.path]
             merged += if (spec == null) {
                 refuseScannedName(found.name, found.path)
-                MergeInput(found.path.toString(), isRemote = false, name = found.name, subdir = found.subdir)
+                Landing(found.path.toString(), isRemote = false, found.name, found.subdir)
             } else {
-                MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: found.subdir)
+                Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: found.subdir)
             }
         }
         for (spec in extras) {
-            merged += MergeInput(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name)
+            merged += Landing(spec.location, spec.isRemote, spec.name, spec.subdir ?: spec.name)
         }
 
         val names = merged.map { it.name }
@@ -601,8 +599,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
             }
         }
         return merged.map { input ->
-            if (input.name != placement.rootRepo) input
-            else MergeInput(input.location, input.isRemote, input.name, subdir = null)
+            resolved(input.location, input.isRemote, input.name, input.subdir.takeIf { input.name != placement.rootRepo })
         }
     }
 
@@ -621,6 +618,34 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         } catch (e: InvalidPathException) {
             null
         }
+    }
+
+    /** An input's subdirectory and name, before its location is looked up on disk. */
+    private class Landing(val location: String, val isRemote: Boolean, val name: String, val subdir: String?)
+
+    /**
+     * An input as the run will use it, its git directory looked up now: a local location that holds
+     * no repository is refused here, before a remote input is cloned or any input read.
+     *
+     * A [CliktError] rather than a usage error, as the same refusal was when opening the input
+     * made it: the command line is well formed, and what it names is not there.
+     */
+    private fun resolved(location: String, isRemote: Boolean, name: String, subdir: String?): ResolvedInput {
+        if (isRemote) return ResolvedInput(location, isRemote = true, name, subdir, gitDir = null)
+        val gitDir = try {
+            SourceRepository.gitDirOf(Path.of(location))?.toPath()?.toRealPath()
+        } catch (e: InvalidPathException) {
+            null
+        } catch (e: IOException) {
+            throw CliktError("cannot read '$location': ${e.message}")
+        }
+        return ResolvedInput(
+            location,
+            isRemote = false,
+            name,
+            subdir,
+            gitDir ?: throw CliktError("no git repository at $location"),
+        )
     }
 
     /**
@@ -665,7 +690,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
      * of them they were. Naming an input is how the clash is settled either way, and with a scan
      * the form is spelled out rather than left to the reader of the `<repo>` grammar.
      */
-    private fun duplicateNames(inputs: List<MergeInput>): UsageError {
+    private fun duplicateNames(inputs: List<Landing>): UsageError {
         val remedy = if (placement.scan == null) {
             " -- give one of them a name, with =<name> at the end of its ::<subdir> suffix (::=<name> " +
                 "where it has none)"
@@ -1109,7 +1134,7 @@ private fun repositoryPlace(path: Path): Path {
 private fun placesOf(location: Path, withGitDir: Boolean = false): Set<Path> {
     val places = mutableSetOf(resolved(location))
     if (withGitDir) places.add(resolved(location.resolve(".git")))
-    gitDirOf(location)?.let { gitDir ->
+    SourceRepository.gitDirOf(location)?.let { gitDir ->
         places.add(resolved(gitDir.toPath()))
         try {
             places.add(resolved(FS.DETECTED.getCommonDir(gitDir).toPath()))
@@ -1136,21 +1161,6 @@ private fun inputPlacesOf(location: Path): Set<Path> {
         places.addAll(placesOf(gitDir.toPath()))
     }
     return places
-}
-
-/**
- * The git directory an existing [location] is or holds, looked up as [SourceRepository.open] looks
- * an input up — the location itself when it is a repository, else its `.git`, a directory or a
- * file naming one elsewhere as a linked worktree's or a submodule's does — or `null`. Nothing is
- * guessed beside it, and the path is not normalized: a `..` past a symlink is the filesystem's.
- */
-private fun gitDirOf(location: Path): File? {
-    val dir = location.toAbsolutePath().toFile()
-    if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) return dir
-    if (!File(dir, ".git").exists()) return null
-    val builder = FileRepositoryBuilder()
-    dir.parentFile?.let { builder.addCeilingDirectory(it) }
-    return builder.findGitDir(dir).gitDir
 }
 
 /**

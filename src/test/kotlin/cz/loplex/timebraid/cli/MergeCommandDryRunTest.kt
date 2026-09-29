@@ -611,6 +611,19 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a local input that is no repository is refused before a remote one is cloned`() {
+        corpus()
+        val remote = tmp.resolve("backend.git").toUri().toString()
+
+        val result = MergeCommand().test(listOf("-o", path("out.git"), remote, path("missing")))
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("no git repository at ${path("missing")}"), result.output)
+        // The clones go beside the output, so a refusal made after them leaves this behind.
+        assertTrue(!Files.exists(tmp.resolve(".timebraid-clones")), result.output)
+    }
+
+    @Test
     @DisabledOnOs(
         value = [OS.WINDOWS],
         disabledReason = "a Windows filename cannot hold a ':', so the directory cannot be created",

@@ -257,21 +257,8 @@ class SourceRepository private constructor(
          * anywhere.
          */
         fun open(location: Path, name: String = defaultName(location)): SourceRepository {
-            val dir = location.toFile()
-            val builder = FileRepositoryBuilder().setMustExist(true)
-            if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) {
-                builder.setGitDir(dir)
-            } else if (File(dir, Constants.DOT_GIT).exists()) {
-                // `.git` is a directory in an ordinary working tree and a file pointing elsewhere in
-                // a linked worktree or a submodule; findGitDir resolves both, which is why it is
-                // still used here. Its first step examines `dir` itself, so a `.git` that is present
-                // and usable settles it there; the ceiling stops it from climbing when that `.git`
-                // turns out to be neither.
-                dir.parentFile?.let { builder.addCeilingDirectory(it) }
-                builder.findGitDir(dir)
-            }
-            require(builder.gitDir != null) { "no git repository at $location" }
-            val repository = builder.build()
+            val gitDir = requireNotNull(gitDirOf(location)) { "no git repository at $location" }
+            val repository = FileRepositoryBuilder().setMustExist(true).setGitDir(gitDir).build()
             try {
                 refuseIncomplete(repository, name, location)
             } catch (e: IllegalArgumentException) {
@@ -319,14 +306,27 @@ class SourceRepository private constructor(
          * yes for every one of them would be its own kind of wrong; [open] does not consult the
          * environment either, for reasons written out there.
          */
-        fun isRepository(location: Path): Boolean {
-            val dir = location.toFile()
-            if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) return true
-            if (!File(dir, Constants.DOT_GIT).exists()) return false
+        fun isRepository(location: Path): Boolean = gitDirOf(location) != null
+
+        /**
+         * The git directory [location] is or holds, as [open] opens it, or `null` when it is
+         * neither.
+         *
+         * The location itself when it is a git directory, else its `.git`: a directory in an
+         * ordinary working tree, and a file naming one elsewhere in a linked worktree or a
+         * submodule. findGitDir resolves both, which is why it is still used here. Its first step
+         * examines the location itself, so a `.git` that is present and usable settles it there;
+         * the ceiling stops it from climbing when that `.git` turns out to be neither. Nothing is
+         * guessed beside the location, and the path is not normalized: a `..` past a symlink is the
+         * filesystem's.
+         */
+        fun gitDirOf(location: Path): File? {
+            val dir = location.toAbsolutePath().toFile()
+            if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) return dir
+            if (!File(dir, Constants.DOT_GIT).exists()) return null
             val builder = FileRepositoryBuilder()
             dir.parentFile?.let { builder.addCeilingDirectory(it) }
-            builder.findGitDir(dir)
-            return builder.gitDir != null
+            return builder.findGitDir(dir).gitDir
         }
 
         /**
