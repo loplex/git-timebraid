@@ -12,7 +12,8 @@ import org.eclipse.jgit.lib.ObjectId
 class WriteOptions(
     /**
      * Prepended to every commit subject.\
-     * `{repo}` and `{subdir}` are substituted.
+     * `{repo}` and `{subdir}` are substituted, as they are in every template here:
+     * the input's name, and where it lands — its name again for the input placed at the output root.
      *
      * The default is the name and not the destination because a destination can be nested arbitrarily deep
      * and the subject line carries it on every commit,
@@ -21,12 +22,11 @@ class WriteOptions(
     val subjectPrefix: String = "{repo}: ",
     /**
      * Prepended to every tag name.\
-     * `{repo}` is substituted, and an empty value qualifies nothing.
+     * `{repo}` and `{subdir}` are substituted, and an empty value qualifies nothing.
      */
     val tagPrefix: String = "{repo}/",
     /**
-     * Prepended to every branch name, as [tagPrefix] is to every tag.\
-     * `{repo}` is substituted.
+     * Prepended to every branch name, as [tagPrefix] is to every tag, `{repo}` and `{subdir}` substituted.
      *
      * It applies wherever a ref pattern has not spelled its destination out,
      * rather than only where two inputs used one name,
@@ -41,8 +41,7 @@ class WriteOptions(
      */
     val branchPrefix: String = "{repo}/",
     /**
-     * Prepended to every recreated notes ref, below `refs/notes/`.\
-     * `{repo}` is substituted.
+     * Prepended to every recreated notes ref, below `refs/notes/`, `{repo}` and `{subdir}` substituted.
      *
      * The same rule as the other two, for the same reason:
      * `refs/notes/commits` is what `git notes` writes by default, so an input with notes usually has that one.\
@@ -61,7 +60,7 @@ class WriteOptions(
     val provenance: Boolean = true,
     /**
      * The trailer [provenance] records.\
-     * `{repo}`, `{commit}` and `{parents}` are substituted.
+     * `{repo}`, `{subdir}`, `{commit}` and `{parents}` are substituted.
      *
      * The default is what makes the promise that every original edge survives checkable rather than merely claimed,
      * so a template that drops `{commit}` or `{parents}` gives that up — which is the caller's to decide.
@@ -317,6 +316,7 @@ class BraidWriter(
 
         val trailer = options.provenanceTrailer
             .replace("{repo}", repo)
+            .replace("{subdir}", subdir)
             .replace("{commit}", original.id.name)
             .replace("{parents}", original.parents.joinToString(",") { it.name }) + "\n"
         val body = prefixed.trimEnd('\n')

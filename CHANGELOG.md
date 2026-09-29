@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Thirty changes alter what a command line written for 0.1.0 does:
+Thirty-one changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory,
@@ -132,6 +132,9 @@ Thirty changes alter what a command line written for 0.1.0 does:
 - One local repository given as two arguments is refused, however the second spells its location.\
   0.1.0 braided it as two inputs, each against the other, wherever the two arguments gave it different names.
 
+- `--tag-prefix` substitutes `{subdir}` as well as `{repo}`.\
+  0.1.0 substituted only `{repo}` there, and wrote a `{subdir}` into the tag's name as it stood.
+
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
   It runs only beside its dependencies' jars, which an archive's `lib/` and a build's `target/lib/` hold:
@@ -159,6 +162,10 @@ Thirty changes alter what a command line written for 0.1.0 does:
 - **`--subject-prefix` defaults to `{repo}: `, not `{subdir}: `.**\
   A destination can be nested arbitrarily deep.\
   The name is one segment, and is what identifies an input everywhere else.
+
+- **`--tag-prefix` substitutes `{subdir}`, where the input lands, beside `{repo}`.**\
+  As `--subject-prefix` already did.\
+  The input at the output root gives its name there.
 
 - **The branch qualifier applies to every branch, not only a shared one.**\
   It used to go on only where two inputs had used the name.\
@@ -210,6 +217,7 @@ Thirty changes alter what a command line written for 0.1.0 does:
   A note is filed under the sha of what it annotates, and a merge gives every commit a new one,
   so a note carried over unchanged would be attached to nothing.\
   `--notes-prefix` qualifies the refs, `{repo}/` by default: an input with notes usually has `refs/notes/commits`.\
+  It substitutes `{repo}` and `{subdir}`, as every template does.\
   A note on an object the run did not write is skipped, and the closing report says how many.\
   The history of a notes ref is not carried over —
   the output's is one commit, keeping the input's author, committer and message.
@@ -227,7 +235,7 @@ Thirty changes alter what a command line written for 0.1.0 does:
   so `backend::refs/legacy/*:refs/archived_*` writes `refs/archived_alpha`, and no prefix goes near it.\
   `refs/tags/` and `refs/heads/` may be given as a bare namespace,
   handing the rest to `--tag-prefix` or `--branch-prefix`.\
-  `{repo}` is substituted, which is what makes an unscoped destination safe.\
+  `{repo}` and `{subdir}` are substituted, which is what makes an unscoped destination safe.\
   A destination meeting another input's ref is refused naming both,
   and under `--keep-remotes` so is one under an input's `refs/remotes/<name>/`, where a pruning fetch would delete it.\
   One under `refs/timebraid-fetch/` is refused as well:
@@ -236,7 +244,7 @@ Thirty changes alter what a command line written for 0.1.0 does:
   and without dropping the commits only they reach.\
   Available on `-b`, `--ref` and `--label-ref`, the three that write refs;
   refused on `--interleave-ref`, which writes none.\
-  Unlike git's fetch, a destination may be a namespace and may hold `{repo}`,
+  Unlike git's fetch, a destination may be a namespace and may hold `{repo}` and `{subdir}`,
   a pattern with stars may go without a destination, which git's fetch allows only in a negative refspec,
   or name one ref as its destination,
   and there is no `+`, no empty pattern or destination and no short name.
@@ -252,11 +260,11 @@ Thirty changes alter what a command line written for 0.1.0 does:
   A pattern aimed at `refs/notes/` is still refused, naming `--notes`.
 
 - **`--branch-prefix TEMPLATE`** — the qualifier on every recreated branch.\
-  `{repo}` is substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
+  `{repo}` and `{subdir}` are substituted; the default `{repo}/` matches what `--tag-prefix` does for tags.\
   An empty value asks for the plain names, and refuses two inputs meeting on one.
 
 - **`--provenance-trailer TEMPLATE`** — the line `--provenance` writes.\
-  `{repo}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
+  `{repo}`, `{subdir}`, `{commit}` and `{parents}` are substituted; the default is unchanged.\
   Leaving out `{commit}` or `{parents}` keeps the trailer and gives up what makes it checkable.
 
 - **A destination may be a nested path.**\

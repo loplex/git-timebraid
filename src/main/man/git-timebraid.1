@@ -203,7 +203,9 @@ no empty glob or destination and no short name.
 .PP
 A destination substitutes
 .B {repo}
-for the input's name, and a
+for the input's name and
+.B {subdir}
+for where it lands, and a
 .B *
 in it stands for what the glob's own star matched.
 A destination that names a ref outright, with neither, gives every input the same output name
@@ -258,7 +260,9 @@ and
 qualify a ref name of the output.
 Each substitutes
 .B {repo}
-for the input's name, and an empty value qualifies nothing.
+for the input's name and
+.B {subdir}
+for where it lands \- its name again for the input at the output root \- and an empty value qualifies nothing.
 Two inputs then meeting on one ref name is refused, naming both,
 rather than resolved in favour of whichever was written last \- and the same refusal applies
 where a pattern's destination spells a name out and takes the prefix off entirely.
@@ -346,6 +350,7 @@ The trailer
 writes, as its own paragraph.
 Substitutes
 .BR {repo} ,
+.BR {subdir} ,
 .B {commit}
 and
 .BR {parents} ;

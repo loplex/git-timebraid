@@ -52,13 +52,14 @@ class RefPattern(
      * Where a ref this pattern matched is written, or `null` to leave it where it came from.
      *
      * [name] is the ref's full name in the input, which is what the glob matched,
-     * and [repo] is the input's own name, for a `{repo}` in the destination.\
+     * and [repo] and [subdir] are the input's own name and destination,
+     * for a `{repo}` and a `{subdir}` in the destination.\
      * Only the spelled-out forms are resolved here;
      * a namespace destination is [toNamespace] and [OutputName]'s business.
      */
-    fun resolve(name: String, repo: String): String? {
+    fun resolve(name: String, repo: String, subdir: String = repo): String? {
         if (destination == null || toNamespace) return null
-        val spelled = destination.replace("{repo}", repo)
+        val spelled = destination.replace("{repo}", repo).replace("{subdir}", subdir)
         if (!spelled.contains('*')) return spelled
         return spelled.replace("*", captured(name))
     }
@@ -79,7 +80,8 @@ class RefPattern(
  * so a value valid as a git refspec means the same here:
  * `refs/heads/main:refs/tags/main` reads the branch and writes it as a tag.\
  * The differences are few and each on purpose:
- * a destination may be a namespace (`refs/tags/`) handed to that namespace's prefix, and may hold `{repo}`;
+ * a destination may be a namespace (`refs/tags/`) handed to that namespace's prefix,
+ * and may hold `{repo}` and `{subdir}`;
  * a pattern with stars may go without a destination, which `git fetch` allows only in a negative refspec,
  * or name one ref as its destination;
  * and there is no `+`, no empty pattern or destination, and no short name, every pattern matching full ref names.

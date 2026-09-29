@@ -403,7 +403,7 @@ What the scope does is under [saying it for one input only](#saying-it-for-one-i
 
 **A value git takes as a refspec means the same here.**\
 The differences are few, and each is on purpose:
-a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may hold `{repo}`;
+a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may hold `{repo}` and `{subdir}`;
 a pattern with stars may go without a destination, which `git fetch` allows only in a negative refspec,
 or name one ref as its destination;
 and there is no `+`, no empty pattern or destination, and no short name — a pattern matches full ref names.
@@ -504,8 +504,9 @@ The prefix rules (`--branch-prefix`, `--tag-prefix`) are the default naming.
   As in a git refspec, what the `*` matched may hold a slash, and carries it into the destination.
 - A destination **ending in `/` with no `*`** is a namespace, handed back to that namespace's prefix rule.\
   Only `refs/heads/` and `refs/tags/` have one, so only those two can be written that way.
-- `{repo}` is substituted, which is what makes an unscoped pattern safe:
-  a destination naming a ref outright, with neither `{repo}` nor a `*`, gives every input's match the same name,
+- `{repo}` and `{subdir}` are substituted — the input's name and where it lands —
+  which is what makes an unscoped pattern safe:
+  a destination naming a ref outright, with neither of them nor a `*`, gives every input's match the same name,
   and the run would be refused for the collision.
 - Where you spell the name out, **unique names are yours to arrange**.\
   The collision check still refuses two inputs meeting on one ref, naming both,
@@ -690,7 +691,7 @@ the original identity and the original parents of every commit are recorded,
 so a script can verify that no edge went missing.
 
 `--provenance-trailer` sets the line — the one above is its default —
-substituting `{repo}`, `{commit}` and `{parents}`.\
+substituting `{repo}`, `{subdir}`, `{commit}` and `{parents}`.\
 A template that leaves out `{commit}` or `{parents}` keeps the trailer and gives up that check,
 since it is those two that a script reads.
 
@@ -924,9 +925,9 @@ Which refs a pattern speaks for:
 
 What the output repository holds:
 
-  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} is
-  substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
-  rather than resolved.
+  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} and
+  {subdir} are substituted, an empty value qualifies nothing, and two inputs then meeting on one
+  name is refused rather than resolved.
 
   --[no-]bare                  Write a bare output repository.
                                --no-bare checks out a working tree instead.
@@ -954,7 +955,7 @@ What the output repository holds:
   --[no-]provenance            Record each commit's original sha and parents in a trailer.
                                Default: on.
   --provenance-trailer=<text>  The trailer --provenance writes, as its own paragraph.
-                               {repo}, {commit} and {parents} are substituted.
+                               {repo}, {subdir}, {commit} and {parents} are substituted.
                                Default: "[timebraid: repo="{repo}" commit={commit}
                                parents={parents}]"
 
