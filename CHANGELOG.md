@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Twenty-nine changes alter what a command line written for 0.1.0 does:
+Thirty changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory,
@@ -124,6 +124,9 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   the qualifiers, the defaults,
   and all but the first paragraph of the text above the options and above each group of them
   are now `--help` only, or `-hh` where git handles `--help` itself.
+
+- One local repository given as two arguments is refused, however the second spells its location.\
+  0.1.0 braided it as two inputs, each against the other, wherever the two arguments gave it different names.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -527,6 +530,16 @@ Twenty-nine changes alter what a command line written for 0.1.0 does:
   0.1.0 printed four `WARNING:` lines there on every run, for the native library JNA loads to read the terminal size.\
   The jar's manifest now allows native access, with `Enable-Native-Access`,
   and on JDK 22 and later mordant then reads the terminal size through the JDK's own foreign function API instead.
+
+- **An input whose `..` leads, past a symlink, elsewhere than its text
+  is fetched from, and named after, the directory it is read from.**\
+  0.1.0 read it from the directory the filesystem resolved,
+  and fetched it from and named it after the one the text normalized to:
+  a failed fetch, or a braid over trees the output lacked.\
+  `--keep-remotes` records that directory too, by its real path, where 0.1.0 recorded the normalized text.
+
+- **One local repository given as two arguments is refused.**\
+  0.1.0 took `./a::x ./a::y` for two inputs and braided the one history against itself, every commit twice.
 
 ## [0.1.0] - 2026-09-08
 

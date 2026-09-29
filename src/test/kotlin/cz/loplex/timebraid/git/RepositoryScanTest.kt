@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.condition.DisabledOnOs
+import org.junit.jupiter.api.condition.OS
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
@@ -81,6 +83,20 @@ class RepositoryScanTest {
         Files.createSymbolicLink(tmp.resolve("mirror"), tmp.resolve("apps"))
 
         assertEquals(listOf("apps/webui" to "webui"), scan())
+    }
+
+    @Test
+    @DisabledOnOs(
+        value = [OS.WINDOWS],
+        disabledReason = "Windows resolves a '..' as text, before any symlink, so it leads where its text does",
+    )
+    fun `a base spelled with a dot-dot past a symlink is walked where it leads`() {
+        repo("elsewhere/apps/webui")
+        repo("here/libs/backend")
+        Files.createSymbolicLink(tmp.resolve("here/hop"), tmp.resolve("elsewhere/apps"))
+
+        // As text, `here/hop/..` is `here`; the filesystem takes it to `elsewhere`.
+        assertEquals(listOf("apps/webui" to "webui"), scan("here/hop/.."))
     }
 
     @Test
