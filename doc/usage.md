@@ -392,11 +392,11 @@ The first `::` is the separator, since an input's name holds no `:`. What the sc
 
 **A value git takes as a refspec means the same here.** The differences are few, and each is on
 purpose: a destination may name a namespace, `refs/tags/`, left to that namespace's prefix, and may
-hold `{repo}`; a pattern with stars may go without a destination, which `git fetch` allows only in a
-negative refspec, or name one ref as its destination; and there is no `+`, no empty pattern or
-destination, and no short name — a pattern matches full ref names. git resolves a single short name,
-tags before branches, and never a short pattern; `-b` is the short form here, and says which of the
-two it means.
+hold `{repo}` and `{subdir}`; a pattern with stars may go without a destination, which `git fetch`
+allows only in a negative refspec, or name one ref as its destination; and there is no `+`, no empty
+pattern or destination, and no short name — a pattern matches full ref names. git resolves a single
+short name, tags before branches, and never a short pattern; `-b` is the short form here, and says
+which of the two it means.
 
 What may stand in the destination is under [saying where a ref lands](#saying-where-a-ref-lands).
 
@@ -495,9 +495,9 @@ overrides exactly the part of the name it writes out** — nothing, the namespac
   git refspec, what the `*` matched may hold a slash, and carries it into the destination.
 - A destination **ending in `/` with no `*`** is a namespace, handed back to that namespace's prefix
   rule. Only `refs/heads/` and `refs/tags/` have one, so only those two can be written that way.
-- `{repo}` is substituted, which is what makes an unscoped pattern safe: a destination naming a ref
-  outright, with neither `{repo}` nor a `*`, gives every input's match the same name, and the run
-  would be refused for the collision.
+- `{repo}` and `{subdir}` are substituted — the input's name and where it lands — which is what
+  makes an unscoped pattern safe: a destination naming a ref outright, with neither of them nor a
+  `*`, gives every input's match the same name, and the run would be refused for the collision.
 - Where you spell the name out, **unique names are yours to arrange**. The collision check still
   refuses two inputs meeting on one ref, naming both, and under `--keep-remotes` it refuses any
   destination under an input's `refs/remotes/<name>/`, where the mirrors are, meeting one or not.
@@ -677,8 +677,8 @@ This is what makes the braid's promise checkable rather than merely claimed, the
 original parents of every commit are recorded, so a script can verify that no edge went missing.
 
 `--provenance-trailer` sets the line — the one above is its default — substituting `{repo}`,
-`{commit}` and `{parents}`. A template that leaves out `{commit}` or `{parents}` keeps the
-trailer and gives up that check, since it is those two that a script reads.
+`{subdir}`, `{commit}` and `{parents}`. A template that leaves out `{commit}` or `{parents}` keeps
+the trailer and gives up that check, since it is those two that a script reads.
 
 ---
 
@@ -905,9 +905,9 @@ Which refs a pattern speaks for:
 
 What the output repository holds:
 
-  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} is
-  substituted, an empty value qualifies nothing, and two inputs then meeting on one name is refused
-  rather than resolved.
+  --tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: {repo} and
+  {subdir} are substituted, an empty value qualifies nothing, and two inputs then meeting on one
+  name is refused rather than resolved.
 
   --[no-]bare                  Write a bare output repository.
                                --no-bare checks out a working tree instead.
@@ -935,7 +935,7 @@ What the output repository holds:
   --[no-]provenance            Record each commit's original sha and parents in a trailer.
                                Default: on.
   --provenance-trailer=<text>  The trailer --provenance writes, as its own paragraph.
-                               {repo}, {commit} and {parents} are substituted.
+                               {repo}, {subdir}, {commit} and {parents} are substituted.
                                Default: "[timebraid: repo="{repo}" commit={commit}
                                parents={parents}]"
 

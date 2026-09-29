@@ -189,7 +189,7 @@ private class RefOptions : OptionGroup(
 private class OutputContentOptions : OptionGroup(
     name = "What the output repository holds",
     help = "--tag-prefix, --branch-prefix and --notes-prefix qualify a ref name of the output: " +
-        "{repo} is substituted, an empty value qualifies nothing, and two inputs then meeting " +
+        "{repo} and {subdir} are substituted, an empty value qualifies nothing, and two inputs then meeting " +
         "on one name is refused rather than resolved.",
 ) {
     val bare by option("--bare").flag("--no-bare", default = true)
@@ -253,7 +253,7 @@ private class OutputContentOptions : OptionGroup(
     val provenanceTrailer by option("--provenance-trailer").default(WriteOptions().provenanceTrailer)
         .help(
             "The trailer --provenance writes, as its own paragraph." + BR +
-                "{repo}, {commit} and {parents} are substituted." + BR +
+                "{repo}, {subdir}, {commit} and {parents} are substituted." + BR +
                 "Default: \"" + WriteOptions().provenanceTrailer + "\""
         )
 }

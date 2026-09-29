@@ -11,7 +11,9 @@ import org.eclipse.jgit.lib.ObjectId
 /** Everything about the output that is a matter of taste rather than of correctness. */
 class WriteOptions(
     /**
-     * Prepended to every commit subject. `{repo}` and `{subdir}` are substituted.
+     * Prepended to every commit subject. `{repo}` and `{subdir}` are substituted, as they are in
+     * every template here: the input's name, and where it lands — its name again for the input
+     * placed at the output root.
      *
      * The default is the name and not the destination because a destination can be nested
      * arbitrarily deep and the subject line carries it on every commit, while a name is one segment
@@ -19,11 +21,13 @@ class WriteOptions(
      */
     val subjectPrefix: String = "{repo}: ",
     /**
-     * Prepended to every tag name. `{repo}` is substituted, and an empty value qualifies nothing.
+     * Prepended to every tag name. `{repo}` and `{subdir}` are substituted, and an empty value
+     * qualifies nothing.
      */
     val tagPrefix: String = "{repo}/",
     /**
-     * Prepended to every branch name, as [tagPrefix] is to every tag. `{repo}` is substituted.
+     * Prepended to every branch name, as [tagPrefix] is to every tag, `{repo}` and `{subdir}`
+     * substituted.
      *
      * It applies wherever a ref pattern has not spelled its destination out, rather than only where
      * two inputs used one name, which is what makes an output ref name a function of the input it
@@ -37,7 +41,8 @@ class WriteOptions(
      */
     val branchPrefix: String = "{repo}/",
     /**
-     * Prepended to every recreated notes ref, below `refs/notes/`. `{repo}` is substituted.
+     * Prepended to every recreated notes ref, below `refs/notes/`, `{repo}` and `{subdir}`
+     * substituted.
      *
      * The same rule as the other two, for the same reason: `refs/notes/commits` is what `git notes`
      * writes by default, so an input with notes usually has that one. Two inputs then meeting on one
@@ -55,7 +60,8 @@ class WriteOptions(
     /** Whether to record the original identity of each commit in a trailer. */
     val provenance: Boolean = true,
     /**
-     * The trailer [provenance] records. `{repo}`, `{commit}` and `{parents}` are substituted.
+     * The trailer [provenance] records. `{repo}`, `{subdir}`, `{commit}` and `{parents}` are
+     * substituted.
      *
      * The default is what makes the promise that every original edge survives checkable rather than
      * merely claimed, so a template that drops `{commit}` or `{parents}` gives that up — which is
@@ -308,6 +314,7 @@ class BraidWriter(
 
         val trailer = options.provenanceTrailer
             .replace("{repo}", repo)
+            .replace("{subdir}", subdir)
             .replace("{commit}", original.id.name)
             .replace("{parents}", original.parents.joinToString(",") { it.name }) + "\n"
         val body = prefixed.trimEnd('\n')

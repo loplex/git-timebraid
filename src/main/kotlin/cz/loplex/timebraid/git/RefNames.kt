@@ -2,6 +2,7 @@ package cz.loplex.timebraid.git
 
 import cz.loplex.timebraid.plan.Commit
 import cz.loplex.timebraid.plan.MergePlan
+import cz.loplex.timebraid.plan.Source
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
 
@@ -52,17 +53,17 @@ class OutputName(
     companion object {
 
         /**
-         * What [ref], of the input named [repo], is called in the output under the pattern that
-         * took it.
+         * What [ref], of the input named [repo] and placed at [subdir], is called in the output under
+         * the pattern that took it.
          *
          * The three destination forms land here as the two halves of a name plus one boolean. A
          * namespace destination swaps the namespace and leaves the rest to that namespace's
          * prefix; a spelled-out destination fills both halves and turns the prefix off; no
          * destination at all keeps the ref exactly where it was.
          */
-        fun of(ref: BraidOutRef, repo: String): OutputName {
+        fun of(ref: BraidOutRef, repo: String, subdir: String = repo): OutputName {
             val pattern = ref.takenBy
-            val spelled = pattern?.resolve(ref.fullName, repo)
+            val spelled = pattern?.resolve(ref.fullName, repo, subdir)
             val namespace = pattern?.destination?.takeIf { pattern.toNamespace }
             return when {
                 // Split at the last separator so the two halves still join back, and so a name
@@ -142,14 +143,15 @@ class RefNames(
         var foreign = 0
         for (input in inputs.sources) {
             val repo = input.source.name
+            val subdir = subdirOf(input.source)
             for (ref in input.refs) {
                 // Its own mainline, not the output's: two inputs may braid along differently named
                 // branches, and each is the one already spoken for by the braid rather than a ref to
                 // write. Matched on the input's full name, which is the only name that still says
                 // so once a destination may have renamed it.
                 if (ref.isMainlineOf(input)) continue
-                val name = named(ref, repo)
-                claim(claimed, name, repo, prefixFlag(OutputName.of(ref, repo)))
+                val name = named(ref, repo, subdir)
+                claim(claimed, name, repo, prefixFlag(OutputName.of(ref, repo, subdir)))
                 refs[name] = RefSource.Of(ref)
                 when {
                     name.startsWith(Constants.R_HEADS) -> branches++
@@ -163,7 +165,7 @@ class RefNames(
         for (input in inputs.sources) {
             val repo = input.source.name
             for (notesRef in input.notes) {
-                val name = Constants.R_NOTES + options.notesPrefix.replace("{repo}", repo) + notesRef.name
+                val name = Constants.R_NOTES + expand(options.notesPrefix, input.source) + notesRef.name
                 claim(claimed, name, repo, "--notes-prefix")
                 refs[name] = RefSource.Notes(notesRef)
                 notes++
@@ -188,11 +190,24 @@ class RefNames(
      * destination and a prefix get along — the prefix is the naming rule, and a destination
      * overrides exactly the part of it that it wrote.
      */
-    private fun named(ref: BraidOutRef, repo: String): String {
-        val out = OutputName.of(ref, repo)
-        val prefix = if (!out.prefixed) "" else prefixOf(out.namespace).replace("{repo}", repo)
+    private fun named(ref: BraidOutRef, repo: String, subdir: String): String {
+        val out = OutputName.of(ref, repo, subdir)
+        val prefix = if (!out.prefixed) "" else expand(prefixOf(out.namespace), repo, subdir)
         return out.namespace + prefix + out.name
     }
+
+    /**
+     * Where [source] lands, for a `{subdir}` in a template: its destination, or its name for the
+     * input placed at the output root, as a commit subject has it.
+     */
+    private fun subdirOf(source: Source): String = plan.subdirOf(source) ?: source.name
+
+    /** [template] with `{repo}` and `{subdir}` substituted for [source]. */
+    private fun expand(template: String, source: Source): String =
+        expand(template, source.name, subdirOf(source))
+
+    private fun expand(template: String, repo: String, subdir: String): String =
+        template.replace("{repo}", repo).replace("{subdir}", subdir)
 
     /**
      * The prefix template belonging to a namespace.
