@@ -8,7 +8,7 @@ target/
 *.iws
 *.ipr
 
-# Left by the checkers importing kotlin_source.py.
+# Left by the checkers importing kotlin_source.py or markdown_source.py.
 __pycache__/
 
 # OS
