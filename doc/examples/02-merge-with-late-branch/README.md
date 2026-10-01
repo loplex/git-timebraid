@@ -1,8 +1,8 @@
 # 02 — a mainline merge whose merged-in branch is timestamped late
 
-**The one real divergence between the two interleaves**, and the reason the production one interleaves
-over mainline chains alone. The two produce a different braid on this input — not just a different
-write order, an actually different interleaving with the other repository.
+**The one real divergence between the two interleaves**, and the reason the production one
+interleaves over mainline chains alone. The two produce a different braid on this input — not just a
+different write order, an actually different interleaving with the other repository.
 
 ## Input
 
@@ -11,8 +11,8 @@ A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30
 B: b1@25 <- b2@35
 ```
 
-`f` is a side branch of `A`, forked off `a1`, timestamped *after* `m` itself (a slow review, or clock
-skew, can produce exactly this). `m` merges `f` back into `A`'s mainline.
+`f` is a side branch of `A`, forked off `a1`, timestamped *after* `m` itself (a slow review, or
+clock skew, can produce exactly this). `m` merges `f` back into `A`'s mainline.
 
 ```console
 $ git -C input/A log --all --graph --date=iso --pretty="format:%h %ad %d %s"
@@ -86,15 +86,15 @@ output              m's parents: b1(braid pred), a2(original), f(original)
 output-whole-graph  m's parents: b2(braid pred), a2(original), f(original)
 ```
 
-**Both original edges (`a2`, `f`) survive unchanged in both outputs** — `m` gets three parents either
-way. Only the braid predecessor (the prepended, artificial time edge) differs, because that is the
-only thing an interleave decides. Pinned as a permanent test in `BraidInterleaveTest`
+**Both original edges (`a2`, `f`) survive unchanged in both outputs** — `m` gets three parents
+either way. Only the braid predecessor (the prepended, artificial time edge) differs, because that
+is the only thing an interleave decides. Pinned as a permanent test in `BraidInterleaveTest`
 (`still produces a 3-parent commit when reparented, whichever braid it came from`).
 
 ## Why the production answer is the better one
 
-The braid edge is the one edge this tool invents, and under the whole-graph pass it can point into the
-future:
+The braid edge is the one edge this tool invents, and under the whole-graph pass it can point into
+the future:
 
 ```console
 $ git -C output-whole-graph ls-tree -r e9a085d -- B      # checkout of m, recorded 2023-11-16 04:13

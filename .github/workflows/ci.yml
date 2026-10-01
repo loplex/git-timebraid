@@ -270,7 +270,7 @@ jobs:
   # No JDK and no build: the checks read tracked files as text, the Kotlin sources and the manual
   # page included, so the job wants a checkout and groff, and finishes in seconds.
   docs:
-    name: doc and KDoc links resolve, blocks fit, man page renders
+    name: doc and KDoc links resolve, blocks and lines fit, man page renders
     runs-on: ubuntu-latest
 
     steps:
@@ -284,6 +284,13 @@ jobs:
       # says neither when it goes red.
       - name: Check every code block fits the width it is shown at
         run: .github/scripts/check-blocks.py
+
+      # The width of a line as the source is read -- in a diff, an editor, a terminal -- where
+      # check-blocks.py's is the width a block is shown at. The two take their blocks from one
+      # scanner, so every line of a document but a fence or a table row is measured by exactly one
+      # of them.
+      - name: Check every line fits the width .editorconfig sets
+        run: .github/scripts/check-width.py
 
       # One spelling of the punctuation dash, where the spelling is a choice: a comment reaches no
       # console, so nothing forces the ASCII form there the way MessageCharsetTest forces it on the

@@ -40,8 +40,8 @@ written as a raw byte, with `invalid input character code 128`, but has `\\(em` 
 page's ` \\- ` is a choice of its own, held by nothing here. The rest of what the scan below
 does not read is named here too: doc/examples/build-inputs.sh, the workflows and .gitattributes, for
 the first of those reasons, writing the ASCII mark and never the em dash; the root git-timebraid
-wrapper, which writes neither; LICENSE and NOTICE, which are legal text; and .gitignore and the
-plan.txt dumps, which are not prose at all.
+wrapper and .editorconfig, which write neither; LICENSE and NOTICE, which are legal text; and
+.gitignore and the plan.txt dumps, which are not prose at all.
 
 **The pattern over-matches and is then filtered**, rather than enumerating the positions a dash can
 sit in. A list of them -- between words, and at the end of a line -- misses three more: a line that

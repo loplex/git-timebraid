@@ -1,8 +1,8 @@
 # 04 — a child commit timestamped before its own parent
 
-The simplest possible ancestry-vs-time conflict: `a2` is a real child of `a1` (a genuine parent edge)
-but is timestamped *earlier* — the way a rebase, or a plain clock skew, leaves a repository. Shows
-that the braid puts ancestry first, never time.
+The simplest possible ancestry-vs-time conflict: `a2` is a real child of `a1` (a genuine parent
+edge) but is timestamped *earlier* — the way a rebase, or a plain clock skew, leaves a repository.
+Shows that the braid puts ancestry first, never time.
 
 ## Input
 
@@ -41,9 +41,9 @@ falls.
 
 A whole-graph interleave agrees here too (not included as a separate output): both track
 first-parent ancestry within one repository *by construction*. `BraidInterleave` only ever pops from
-the front of `A`'s own queue, so `a1` and `a2` can never swap regardless of what their timestamps say;
-Kahn's algorithm over the whole graph gets the same result from the other direction, by never emitting
-a commit before its parents. A comparator sort over the whole graph that compares a commit only
-against its *direct* parent, and lets time decide everything else, can get a case like this wrong and
-place a commit before its own parent: such a comparator is not transitive, so the sort need
-never compare `a2` with `a1` at all. Neither of the two is built that way.
+the front of `A`'s own queue, so `a1` and `a2` can never swap regardless of what their timestamps
+say; Kahn's algorithm over the whole graph gets the same result from the other direction, by never
+emitting a commit before its parents. A comparator sort over the whole graph that compares a commit
+only against its *direct* parent, and lets time decide everything else, can get a case like this
+wrong and place a commit before its own parent: such a comparator is not transitive, so the sort
+need never compare `a2` with `a1` at all. Neither of the two is built that way.

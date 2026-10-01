@@ -395,7 +395,11 @@ class TreeAssemblerTest {
         val error = assertThrows<IllegalArgumentException> {
             assembler.assemble(
                 listOf(
-                    root(TreeEntry("libs", FileMode.TREE, treeOf(TreeEntry("own.txt", FileMode.REGULAR_FILE, blob("o"))))),
+                    root(
+                        TreeEntry(
+                            "libs", FileMode.TREE, treeOf(TreeEntry("own.txt", FileMode.REGULAR_FILE, blob("o"))),
+                        ),
+                    ),
                     placement("libs", emptyTree()),
                     placement("libs/webui", emptyTree()),
                 ),
@@ -478,7 +482,9 @@ class TreeAssemblerTest {
         val error = assertThrows<IllegalArgumentException> {
             dissolving().assemble(
                 listOf(
-                    root(TreeEntry("vendor", FileMode.TREE, treeOf(TreeEntry("lib", FileMode.REGULAR_FILE, blob("x"))))),
+                    root(
+                        TreeEntry("vendor", FileMode.TREE, treeOf(TreeEntry("lib", FileMode.REGULAR_FILE, blob("x")))),
+                    ),
                     placement("vendor/lib", emptyTree()),
                 ),
                 at = { "backend/abc123" },

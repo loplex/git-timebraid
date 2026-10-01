@@ -21,8 +21,8 @@ Vocabulary used throughout:
   with `--dissolve-submodules` it may land on a gitlink the containing repository keeps there,
   replacing it
 - **mainline** — the branch treated as each input's main line of development (`--mainline-branch`)
-- **ordering timestamp** — the timestamp the interleaving compares: the committer date, or the author
-  date with `--order-by author`. It is settled once when the input is read.
+- **ordering timestamp** — the timestamp the interleaving compares: the committer date, or the
+  author date with `--order-by author`. It is settled once when the input is read.
 
 ---
 
@@ -108,11 +108,11 @@ you walk forward:
 - Each subdirectory holds whatever its repository last committed at or before this point.
 - A repository that did not exist yet simply is not there.
 
-This is the mechanism behind the whole promise: "the state of every repository at that moment" is not
-computed on demand, it is simply what the commit's tree contains.
+This is the mechanism behind the whole promise: "the state of every repository at that moment" is
+not computed on demand, it is simply what the commit's tree contains.
 
-A subdirectory entry *is* the input's own root tree object, so nothing is recursed into and no blob is
-copied: the output shares its content with the inputs. Where every destination is a single name,
+A subdirectory entry *is* the input's own root tree object, so nothing is recursed into and no blob
+is copied: the output shares its content with the inputs. Where every destination is a single name,
 that makes a braided commit cost exactly one small tree — its own root.
 
 ### Nested destinations
@@ -165,14 +165,14 @@ with the pair refused without the flag and the collision the flag does not excus
 
 `.gitmodules` is the only file whose *location* is part of its meaning — git reads it from the
 repository root and nowhere else. Carried along inside a subdirectory it would become text nothing
-reads, describing paths that no longer say where the gitlink it names actually sits. So it is the one
-file the braid writes for itself:
+reads, describing paths that no longer say where the gitlink it names actually sits. So it is the
+one file the braid writes for itself:
 
 > **`.gitmodules`** at the root of `tree'(c)` = the `[submodule]` sections of every input that has
 > content at `c`, with each section's `path` — and its name — prefixed by that input's destination.
 
-The gitlink entries need no help; they ride along in their input's tree like any other entry, and the
-commit a gitlink names is fetched from the submodule's own url rather than from this repository.
+The gitlink entries need no help; they ride along in their input's tree like any other entry, and
+the commit a gitlink names is fetched from the submodule's own url rather than from this repository.
 
 An input placed at `backend/`, holding `a.txt` and a submodule at `vendor/lib`, and the only input
 with content yet, gives a tree holding:
@@ -347,8 +347,8 @@ Two things limit how literally "the state of the world at this moment" can be re
 
 ### "That instant" is the mainline, not the deployment
 
-- It means *the mainline branches at that instant*, as dated by the ordering timestamp — not what was
-  deployed.
+- It means *the mainline branches at that instant*, as dated by the ordering timestamp — not what
+  was deployed.
 - If work is authored long before it is merged, author dates and integration order diverge.
 - `--order-by committer` is usually the better choice for "what did the system look like" questions,
   `--order-by author` for "what was being written".
@@ -359,14 +359,14 @@ This one is sharper:
 
 - A merge commit's tree already reflects everything it merged in, including a branch whose last
   commit is timestamped *after* the merge itself.
-- Nothing about braiding changes that tree, and every later commit inherits it forward — the ordinary
-  accumulation rule, not a choice this tool makes — so those commits show that same "future" content
-  too.
+- Nothing about braiding changes that tree, and every later commit inherits it forward — the
+  ordinary accumulation rule, not a choice this tool makes — so those commits show that same
+  "future" content too.
 - This is a fact about the input history — a merge dated before the branch it takes in — not
   something any interleaving of the braid can undo.
 
-The braid itself adds nothing to this. Every braid edge — the artificial one this tool inserts — runs
-from a commit back to one **no younger than itself**:
+The braid itself adds nothing to this. Every braid edge — the artificial one this tool inserts —
+runs from a commit back to one **no younger than itself**:
 
 - A braid predecessor from another repository won a direct comparison of timestamps against it.
 - A predecessor from the commit's *own* repository is already its first parent, so no edge is added
@@ -387,9 +387,9 @@ Every braid edge running back to a commit no younger than the one it leaves is t
 guarantee, and `--interleave-ref` is how you give it up deliberately:
 
 - Name a ref and its commits may delay a mainline merge that merges them in.
-- The merge then lands by *their* time rather than by its own — arguably the more honest position for
-  a merge whose content reaches later than its own date, and which does let the merge acquire a braid
-  predecessor younger than itself.
+- The merge then lands by *their* time rather than by its own — arguably the more honest position
+  for a merge whose content reaches later than its own date, and which does let the merge acquire a
+  braid predecessor younger than itself.
 - Off by default, because a branch nobody considers significant should not get to move where two
   other repositories meet.
 

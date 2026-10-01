@@ -39,6 +39,7 @@ import subprocess
 import sys
 
 import kotlin_source
+import markdown_source
 
 # [text](target). Nested brackets in the text would need a real parser, and a reference-style
 # `[text][label]` needs its definition resolved, so neither is followed here. Both are shapes this
@@ -58,7 +59,7 @@ INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)*\1")
 # A document named in a comment, with an anchor when it names a section. Written from the
 # repository root, which is how the comments here already write it. Any path ending .md, rather
 # than doc/ plus an ALL-CAPS name: that shape is the hand-kept list of where the documentation
-# lives that documents() below refuses to keep, and it cannot see .github/release-notes.md, the
+# lives that markdown_source.documents() refuses to keep, and it cannot see .github/release-notes.md, the
 # file named there as the counterexample.
 POINTER = re.compile(r"(?<![\w/.-])([\w.-]+(?:/[\w.-]+)*\.md)(#[\w-]+)?")
 # An external link is somebody else's page, left alone here as everywhere in this file -- and cut
@@ -66,33 +67,6 @@ POINTER = re.compile(r"(?<![\w/.-])([\w.-]+(?:/[\w.-]+)*\.md)(#[\w-]+)?")
 URL = re.compile(r"\b[a-z][\w+.-]*://\S*")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$", re.M)
 FENCE = re.compile(r"^ {0,3}(```|~~~)", re.M)
-
-
-def documents() -> list[pathlib.Path]:
-    """Every Markdown file git tracks.
-
-    `git ls-files` and not a filesystem glob, because the worked examples generate Markdown under
-    `doc/examples/*/input/` and `*/output/`. .gitignore covers those, a glob does not, and they are
-    not documentation anyone here can hold to a rule. A CI runner never sees them: this runs in the
-    `docs` job and check-examples.py writes them in `examples`, which is a checkout of its own.
-    Whoever has run the examples locally does see them, and that is the case being guarded against.
-
-    Everything tracked, rather than README.md plus CHANGELOG.md plus a doc/ glob: a hand-kept list
-    of where the documentation lives is a claim that rots the moment a document is written outside
-    it, and .github/release-notes.md sits outside it already.
-    """
-    # -z, because `git ls-files` prints a path holding a space verbatim: splitting on whitespace
-    # turns `doc/a note.md` into two names, neither of which is a file, and an is_file() filter
-    # then drops the document without a word. A name git gives that the worktree cannot supply is
-    # said out loud rather than skipped.
-    listed = subprocess.run(
-        ["git", "ls-files", "-z", "*.md"], capture_output=True, text=True, check=True
-    )
-    paths = [pathlib.Path(p) for p in listed.stdout.split("\0") if p]
-    absent = [str(p) for p in paths if not p.is_file()]
-    if absent:
-        raise SystemExit("git names files the worktree does not have: " + ", ".join(absent))
-    return paths
 
 
 def strip_fenced(body: str) -> str:
@@ -153,7 +127,7 @@ def sources() -> list[pathlib.Path]:
 
 
 def main() -> int:
-    docs = documents()
+    docs = markdown_source.documents()
     body: dict[pathlib.Path, str] = {}
     known: dict[pathlib.Path, dict[str, str]] = {}
     shaky_in: dict[pathlib.Path, list[str]] = {}

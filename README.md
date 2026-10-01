@@ -52,8 +52,8 @@ flowchart LR
 - Dotted arrows: the original edges, all of them still there.
 - Arrows point from parent to child, so time flows left to right.
 
-Checking out `b2` gives you `backend/` as of `a2` and `webui/` as of `b2` — the state of the world at
-13:00.
+Checking out `b2` gives you `backend/` as of `a2` and `webui/` as of `b2` — the state of the world
+at 13:00.
 
 ---
 
@@ -216,8 +216,8 @@ Neither is something braiding introduces, and both are worked through under
 - The provenance trailer on every commit message.
 - Keeping the inputs as remotes, their commits still reachable.
 - Progress on stderr.
-- A URL input is cloned next to the output under `.timebraid-clones/`; a second run over the same URL
-  refreshes that clone instead of downloading it again.
+- A URL input is cloned next to the output under `.timebraid-clones/`; a second run over the same
+  URL refreshes that clone instead of downloading it again.
 
 Verification:
 
