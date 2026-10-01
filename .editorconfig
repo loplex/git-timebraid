@@ -1,6 +1,10 @@
-# The width the Kotlin sources keep, code and comments alike. Nothing in the build enforces it; an
+# The width each kind of source keeps, as a line in it, not as a page: code and comments alike in
+# Kotlin, the prose in Markdown. .github/scripts/check-width.py holds the tracked files to it, and an
 # editor that reads this file wraps and marks at it.
 root = true
 
 [*.{kt,kts}]
 max_line_length = 120
+
+[*.md]
+max_line_length = 100
