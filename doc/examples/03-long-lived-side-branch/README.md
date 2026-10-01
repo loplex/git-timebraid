@@ -56,11 +56,11 @@ cac126f 2023-11-23 06:13:20 +0000 A: m
 ```
 
 **Byte-identical commit hashes.** `B`'s commits (`b1..b4`) interleave among `A`'s mainline commits
-(`a1`, `a2`) throughout the branch's whole lifetime — `b1`+`b2` land between `a1` and `a2`, `b3`+`b4`
-land between `a2` and `m` — exactly as if the side branch were not delaying anything, because it
-isn't: `A`'s ordinary mainline commits have at most one parent (`a1` none, `a2` one), so under a
-whole-graph pass their readiness never depends on the side branch at all, and the production
-interleave never looks at that branch to begin with. Only `m` itself has two parents, and here its own
-timestamp (200) already is later than everything feeding into it, so a whole-graph pass has nothing to
-hold it back for. Compare with example 02, where that same wait *did* move something, because there
-the merge's own timestamp was **not** the latest of what fed into it.
+(`a1`, `a2`) throughout the branch's whole lifetime — `b1`+`b2` land between `a1` and `a2`,
+`b3`+`b4` land between `a2` and `m` — exactly as if the side branch were not delaying anything,
+because it isn't: `A`'s ordinary mainline commits have at most one parent (`a1` none, `a2` one), so
+under a whole-graph pass their readiness never depends on the side branch at all, and the production
+interleave never looks at that branch to begin with. Only `m` itself has two parents, and here its
+own timestamp (200) already is later than everything feeding into it, so a whole-graph pass has
+nothing to hold it back for. Compare with example 02, where that same wait *did* move something,
+because there the merge's own timestamp was **not** the latest of what fed into it.
