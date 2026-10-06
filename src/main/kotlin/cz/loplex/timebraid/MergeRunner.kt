@@ -93,7 +93,7 @@ class MergeRunner(
             progress.step("planning the braid over ${braid.graph.size} commits")
             if (braid.interleaveTips.isNotEmpty()) {
                 progress.detail(
-                    "${braid.interleaveTips.size} refs opted into the interleave, so a merge can " +
+                    "${braid.interleaveTips.size} commits opted into the interleave, so a merge can " +
                         "wait for them"
                 )
             }

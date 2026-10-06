@@ -182,6 +182,10 @@ Eleven changes alter what a command line written for 0.1.0 does:
   A side branch timestamped after the merge that took it in can now hold that merge back, and the
   mainline after it, whenever a ref above the merge is opted in: that is what opting in asks for.
 
+- **The count `--verbose` gives for `--interleave-ref` says commits, which is what it counts.**\
+  0.1.0 printed "2 refs opted into the interleave" for three refs on two commits: the count is of
+  the commits the matched refs name, each once.
+
 ## [0.1.0] - 2026-09-08
 
 First release.
