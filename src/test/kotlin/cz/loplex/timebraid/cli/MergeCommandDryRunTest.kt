@@ -36,6 +36,27 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `--verbose counts the commits --interleave-ref opts in, each once`() {
+        corpus()
+        // Four refs on two commits: backend's main, side and v1 on a2, and webui's main on b1.
+        TestRepoBuilder.open(tmp.resolve("backend.git")).use { repo ->
+            val a2 = SourceRepository.open(tmp.resolve("backend.git")).use { it.resolveBranch("main")!! }
+            repo.branch("side", a2)
+            repo.lightweightTag("v1", a2)
+        }
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run", "--verbose", "--interleave-ref", "refs/heads/*", "--interleave-ref", "refs/tags/*",
+                tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(0, result.statusCode, result.output)
+        assertTrue(result.output.contains("2 commits opted into the interleave"), result.output)
+    }
+
+    @Test
     fun `dry run prints a plan and writes it to the plan-out file`() {
         corpus()
         val planFile = tmp.resolve("plan.txt")

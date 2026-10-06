@@ -8,11 +8,11 @@ a different — better — answer than interleaving over the whole graph.
 
 The interleave is `src/main/kotlin/cz/loplex/timebraid/plan/BraidInterleave.kt`, and it takes a
 *scope*: the mainline first-parent chains, plus the ancestry of any ref opted in with
-`--interleave-ref`. With nothing opted in — the default — the chains are all there is, and the
-pass reduces to a k-way merge of one queue per repository, always
-taking the queue whose front carries the earliest timestamp. Opt in a ref and a mainline merge that
-merges it in waits for it, so the merge can land later than its own timestamp; opt in every ref and you
-get a pass over the whole graph. These examples contrast the two ends.
+`--interleave-ref`. With nothing opted in — the default — the chains are all there is, and the pass
+reduces to a k-way merge of one queue per repository, always taking the queue whose front carries
+the earliest timestamp. Opt in a ref and a mainline merge that merges it in waits for it, so the
+merge can land later than its own timestamp; opt in every ref and you get a pass over the whole
+graph, whenever `-b` leaves none of the mainlines out. These examples contrast the two ends.
 
 **Only the recipe is tracked**: this README, `build-inputs.sh`, each example's README and its
 `plan.txt`. The `input/`, `output/` and `output-whole-graph/` directories are generated — they are
@@ -67,10 +67,11 @@ mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/
     doc/examples/02-merge-with-late-branch/input/A doc/examples/02-merge-with-late-branch/input/B"
 ```
 
-`--interleave-ref` puts a matched ref's ancestry in scope, so a mainline merge that merges it in waits
-for it; a bare star matches every ref and therefore reproduces a pass over the whole graph. That is the
-far end of one mechanism rather than a second algorithm — with nothing opted in, the same code reduces
-to a k-way merge of the mainline chains, which is the default.
+`--interleave-ref` puts a matched ref's ancestry in scope, so a mainline merge that merges it in
+waits for it; a bare star matches every ref and therefore reproduces a pass over the whole graph
+here, where the run takes every branch, the mainlines among them. That is the far end of one
+mechanism rather than a second algorithm — with nothing opted in, the same code reduces to a k-way
+merge of the mainline chains, which is the default.
 
 Neither output needs code of its own, and that is the same seam twice: the braid is a parameter, and
 the write order is derived from the braided graph rather than supplied alongside it.

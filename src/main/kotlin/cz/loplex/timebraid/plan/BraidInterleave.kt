@@ -31,10 +31,11 @@ package cz.loplex.timebraid.plan
  * Property 3 is a scheduling decision, not a correctness one, which is why it can be opted out of.
  * Naming a ref through `--interleave-ref` puts its ancestors in scope, so a merge that merges that ref
  * in waits for it, and the merge can then land later than its own timestamp — the trade the caller is
- * choosing. Property 2 goes with it: a merge waiting on a side branch in scope is not in the ready
- * set when its predecessor is taken, which is how it comes to follow a younger commit of another
- * repository. Naming every ref reproduces a plain pass over the whole graph, which is what this
- * tool did before the braid and the write order were separated.
+ * choosing. Property 2 goes with it: a merge waiting on a side branch in scope is not in the ready set
+ * when its predecessor is taken, which is how it comes to follow a younger commit of another
+ * repository. Naming every ref reproduces a plain pass over the whole graph whenever the selection
+ * carries the mainlines, which is what this tool did before the braid and the write order were
+ * separated.
  *
  * Widening the scope stays safe whatever is named: cross-repository pairs have no ancestry relation at
  * all (the inputs are independent histories), same-repository braid members are ordered by property 1,
@@ -78,11 +79,17 @@ internal object BraidInterleave {
 
         // Scope: the braid, plus everything the opted-in tips reach. A commit in scope but off the
         // braid is never written by this pass; it is here only so that it can delay one that is.
+        //
+        // Being in scope and having been walked are two things, because the braid is in scope from
+        // the start and the walk has to go through it: a tip on the braid reaches what that commit
+        // merged, and from any tip the walk goes on to what the earlier merges on its chain merged.
         val inScope = onBraid.copyOf()
+        val walked = BooleanArray(graph.indexSpace)
         val pending = ArrayDeque<Commit>()
         for (tip in interleaveTips) {
             val at = graph.indexOf(tip)
-            if (!inScope[at]) {
+            if (!walked[at]) {
+                walked[at] = true
                 inScope[at] = true
                 pending.addLast(tip)
             }
@@ -90,7 +97,8 @@ internal object BraidInterleave {
         while (pending.isNotEmpty()) {
             for (parent in graph.parentsOf(pending.removeLast())) {
                 val at = graph.indexOf(parent)
-                if (!inScope[at]) {
+                if (!walked[at]) {
+                    walked[at] = true
                     inScope[at] = true
                     pending.addLast(parent)
                 }

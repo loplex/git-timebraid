@@ -148,7 +148,8 @@ class BraidInterleaveTest {
     fun `matches a whole-graph pass when every commit is opted in`() {
         // The far end of the scope: put everything in, and the braid has to agree with a plain
         // topological pass over the whole graph — the behaviour this tool had before the braid and
-        // the write order were separated, and what `--interleave-ref '*'` asks for.
+        // the write order were separated, and what `--interleave-ref '*'` asks for while the
+        // selection carries the mainline branches.
         for (seed in 1..100) {
             val corpus = RandomGraphs.generate(seed, ancestryMonotoneTime = false)
             val everything = corpus.graph.commits
@@ -177,15 +178,79 @@ class BraidInterleaveTest {
     }
 
     @Test
-    fun `opting in a ref that is already on a mainline chain changes nothing`() {
-        // Its ancestors are in scope either way, so there is nothing new to wait for. Worth pinning:
-        // a user naming the mainline itself, or a tag sitting on it, should not see the braid shift.
+    fun `opting in a braid commit with nothing off the braid behind it changes nothing`() {
+        // a2's ancestry is a1 alone, which is on the braid already, so opting a2 in brings nothing
+        // new into scope. That holds only for a commit whose whole ancestry is in scope already: m,
+        // on the same chain, merged f, and opting m in moves the braid (the next test).
         val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
         val heads = spec.commits("m", "b2")
 
         assertEquals(
             spec.graph.braid(heads).commits,
-            spec.graph.braid(heads, spec.commits("a2", "m")).commits,
+            spec.graph.braid(heads, spec.commits("a2")).commits,
+        )
+    }
+
+    @Test
+    fun `opting in a merge on the braid brings what it merged into scope`() {
+        // m is on the braid and is a merge, and f, the side it merged, is not in scope by default.
+        // Naming m therefore has to mean what naming f means: the scope is the braid plus the
+        // ancestry of whatever the caller opted in, a commit on the braid included.
+        val spec = GraphSpec.parse("A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 | B: b1@25 <- b2@35")
+        val heads = spec.commits("m", "b2")
+
+        assertEquals(
+            listOf("a1", "a2", "b1", "b2", "m"),
+            spec.names(spec.graph.braid(heads, spec.commits("m")).commits),
+        )
+        assertEquals(
+            spec.graph.braid(heads, spec.commits("f")).commits,
+            spec.graph.braid(heads, spec.commits("m")).commits,
+        )
+    }
+
+    @Test
+    fun `opting in the mainline tip reaches what an earlier merge on its chain merged`() {
+        // m merged f one commit below the tip a3, and nothing names f any more: its branch went
+        // once it was merged, as a merged pull request's usually does. The ancestry of a3 is still
+        // the whole of A's history, f included, so opting in the tip — the mainline branch, or a
+        // tag on a3 — holds m back for f exactly as a pass over the whole graph does.
+        val spec = GraphSpec.parse(
+            "A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 <- a3@95 | B: b1@25 <- b2@35"
+        )
+        val heads = spec.commits("a3", "b2")
+
+        assertEquals(
+            listOf("a1", "a2", "b1", "m", "b2", "a3"),
+            spec.names(spec.graph.braid(heads).commits),
+        )
+        assertEquals(
+            listOf("a1", "a2", "b1", "b2", "m", "a3"),
+            spec.names(spec.graph.braid(heads, spec.commits("a3")).commits),
+        )
+        assertEquals(
+            spec.names(WholeGraphBraid.compute(spec.graph, heads)),
+            spec.names(spec.graph.braid(heads, spec.commits("a3")).commits),
+        )
+    }
+
+    @Test
+    fun `a tip off the braid reaches through the braid to what an earlier merge merged`() {
+        // t forked from m, so its ancestry runs into the braid at m and on through it to f. Opting
+        // t in has to mean what opting f in means; a walk that stopped where it met the braid would
+        // bring in t alone and leave the braid as the default.
+        val spec = GraphSpec.parse(
+            "A: a1@10 <- a2@20 ; f(a1)@90 <- m(a2,f)@30 <- a3@95 ; t(m)@96 | B: b1@25 <- b2@35"
+        )
+        val heads = spec.commits("a3", "b2")
+
+        assertEquals(
+            listOf("a1", "a2", "b1", "b2", "m", "a3"),
+            spec.names(spec.graph.braid(heads, spec.commits("t")).commits),
+        )
+        assertEquals(
+            spec.graph.braid(heads, spec.commits("f")).commits,
+            spec.graph.braid(heads, spec.commits("t")).commits,
         )
     }
 

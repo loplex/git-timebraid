@@ -105,7 +105,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help(
             "Let this ref's commits delay a mainline merge that merges them in, so the merge lands " +
                 "by their time rather than by its own (repeatable; glob over full ref names, e.g. " +
-                "refs/heads/release/*; '*' opts in everything). Off by default: only the mainlines " +
+                "refs/heads/release/*; '*' opts in every ref). Off by default: only the mainlines " +
                 "themselves decide where the strands interleave."
         )
 
