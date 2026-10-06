@@ -57,6 +57,21 @@ class MergeCommandDryRunTest {
     }
 
     @Test
+    fun `a --mainline-branch naming a revision rather than a branch is refused`() {
+        corpus()
+
+        val result = MergeCommand().test(
+            listOf(
+                "--dry-run", "--mainline-branch", "main~1",
+                tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString(),
+            )
+        )
+
+        assertEquals(1, result.statusCode, result.output)
+        assertTrue(result.output.contains("branch 'main~1' is missing in: backend, webui"), result.output)
+    }
+
+    @Test
     fun `dry run prints a plan and writes it to the plan-out file`() {
         corpus()
         val planFile = tmp.resolve("plan.txt")

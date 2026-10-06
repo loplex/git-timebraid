@@ -13,7 +13,7 @@ One section is kept beyond Keep a Changelog's six:
 
 ### Upgrading from 0.1.0
 
-Seventeen changes alter what a command line written for 0.1.0 does:
+Eighteen changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -75,6 +75,9 @@ Seventeen changes alter what a command line written for 0.1.0 does:
 
 - `--dry-run` refuses a collision with an entry of the `--root-repo`, as the run itself does.\
   0.1.0 found it only while writing, so a dry run passed the plan.
+
+- `--mainline-branch` naming a revision rather than a branch, as `main~1` or `main^` does, is refused.\
+  0.1.0 braided along that commit on a dry run, and the run itself failed after creating the output.
 
 - The jar a build writes is `target/lib/git-timebraid.jar`, not `target/git-timebraid.jar`,
   and a release no longer offers the jar on its own.\
@@ -229,6 +232,10 @@ Seventeen changes alter what a command line written for 0.1.0 does:
   0.1.0 found it only while writing, after creating the output and fetching every input into it,
   so a dry run passed the plan and the run left a half-written output behind.\
   `--dry-run` refuses it now too.
+
+- **A `--mainline-branch` that names no branch is refused before the output is created.**\
+  0.1.0 read the value as a revision, so `main~1` named the parent of `main` and passed a dry run,
+  and the run then failed after creating the output, the half-made repository left behind.
 
 ## [0.1.0] - 2026-09-08
 
