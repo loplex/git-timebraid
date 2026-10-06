@@ -1,7 +1,9 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.PersonIdent
+import org.eclipse.jgit.revwalk.RevWalk
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -218,6 +220,33 @@ class BraidWriterTest {
             // The lightweight tag stays lightweight; the annotated one keeps its message.
             assertEquals(null, tags.getValue("backend/v1.0").annotation)
             assertEquals("the second release\n", tags.getValue("webui/v2.0").annotation?.message)
+        }
+    }
+
+    @Test
+    fun `a recreated tag carries no signature, PGP or SSH`() {
+        // A signature covers the input's tag object, which names the input's commit and not the one
+        // the output's tag points at, so nothing could verify it there. JGit already leaves it out
+        // of the message the reader takes, and BraidWriter.stripSignature drops a PGP one again:
+        // this holds the outcome, not which of the two brings it about. The output is read raw,
+        // because reading it back through JGit would leave a signature out just the same.
+        corpus()
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            val b1 = original.getValue("b1")
+            repo.annotatedTag("pgp", b1, "pgp\n-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n")
+            repo.annotatedTag("ssh", b1, "ssh\n-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----\n")
+        }
+        val out = tmp.resolve("merged.git")
+        braid(out)
+
+        Git.open(out.toFile()).use { git ->
+            RevWalk(git.repository).use { walk ->
+                for (name in listOf("pgp", "ssh")) {
+                    val ref = git.repository.exactRef("refs/tags/webui/$name") ?: error("webui/$name was not written")
+                    val raw = String(walk.parseTag(ref.objectId).rawBuffer, Charsets.UTF_8)
+                    assertTrue(raw.endsWith("\n\n$name\n"), raw)
+                }
+            }
         }
     }
 
