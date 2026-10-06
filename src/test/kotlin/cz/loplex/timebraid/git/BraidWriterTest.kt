@@ -4,6 +4,8 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ObjectId
 import org.eclipse.jgit.lib.PersonIdent
 import org.eclipse.jgit.revwalk.RevWalk
+import org.eclipse.jgit.storage.file.FileBasedConfig
+import org.eclipse.jgit.util.FS
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -407,6 +409,21 @@ class BraidWriterTest {
         assertTrue(error.message!!.contains("--force"), error.message)
 
         TargetRepository.create(out, "main", force = true).close()
+    }
+
+    @Test
+    fun `a new output turns line-ending conversion off in its own config`() {
+        // The blobs are the inputs' bytes, so a checkout that converted them would disagree with
+        // the inputs. Read without the user's and the system's config beneath it, which would
+        // answer for a key the output's own file leaves out.
+        for (bare in listOf(true, false)) {
+            val out = tmp.resolve("out-$bare")
+            TargetRepository.create(out, "main", bare = bare).close()
+            val gitDir = if (bare) out else out.resolve(".git")
+            val config = FileBasedConfig(null, gitDir.resolve("config").toFile(), FS.DETECTED).apply { load() }
+            assertEquals("false", config.getString("core", null, "autocrlf"), "bare=$bare")
+            assertEquals("lf", config.getString("core", null, "eol"), "bare=$bare")
+        }
     }
 
     @Test
