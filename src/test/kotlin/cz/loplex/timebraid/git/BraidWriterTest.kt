@@ -1,6 +1,11 @@
 package cz.loplex.timebraid.git
 
+import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.PersonIdent
+import org.eclipse.jgit.revwalk.RevWalk
+import org.eclipse.jgit.storage.file.FileBasedConfig
+import org.eclipse.jgit.util.FS
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -11,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 /**
@@ -50,11 +56,13 @@ class BraidWriterTest {
             ids += mapOf("a1" to a1, "a2" to a2, "f1" to f1, "a3" to a3)
         }
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
-            val b1 = repo.commit("b1", at = at("10:00"))
+            // Authored before it was committed, so a swapped author and committer would show, and
+            // in a zone of its own, so a writer that wrote every ident in UTC would show too.
+            val b1 = repo.commit("b1", at = at("10:00"), authorAt = at("09:30"), zone = ZoneOffset.ofHours(2))
             val b2 = repo.commit("b2", parents = listOf(b1), at = at("13:00"))
             repo.branch("main", b2)
             repo.branch("esbuild-experiment", b1)
-            repo.annotatedTag("v2.0", b2, message = "the second release\n")
+            repo.annotatedTag("v2.0", b2, message = "the second release\n", zone = ZoneOffset.ofHours(-5))
             ids += mapOf("b1" to b1, "b2" to b2)
         }
         original = ids
@@ -218,6 +226,33 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `a recreated tag carries no signature, PGP or SSH`() {
+        // A signature covers the input's tag object, which names the input's commit and not the one
+        // the output's tag points at, so nothing could verify it there. JGit already leaves it out
+        // of the message the reader takes, and BraidWriter.stripSignature drops a PGP one again:
+        // this holds the outcome, not which of the two brings it about. The output is read raw,
+        // because reading it back through JGit would leave a signature out just the same.
+        corpus()
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            val b1 = original.getValue("b1")
+            repo.annotatedTag("pgp", b1, "pgp\n-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n")
+            repo.annotatedTag("ssh", b1, "ssh\n-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----\n")
+        }
+        val out = tmp.resolve("merged.git")
+        braid(out)
+
+        Git.open(out.toFile()).use { git ->
+            RevWalk(git.repository).use { walk ->
+                for (name in listOf("pgp", "ssh")) {
+                    val ref = git.repository.exactRef("refs/tags/webui/$name") ?: error("webui/$name was not written")
+                    val raw = String(walk.parseTag(ref.objectId).rawBuffer, Charsets.UTF_8)
+                    assertTrue(raw.endsWith("\n\n$name\n"), raw)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `the subject prefix and the provenance trailer are attached without eating the body`() {
         corpus()
         val out = tmp.resolve("merged.git")
@@ -230,6 +265,23 @@ class BraidWriterTest {
                 "[timebraid: repo=\"backend\" commit=${original.getValue("a2").name}" +
                 " parents=${original.getValue("a1").name}]\n",
             a2.message,
+        )
+    }
+
+    @Test
+    fun `the provenance trailer lists a merge's original parents first parent first`() {
+        // The order is what tells a merge's own line from the branch it brought in, as
+        // `git log --first-parent` in the input reads it: a3 merged f1 into a2.
+        corpus()
+        val out = tmp.resolve("merged.git")
+        braid(out)
+
+        val a3 = new(read(out), "a3")
+        assertTrue(
+            a3.message.endsWith(
+                " parents=${original.getValue("a2").name},${original.getValue("f1").name}]\n"
+            ),
+            a3.message,
         )
     }
 
@@ -273,6 +325,24 @@ class BraidWriterTest {
         val second = tmp.resolve("second.git")
         braid(first)
         braid(second)
+
+        // Byte for byte: name, email, time and zone. PersonIdent's own equals leaves the zone out.
+        fun bytes(ident: PersonIdent?) = ident?.toExternalString()
+        val originals = listOf("backend", "webui").flatMap { name ->
+            SourceRepository.open(tmp.resolve("$name.git")).use { repo ->
+                repo.readReachable(repo.branches().map { it.target })
+            }
+        }.associateBy { it.id.name }
+        for (commit in read(first).commits) {
+            val original = originals.getValue(originalShaOf(commit))
+            assertEquals(bytes(original.author), bytes(commit.author), "the author of ${original.message}")
+            assertEquals(bytes(original.committer), bytes(commit.committer), "the committer of ${original.message}")
+        }
+        // An annotated tag carries an ident of its own, its tagger.
+        val tagger = SourceRepository.open(tmp.resolve("webui.git")).use { it.tags().single().annotation?.tagger }
+        SourceRepository.open(first).use { repo ->
+            assertEquals(bytes(tagger), bytes(repo.tags().single { it.name == "webui/v2.0" }.annotation?.tagger))
+        }
 
         SourceRepository.open(first).use { a ->
             SourceRepository.open(second).use { b ->
@@ -339,6 +409,21 @@ class BraidWriterTest {
         assertTrue(error.message!!.contains("--force"), error.message)
 
         TargetRepository.create(out, "main", force = true).close()
+    }
+
+    @Test
+    fun `a new output turns line-ending conversion off in its own config`() {
+        // The blobs are the inputs' bytes, so a checkout that converted them would disagree with
+        // the inputs. Read without the user's and the system's config beneath it, which would
+        // answer for a key the output's own file leaves out.
+        for (bare in listOf(true, false)) {
+            val out = tmp.resolve("out-$bare")
+            TargetRepository.create(out, "main", bare = bare).close()
+            val gitDir = if (bare) out else out.resolve(".git")
+            val config = FileBasedConfig(null, gitDir.resolve("config").toFile(), FS.DETECTED).apply { load() }
+            assertEquals("false", config.getString("core", null, "autocrlf"), "bare=$bare")
+            assertEquals("lf", config.getString("core", null, "eol"), "bare=$bare")
+        }
     }
 
     @Test
