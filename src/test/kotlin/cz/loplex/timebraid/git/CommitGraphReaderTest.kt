@@ -180,7 +180,7 @@ class CommitGraphReaderTest {
             assertEquals(setOf(tagged.name), idsFor("refs/tags/v1.*"))
             // A short name matches nothing: patterns are against the full ref name on purpose.
             assertEquals(emptySet<String>(), idsFor("feature/x/y"))
-            // A bare star is every ref, which puts the whole loaded graph in scope.
+            // A bare star is every ref.
             assertEquals(setOf(f.name, tagged.name), idsFor("*"))
             // No pattern means the default scope, and nothing to resolve.
             assertEquals(emptySet<String>(), idsFor())

@@ -13,7 +13,7 @@ With nothing opted in — the default —
 the chains are all there is, and the pass reduces to a k-way merge of one queue per repository,
 always taking the queue whose front carries the earliest timestamp.\
 Opt in a ref and a mainline merge that merges it in waits for it, so the merge can land later than its own timestamp;
-opt in every ref and you get a pass over the whole graph.\
+opt in every ref and you get a pass over the whole graph, whenever `-b` leaves none of the mainlines out.\
 These examples contrast the two ends.
 
 **Only the recipe is tracked**: this README, `build-inputs.sh`, each example's README and its `plan.txt`.\
@@ -74,7 +74,8 @@ mvn -q compile exec:java -Dexec.args="-o doc/examples/02-merge-with-late-branch/
 ```
 
 `--interleave-ref` puts a matched ref's ancestry in scope, so a mainline merge that merges it in waits for it;
-a bare star matches every ref and therefore reproduces a pass over the whole graph.\
+a bare star matches every ref and therefore reproduces a pass over the whole graph here,
+where the run takes every branch, the mainlines among them.\
 That is the far end of one mechanism rather than a second algorithm —
 with nothing opted in, the same code reduces to a k-way merge of the mainline chains, which is the default.
 

@@ -5,8 +5,7 @@ package cz.loplex.timebraid.plan
  * [topoOrder] over every commit, filtered down to the mainline first-parent chains.
  *
  * This is the far end of [BraidInterleave]'s scope:
- * naming every ref through `--interleave-ref` puts the whole graph in scope,
- * and the braid should then match this exactly.\
+ * opting in every commit puts the whole graph in scope, and the braid should then match this exactly.\
  * Written independently, so the tests can assert that end of the spectrum rather than reason about it —
  * and so the difference from the default end stays visible as an assertion:
  * a whole-graph pass holds a merge back until every one of its parents has been emitted,
