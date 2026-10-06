@@ -1,5 +1,6 @@
 package cz.loplex.timebraid.git
 
+import cz.loplex.timebraid.GitCli
 import org.eclipse.jgit.lib.RepositoryCache
 import org.eclipse.jgit.util.FS
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -20,6 +21,7 @@ class GitCommandTest {
 
     @Test
     fun `clone --mirror produces a readable repository`() {
+        GitCli.requireGit()
         val origin = tmp.resolve("origin.git")
         TestRepoBuilder.create(origin).use { it.branch("main", it.commit("first")) }
 
@@ -32,6 +34,7 @@ class GitCommandTest {
 
     @Test
     fun `fetch brings a stale clone up to date`() {
+        GitCli.requireGit()
         val origin = tmp.resolve("origin.git")
         val first = TestRepoBuilder.create(origin).use { repo ->
             repo.commit("first").also { repo.branch("main", it) }
@@ -95,9 +98,14 @@ class GitCommandTest {
 
     @Test
     fun `a failing git command throws with its output attached`() {
+        GitCli.requireGit()
         val failure = assertThrows<GitCommandException> {
             git.cloneMirror(tmp.resolve("does-not-exist.git").toString(), tmp.resolve("clone.git"))
         }
-        assertTrue(failure.message!!.contains("clone --mirror"), failure.message)
+        // The command heads the message, and what git said follows it, in whatever language git
+        // speaks here.
+        val lines = failure.message!!.lines()
+        assertTrue(lines.first().contains("clone --mirror"), failure.message)
+        assertTrue(lines.drop(1).any { it.isNotBlank() }, failure.message)
     }
 }

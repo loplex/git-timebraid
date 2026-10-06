@@ -69,8 +69,9 @@ class RootTreeAssemblerTest {
 
     @Test
     fun `entries come out in git's order, where a directory sorts as if it ended in a slash`() {
-        // The pair that catches a naive sort: '.' (0x2E) precedes '/' (0x2F), so the file wins,
-        // but a plain name comparison would put the directory first.
+        // The pairs that catch a naive sort: '-' (0x2D) and '.' (0x2E) both precede '/' (0x2F), so
+        // `a-` and `a.txt` each come before the directory `a`, where a plain name comparison would
+        // put the directory first.
         val tree = assembler.assemble(
             rootEntries = listOf(
                 TreeEntry("a.txt", FileMode.REGULAR_FILE, blob("a")),
@@ -85,7 +86,28 @@ class RootTreeAssemblerTest {
     }
 
     @Test
-    fun `a file and a directory of the same name sort file first`() {
+    fun `a gitlink sorts by its plain name, not as a directory`() {
+        // A submodule is a directory on disk and not in the tree: given the slash, `sub` would
+        // follow `sub.txt` the way the directory `a` follows `a.txt` above.
+        val tree = assembler.assemble(
+            rootEntries = listOf(
+                TreeEntry("sub", FileMode.GITLINK, ObjectId.fromString("1".repeat(40))),
+                TreeEntry("sub.txt", FileMode.REGULAR_FILE, blob("s")),
+            ),
+            subdirEntries = emptyList(),
+            at = { "test" },
+        )
+
+        assertEquals(listOf("sub", "sub.txt"), namesOf(tree))
+    }
+
+    @Test
+    fun `a shorter name sorts before one that extends it`() {
+        // Not the slash rule: `x` runs out before `x-dir/` does, so it wins on length whatever the
+        // directory's key ends in. The pairs that turn on the slash are `a-` and `a.txt` against the
+        // directory `a`, above. A file and a directory of one name never reach the sort together:
+        // the assembler keys entries by name, so such a pair is refused as a collision, or, for a
+        // root `.gitmodules`, replaced by the one the braid writes.
         val tree = assembler.assemble(
             rootEntries = listOf(TreeEntry("x", FileMode.REGULAR_FILE, blob("x"))),
             subdirEntries = listOf(TreeEntry("x-dir", FileMode.TREE, emptyTree())),
@@ -105,6 +127,14 @@ class RootTreeAssemblerTest {
 
         assembler.assemble(emptyList(), listOf(TreeEntry("api", FileMode.TREE, emptyTree())), at = { "c3" })
         assertEquals(2, assembler.treesWritten)
+
+        // The mode is part of what makes two sets identical: the same blob as a plain file and as
+        // an executable one is two different trees.
+        val script = blob("#!/bin/sh")
+        val plain = assembler.assemble(listOf(TreeEntry("run.sh", FileMode.REGULAR_FILE, script)), emptyList(), at = { "c4" })
+        val executable =
+            assembler.assemble(listOf(TreeEntry("run.sh", FileMode.EXECUTABLE_FILE, script)), emptyList(), at = { "c5" })
+        assertNotEquals(plain, executable)
     }
 
     @Test
@@ -158,12 +188,16 @@ class RootTreeAssemblerTest {
             rootEntries = listOf(
                 TreeEntry("zebra", FileMode.REGULAR_FILE, blob("z")),
                 TreeEntry("ěšč", FileMode.REGULAR_FILE, blob("e")),
+                TreeEntry("\uD83D\uDE00", FileMode.REGULAR_FILE, blob("smile")),
+                TreeEntry("\uFF01", FileMode.REGULAR_FILE, blob("bang")),
             ),
             subdirEntries = emptyList(),
             at = { "test" },
         )
-        // UTF-8 puts the multi-byte name last: 0xC4 is above every ASCII letter.
-        assertEquals(listOf("zebra", "ěšč"), namesOf(tree))
+        // UTF-8 puts the multi-byte names last: 0xC4 is above every ASCII letter. The last two are
+        // the pair on which UTF-8 and a Kotlin string disagree: U+FF01 is EF BC 81 against the
+        // emoji's F0 9F 98 80, while in UTF-16 the emoji's surrogate 0xD83D comes before 0xFF01.
+        assertEquals(listOf("zebra", "ěšč", "\uFF01", "\uD83D\uDE00"), namesOf(tree))
         assertNotEquals(ObjectId.zeroId(), tree)
     }
 }
