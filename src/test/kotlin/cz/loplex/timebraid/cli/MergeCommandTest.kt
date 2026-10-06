@@ -25,6 +25,8 @@ class MergeCommandTest {
     fun `--version prints the program name and version`() {
         val version = assertThrows<PrintMessage> { MergeCommand().parse(arrayOf("--version")) }
 
-        assertTrue(version.message!!.contains("git-timebraid"))
+        // A jar says the version Maven gave it; the classes a test runs from say "dev".
+        val line = version.message!!
+        assertTrue(Regex("""git-timebraid version (dev|\d+\.\d+\.\d+(-SNAPSHOT)?)""").matches(line), line)
     }
 }
