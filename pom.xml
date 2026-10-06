@@ -275,6 +275,18 @@
                             <addClasspath>true</addClasspath>
                             <useUniqueVersions>false</useUniqueVersions>
                         </manifest>
+                        <!--
+                            Mordant reads the terminal size through JNA, which loads a native library through JNI,
+                            and from JDK 24 on (JEP 472) a JVM warns about that on every run
+                            unless the jar it was started from says the code may.
+                            A jar started with `java -jar`, as the launcher scripts start this one, says so here,
+                            for all code on the class path, the jars its Class-Path names included;
+                            and once it may, mordant uses the JDK's own foreign function API instead,
+                            on JDK 22 and later.
+                        -->
+                        <manifestEntries>
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
                     </archive>
                 </configuration>
             </plugin>
