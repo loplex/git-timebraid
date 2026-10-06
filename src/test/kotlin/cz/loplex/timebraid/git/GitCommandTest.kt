@@ -102,6 +102,10 @@ class GitCommandTest {
         val failure = assertThrows<GitCommandException> {
             git.cloneMirror(tmp.resolve("does-not-exist.git").toString(), tmp.resolve("clone.git"))
         }
-        assertTrue(failure.message!!.contains("clone --mirror"), failure.message)
+        // The command heads the message, and what git said follows it, in whatever language git
+        // speaks here.
+        val lines = failure.message!!.lines()
+        assertTrue(lines.first().contains("clone --mirror"), failure.message)
+        assertTrue(lines.drop(1).any { it.isNotBlank() }, failure.message)
     }
 }
