@@ -160,7 +160,7 @@ class CommitGraphReaderTest {
             tagged = repo.commit("a2", parents = listOf(a1))
             f = repo.commit("f", parents = listOf(a1))
             repo.branch("main", tagged)
-            repo.branch("feature/x", f)
+            repo.branch("feature/x/y", f)
             repo.lightweightTag("v1.0", tagged)
         }
 
@@ -174,12 +174,12 @@ class CommitGraphReaderTest {
                 return inputs.interleaveTips.map { it.id }.toSet()
             }
 
-            // A star spans path separators, so a prefix pattern reaches a nested branch name.
+            // A star spans path separators, so a prefix pattern reaches a branch nested below it.
             assertEquals(setOf(f.name), idsFor("refs/heads/feature/*"))
             // Tags are refs too, and are matched under their own prefix.
             assertEquals(setOf(tagged.name), idsFor("refs/tags/v1.*"))
             // A short name matches nothing: patterns are against the full ref name on purpose.
-            assertEquals(emptySet<String>(), idsFor("feature/x"))
+            assertEquals(emptySet<String>(), idsFor("feature/x/y"))
             // A bare star is every ref, which puts the whole loaded graph in scope.
             assertEquals(setOf(f.name, tagged.name), idsFor("*"))
             // No pattern means the default scope, and nothing to resolve.
