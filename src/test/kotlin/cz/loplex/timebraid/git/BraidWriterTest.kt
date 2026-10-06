@@ -267,6 +267,23 @@ class BraidWriterTest {
     }
 
     @Test
+    fun `the provenance trailer lists a merge's original parents first parent first`() {
+        // The order is what tells a merge's own line from the branch it brought in, as
+        // `git log --first-parent` in the input reads it: a3 merged f1 into a2.
+        corpus()
+        val out = tmp.resolve("merged.git")
+        braid(out)
+
+        val a3 = new(read(out), "a3")
+        assertTrue(
+            a3.message.endsWith(
+                " parents=${original.getValue("a2").name},${original.getValue("f1").name}]\n"
+            ),
+            a3.message,
+        )
+    }
+
+    @Test
     fun `{subdir} in the subject prefix is the destination, and the name at the root`() {
         // backend lands in server/, so its name and its destination differ, which is what tells
         // the two placeholders apart; webui is the root repository, which has no subdirectory.
