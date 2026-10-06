@@ -253,6 +253,12 @@ Seventeen changes alter what a command line written for 0.1.0 does:
   0.1.0 read the value as a revision, so `main~1` named the parent of `main` and passed a dry run,
   and the run then failed after creating the output, the half-made repository left behind.
 
+- **A run on JDK 24 or later prints no warnings about native access.**\
+  0.1.0 printed four `WARNING:` lines there on every run, for the native library JNA loads to read
+  the terminal size.\
+  The jar's manifest now allows native access, with `Enable-Native-Access`, and on JDK 22 and later
+  mordant then reads the terminal size through the JDK's own foreign function API instead.
+
 ## [0.1.0] - 2026-09-08
 
 First release.
