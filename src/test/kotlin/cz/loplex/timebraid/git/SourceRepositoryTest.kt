@@ -52,6 +52,26 @@ class SourceRepositoryTest {
     }
 
     @Test
+    fun `a branch is looked up by its name, not read as a revision`() {
+        val dir = tmp.resolve("backend.git")
+        val main = TestRepoBuilder.create(dir).use { repo ->
+            val a1 = repo.commit("a1")
+            val a2 = repo.commit("a2", parents = listOf(a1))
+            repo.branch("main", a2)
+            repo.lightweightTag("v1", a1)
+            a2
+        }
+
+        SourceRepository.open(dir).use { repo ->
+            assertEquals(main, repo.resolveBranch("main"))
+            // Each of these names an object to a revision parser, and no branch.
+            for (name in listOf("main~1", "main^", "main@{0}", "../tags/v1", "../../HEAD")) {
+                assertNull(repo.resolveBranch(name), name)
+            }
+        }
+    }
+
+    @Test
     fun `opens a repository that has a working tree`() {
         val built = TestRepoBuilder.create(tmp.resolve("webui"), bare = false)
         val only = built.commit("only commit")

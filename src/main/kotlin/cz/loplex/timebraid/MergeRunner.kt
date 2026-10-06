@@ -7,6 +7,7 @@ import cz.loplex.timebraid.git.CommitGraphReader
 import cz.loplex.timebraid.git.GitCommand
 import cz.loplex.timebraid.git.OrderBy
 import cz.loplex.timebraid.git.SourceRepository
+import cz.loplex.timebraid.git.SpliceCheck
 import cz.loplex.timebraid.git.TargetRepository
 import cz.loplex.timebraid.git.WriteOptions
 import cz.loplex.timebraid.git.WriteSummary
@@ -118,17 +119,41 @@ class MergeRunner(
                         .toMap()
                 )
 
-            val output = request.output
-            if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
-
             // The one place that pairs the two: these are the repositories handed to read() above,
             // and it gives back one SourceInputs per repository in the same order, each naming the
             // strand that repository became, so they are paired by position here, once. Everything
             // downstream looks a repository up by its Source and never has to know the order again.
             val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
+            // Before anything is written into the output, and on a dry run too: a collision with
+            // the root repository's entries happens at one commit of the braid rather than at all
+            // of them, so a dry run that skipped this would report a plan it cannot carry out.
+            SpliceCheck(plan, braid, repoOf).check()
+
+            val output = request.output
+            // Before anything is written into the output, and on a dry run too. A remote the output
+            // already records under an input's name is that input's own when its URL is the input's,
+            // as on a rerun into the same output, and is left as it is; under another URL it is
+            // someone else's, and `git remote add` would refuse it only once the braid was written.
+            val remotes = if (request.keepRemotes && output != null) {
+                TargetRepository.remotesOf(output, request.bare)
+            } else {
+                emptyMap()
+            }
+            for (input in locations) {
+                if (input.name !in remotes) continue
+                val url = remotes[input.name]
+                require(url == input.remote) {
+                    "the output already has a remote '${input.name}' at '$url', and --keep-remotes would " +
+                        "record input '${input.name}' there as '${input.remote}' -- remove that remote from " +
+                        "the output, or give the input another name, with ::<name> after its location and " +
+                        "before any =<subdir>"
+                }
+            }
+            if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
+
             val written = writeOutput(output, repoOf, braid, plan)
-            if (request.keepRemotes) keepRemotes(output, locations)
+            if (request.keepRemotes) keepRemotes(output, locations.filter { it.name !in remotes })
             if (!request.bare) {
                 progress.step("checking out ${braid.mainlineBranch}")
                 git.checkout(output, braid.mainlineBranch)
@@ -190,7 +215,8 @@ class MergeRunner(
     }
 
     /**
-     * Records each input as a remote of the output. The remote-tracking refs themselves are written
+     * Records each of [locations] as a remote of the output; one the output records already, under
+     * its own URL, is not among them. The remote-tracking refs themselves are written
      * by [BraidWriter] along with everything else, so all that is left here is the configuration
      * that lets a later `git fetch <name>` pick up what the input has gained since.
      */

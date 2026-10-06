@@ -76,9 +76,18 @@ class SourceRepository private constructor(
         }
     }
 
-    /** Object a branch points at, or `null` if the repository has no such branch. */
-    fun resolveBranch(shortName: String): ObjectId? =
-        repository.resolve(Constants.R_HEADS + shortName)
+    /**
+     * Object a branch points at, or `null` if the repository has no such branch.
+     *
+     * The name is looked up as a ref rather than parsed as a revision, which would take `main~1` or
+     * `main^` for an ancestor of `main`. A name JGit would not accept for a ref is no branch
+     * either, and is not looked up at all: a `..` in it would walk out of `refs/heads/` to whatever
+     * ref file it lands on.
+     */
+    fun resolveBranch(shortName: String): ObjectId? {
+        val name = Constants.R_HEADS + shortName
+        return if (Repository.isValidRefName(name)) repository.exactRef(name)?.objectId else null
+    }
 
     /**
      * Every commit reachable from [tips], their ancestors included, as plain data. The [RevWalk] and

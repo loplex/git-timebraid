@@ -122,6 +122,47 @@ class MergeCommandOptionsTest {
         )
     }
 
+    @Test
+    fun `a rerun into its own output keeps its remotes, and a remote under another URL is refused`() {
+        corpus()
+        val out = tmp.resolve("merged.git")
+        val inputs = arrayOf(tmp.resolve("backend.git").toString(), tmp.resolve("webui.git").toString())
+        run("-o", out.toString(), "--keep-remotes", *inputs)
+        fun remotes() = FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repository ->
+            repository.config.getSubsections("remote").associateWith {
+                repository.config.getString("remote", it, "url")
+            }
+        }
+        fun refs() = FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repository ->
+            repository.refDatabase.refs.associate { it.name to it.objectId }
+        }
+        val recorded = remotes()
+
+        // The same run again, into what it wrote: the remotes are its own, and stay as they were.
+        run("-o", out.toString(), "--keep-remotes", "--force", *inputs)
+        assertEquals(recorded, remotes())
+
+        // Another repository under the name of one: refused before the output is written, where 0.1.0
+        // failed on `git remote add` with the braid already written, and on a dry run too, which 0.1.0
+        // passed.
+        TestRepoBuilder.create(tmp.resolve("elsewhere/backend.git")).use { repo ->
+            repo.branch("main", repo.commit("c1", at = Instant.parse("2021-01-01T08:00:00Z")))
+        }
+        val written = refs()
+        for (dryRun in listOf(false, true)) {
+            val result = MergeCommand().test(
+                listOfNotNull(
+                    "-o", out.toString(), "--keep-remotes", "--force", "--dry-run".takeIf { dryRun },
+                    tmp.resolve("elsewhere/backend.git").toString(), tmp.resolve("webui.git").toString(),
+                )
+            )
+            assertEquals(1, result.statusCode, result.output)
+            assertTrue(result.output.contains("already has a remote 'backend'"), result.output)
+        }
+        assertEquals(written, refs())
+        assertEquals(recorded, remotes())
+    }
+
     /**
      * Every object id the bare repository at [dir] holds, packed and loose alike.
      *

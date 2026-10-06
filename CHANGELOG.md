@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Fourteen changes alter what a command line written for 0.1.0 does:
+Seventeen changes alter what a command line written for 0.1.0 does:
 
 - `.git` as a destination, `repo=.git`, is refused.\
   0.1.0 accepted it, and wrote a tree that git will not check out.
@@ -74,6 +74,19 @@ Fourteen changes alter what a command line written for 0.1.0 does:
 - `--interleave-ref` brings the whole ancestry of what it names into scope.\
   A ref sitting on a mainline is no longer a no-op, and one off the mainlines reaches past the first
   mainline commit it meets; either can move the braid.
+
+- `--keep-remotes` into an output that already records a remote of an input's name keeps it where
+  its URL is the input's, as on a rerun, and refuses it under another URL, on a dry run too.\
+  0.1.0 failed on either at `git remote add`, with the braid already written; its dry run passed
+  both.
+
+- `--dry-run` refuses a collision with an entry of the `--root-repo`, as the run itself does.\
+  0.1.0 found it only while writing, so a dry run passed the plan.
+
+- `--mainline-branch` naming a revision rather than a branch, as `main~1` or `main^` does, is
+  refused.\
+  0.1.0 braided along that commit on a dry run, and the run itself failed after creating the
+  output.
 
 ### Fixed
 
@@ -217,6 +230,21 @@ Fourteen changes alter what a command line written for 0.1.0 does:
   An input whose name a ref carried (a tag, a branch shared with another input, a `--keep-remotes`
   mirror) then failed at the write of that ref, the braid already written; one no ref carried went
   through.
+
+- **A rerun with `--keep-remotes` into its own output keeps the remotes it recorded.**\
+  0.1.0 tried to add them again and failed, `remote … already exists`, with the braid already
+  written.\
+  A remote of an input's name under another URL is refused instead, before anything is written into
+  the output, on a dry run too.
+
+- **A collision with an entry of the `--root-repo` is refused before the output is created.**\
+  0.1.0 found it only while writing, after creating the output and fetching every input into it, so
+  a dry run passed the plan and the run left a half-written output behind. `--dry-run` refuses it
+  now too.
+
+- **A `--mainline-branch` that names no branch is refused before the output is created.**\
+  0.1.0 read the value as a revision, so `main~1` named the parent of `main` and passed a dry run,
+  and the run then failed after creating the output, the half-made repository left behind.
 
 ## [0.1.0] - 2026-09-08
 
