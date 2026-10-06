@@ -1,6 +1,7 @@
 package cz.loplex.timebraid.git
 
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.PersonIdent
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 /**
@@ -50,11 +52,13 @@ class BraidWriterTest {
             ids += mapOf("a1" to a1, "a2" to a2, "f1" to f1, "a3" to a3)
         }
         TestRepoBuilder.create(tmp.resolve("webui.git")).use { repo ->
-            val b1 = repo.commit("b1", at = at("10:00"))
+            // Authored before it was committed, so a swapped author and committer would show, and
+            // in a zone of its own, so a writer that wrote every ident in UTC would show too.
+            val b1 = repo.commit("b1", at = at("10:00"), authorAt = at("09:30"), zone = ZoneOffset.ofHours(2))
             val b2 = repo.commit("b2", parents = listOf(b1), at = at("13:00"))
             repo.branch("main", b2)
             repo.branch("esbuild-experiment", b1)
-            repo.annotatedTag("v2.0", b2, message = "the second release\n")
+            repo.annotatedTag("v2.0", b2, message = "the second release\n", zone = ZoneOffset.ofHours(-5))
             ids += mapOf("b1" to b1, "b2" to b2)
         }
         original = ids
@@ -273,6 +277,24 @@ class BraidWriterTest {
         val second = tmp.resolve("second.git")
         braid(first)
         braid(second)
+
+        // Byte for byte: name, email, time and zone. PersonIdent's own equals leaves the zone out.
+        fun bytes(ident: PersonIdent?) = ident?.toExternalString()
+        val originals = listOf("backend", "webui").flatMap { name ->
+            SourceRepository.open(tmp.resolve("$name.git")).use { repo ->
+                repo.readReachable(repo.branches().map { it.target })
+            }
+        }.associateBy { it.id.name }
+        for (commit in read(first).commits) {
+            val original = originals.getValue(originalShaOf(commit))
+            assertEquals(bytes(original.author), bytes(commit.author), "the author of ${original.message}")
+            assertEquals(bytes(original.committer), bytes(commit.committer), "the committer of ${original.message}")
+        }
+        // An annotated tag carries an ident of its own, its tagger.
+        val tagger = SourceRepository.open(tmp.resolve("webui.git")).use { it.tags().single().annotation?.tagger }
+        SourceRepository.open(first).use { repo ->
+            assertEquals(bytes(tagger), bytes(repo.tags().single { it.name == "webui/v2.0" }.annotation?.tagger))
+        }
 
         SourceRepository.open(first).use { a ->
             SourceRepository.open(second).use { b ->

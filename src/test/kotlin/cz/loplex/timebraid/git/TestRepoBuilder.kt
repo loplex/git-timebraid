@@ -22,9 +22,10 @@ import java.time.ZoneOffset
  *
  * Two properties matter for those tests:
  *
- * - **Deterministic shas.** Every ident is the same `Tester <tester@example.com>` in UTC and the
- *   clock only moves when a test says so, so a fixture produces byte-identical objects on every run
- *   and on every machine. That is what lets an integration test assert an exact output sha.
+ * - **Deterministic shas.** Every ident is the same `Tester <tester@example.com>`, in UTC unless a
+ *   test gives a zone, and the clock only moves when a test says so, so a fixture produces
+ *   byte-identical objects on every run and on every machine. That is what lets an integration test
+ *   assert an exact output sha.
  * - **Awkward trees on demand.** A file path may contain `/`, so a fixture can put a blob inside a
  *   subdirectory; content is written verbatim, so a fixture can carry `CRLF`, NUL bytes or a
  *   non-ASCII name. A path may also be a *gitlink* rather than a blob, which is how a fixture
@@ -38,13 +39,14 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
     private var clock = Instant.parse("2021-01-01T00:00:00Z")
 
     /** Author/committer of the next commit, before it is advanced. */
-    private fun who(at: Instant) = PersonIdent("Tester", "tester@example.com", at, ZoneOffset.UTC)
+    private fun who(at: Instant, zone: ZoneOffset = ZoneOffset.UTC) =
+        PersonIdent("Tester", "tester@example.com", at, zone)
 
     /**
      * Creates a commit and returns its id. The clock advances one hour per commit unless [at] is
      * given explicitly, which is how a test writes a history whose timestamps run backwards.
      * [authorAt] overrides only the author date, so a test can reproduce a rebased commit whose
-     * author and committer dates disagree.
+     * author and committer dates disagree; [zone] is the offset both are written in.
      *
      * [files] keys are slash-separated paths: `mapOf("src/App.kt" to "…")` builds the `src` tree.
      * [gitlinks] puts a submodule entry at a path instead of a blob, pointing at a commit that need
@@ -57,6 +59,7 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         gitlinks: Map<String, ObjectId> = emptyMap(),
         at: Instant? = null,
         authorAt: Instant? = null,
+        zone: ZoneOffset = ZoneOffset.UTC,
     ): ObjectId = commitBytes(
         message,
         parents,
@@ -64,6 +67,7 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         gitlinks,
         at,
         authorAt,
+        zone,
     )
 
     /** Like [commit], but the file contents are given as raw bytes — for CRLF, NUL or binary blobs. */
@@ -74,6 +78,7 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         gitlinks: Map<String, ObjectId> = emptyMap(),
         at: Instant? = null,
         authorAt: Instant? = null,
+        zone: ZoneOffset = ZoneOffset.UTC,
     ): ObjectId {
         val leaves = LinkedHashMap<String, Leaf>()
         for ((path, bytes) in files) leaves[path] = Leaf.Blob(bytes)
@@ -88,8 +93,8 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
                 @Suppress("UsePropertyAccessSyntax")
                 setTreeId(writeTree(inserter, leaves))
                 setParentIds(parents)
-                author = who(authorAt ?: stamp)
-                committer = who(stamp)
+                author = who(authorAt ?: stamp, zone)
+                committer = who(stamp, zone)
                 setMessage(message)
             }
             val id = inserter.insert(builder)
@@ -139,13 +144,18 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
 
     fun lightweightTag(shortName: String, target: ObjectId) = point(Constants.R_TAGS + shortName, target)
 
-    /** Creates an annotated tag object and points `refs/tags/<shortName>` at it. */
-    fun annotatedTag(shortName: String, target: ObjectId, message: String = shortName): ObjectId {
+    /** Creates an annotated tag, its tagger in [zone], and points `refs/tags/<shortName>` at it. */
+    fun annotatedTag(
+        shortName: String,
+        target: ObjectId,
+        message: String = shortName,
+        zone: ZoneOffset = ZoneOffset.UTC,
+    ): ObjectId {
         repository.newObjectInserter().use { inserter ->
             val builder = TagBuilder().apply {
                 setObjectId(target, Constants.OBJ_COMMIT)
                 tag = shortName
-                tagger = who(clock)
+                tagger = who(clock, zone)
                 setMessage(message)
             }
             val id = inserter.insert(builder)
