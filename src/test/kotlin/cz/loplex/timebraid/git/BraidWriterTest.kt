@@ -231,10 +231,9 @@ class BraidWriterTest {
     @Test
     fun `a recreated tag carries no signature, PGP or SSH`() {
         // A signature covers the input's tag object, which names the input's commit and not the one
-        // the output's tag points at, so nothing could verify it there. JGit already leaves it out
-        // of the message the reader takes, and BraidWriter.stripSignature drops a PGP one again:
-        // this holds the outcome, not which of the two brings it about. The output is read raw,
-        // because reading it back through JGit would leave a signature out just the same.
+        // the output's tag points at, so nothing could verify it there. The reader cuts it off where
+        // git does. The output is read raw, because reading it back through JGit would leave a
+        // signature out just the same.
         corpus()
         TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
             val b1 = original.getValue("b1")
@@ -250,6 +249,40 @@ class BraidWriterTest {
                     val ref = git.repository.exactRef("refs/tags/webui/$name") ?: error("webui/$name was not written")
                     val raw = String(walk.parseTag(ref.objectId).rawBuffer, Charsets.UTF_8)
                     assertTrue(raw.endsWith("\n\n$name\n"), raw)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a recreated tag's message is cut where git reads its signature as beginning`() {
+        // git takes a signature to start at the last line that begins one of the headers it knows,
+        // whatever follows that block: JGit reads two of these shapes otherwise.
+        corpus()
+        val own = "notes\n-----BEGIN PGP SIGNATURE-----\nquoted\n-----END PGP SIGNATURE-----\nmore\n"
+        val tags = mapOf(
+            // A block quoted ahead of the tag's own signature is message, and stays.
+            "quoted" to (own + "-----BEGIN PGP SIGNATURE-----\nreal\n-----END PGP SIGNATURE-----\n" to own),
+            // Followed by a block git does not know, the quoted one is where the signature begins.
+            "noted" to (
+                "notes\n-----BEGIN PGP SIGNATURE-----\nquoted\n-----END PGP SIGNATURE-----\n" +
+                    "-----BEGIN NOTE-----\nkept\n-----END NOTE-----\n" to "notes\n"
+                ),
+            // A PGP MESSAGE armour is a signature to git, and to JGit only message.
+            "armour" to ("armour\n-----BEGIN PGP MESSAGE-----\nabc\n-----END PGP MESSAGE-----\n" to "armour\n"),
+        )
+        TestRepoBuilder.open(tmp.resolve("webui.git")).use { repo ->
+            for ((name, written) in tags) repo.annotatedTag(name, original.getValue("b1"), written.first)
+        }
+        val out = tmp.resolve("merged.git")
+        braid(out)
+
+        Git.open(out.toFile()).use { git ->
+            RevWalk(git.repository).use { walk ->
+                for ((name, written) in tags) {
+                    val ref = git.repository.exactRef("refs/tags/webui/$name") ?: error("webui/$name was not written")
+                    val raw = String(walk.parseTag(ref.objectId).rawBuffer, Charsets.UTF_8)
+                    assertTrue(raw.endsWith("\n\n${written.second}"), raw)
                 }
             }
         }

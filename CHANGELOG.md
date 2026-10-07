@@ -13,7 +13,7 @@ to a command line written for that release.
 
 ### Upgrading from 0.1.0
 
-Thirty changes alter what a command line written for 0.1.0 does:
+Thirty-one changes alter what a command line written for 0.1.0 does:
 
 - `repo=subdir` is now `repo::subdir=<name>`.\
   Written as `repo::subdir`, the input is also named after the subdirectory, so its tags change with
@@ -147,6 +147,10 @@ Thirty changes alter what a command line written for 0.1.0 does:
 
 - `--tag-prefix` substitutes `{subdir}` as well as `{repo}`.\
   0.1.0 substituted only `{repo}` there, and wrote a `{subdir}` into the tag's name as it stood.
+
+- A recreated tag's message is cut where git reads its signature as beginning.\
+  0.1.0 cut it at the first `-----BEGIN PGP SIGNATURE-----` line, losing a block the message quoted
+  ahead of its own signature, and kept a signature armoured as `-----BEGIN PGP MESSAGE-----`.
 
 ### Changed
 
@@ -629,6 +633,13 @@ Thirty changes alter what a command line written for 0.1.0 does:
 - **One local repository given as two arguments is refused.**\
   0.1.0 took `./a::x ./a::y` for two inputs and braided the one history against itself, every
   commit twice.
+
+- **A recreated tag's message is cut where git reads its signature as beginning.**\
+  0.1.0 cut it at the first `-----BEGIN PGP SIGNATURE-----` line, so a block the message quoted
+  ahead of its own signature was lost with everything after it, and it kept a signature armoured as
+  `-----BEGIN PGP MESSAGE-----`.\
+  It is now cut before the last line that begins one of the signature headers git knows, as git
+  does.
 
 ## [0.1.0] - 2026-09-08
 

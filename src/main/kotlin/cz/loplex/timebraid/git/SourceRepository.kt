@@ -14,9 +14,12 @@ import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.treewalk.CanonicalTreeParser
 import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.util.FS
+import org.eclipse.jgit.util.RawParseUtils
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.charset.IllegalCharsetNameException
+import java.nio.charset.UnsupportedCharsetException
 import java.nio.file.Path
 
 /**
@@ -91,7 +94,7 @@ class SourceRepository private constructor(
                     val peeled = walk.peel(pointee)
                     if (peeled !is RevCommit) return@mapNotNull null
                     val annotation = (pointee as? RevTag)?.let {
-                        TagAnnotation(it.taggerIdent, it.fullMessage)
+                        TagAnnotation(it.taggerIdent, messageAsGitReads(it))
                     }
                     PeeledRef(ref.name.removePrefix(namespace), peeled.id, annotation)
                 }
@@ -405,8 +408,47 @@ class GitRef(val name: String, val target: ObjectId)
 /** A ref resolved to the commit it peels to, with its annotation where it has one. */
 class PeeledRef(val name: String, val target: ObjectId, val annotation: TagAnnotation?)
 
-/** The parts of an annotated tag object that survive retargeting. */
+/** The parts of an annotated tag object that survive retargeting: its message without a signature. */
 class TagAnnotation(val tagger: PersonIdent?, val message: String)
+
+/**
+ * A tag's message as git reads it: everything before the last line that begins with one of the
+ * signature headers git knows — `parse_signed_buffer()` in its gpg-interface.c — or all of it where
+ * no line does.
+ *
+ * Not JGit's [RevTag.getFullMessage], which cuts at the last `-----BEGIN` line of any kind, and only
+ * where that one opens a signature JGit knows, `PGP MESSAGE` not among them: a block quoted ahead of
+ * a `-----BEGIN NOTE-----` line would stay in the message as JGit reads it, and so would a
+ * `PGP MESSAGE` signature, where git reads both as signature. Decoded as JGit decodes the message,
+ * by the tag's `encoding` header.
+ */
+internal fun messageAsGitReads(tag: RevTag): String {
+    val raw = tag.rawBuffer
+    val start = RawParseUtils.tagMessage(raw, 0)
+    if (start < 0) return ""
+    var end = raw.size
+    var line = start
+    while (line < raw.size) {
+        if (SIGNATURE_HEADERS.any { RawParseUtils.match(raw, line, it) >= 0 }) end = line
+        line = RawParseUtils.nextLF(raw, line)
+    }
+    val charset = try {
+        RawParseUtils.parseEncoding(raw)
+    } catch (e: IllegalCharsetNameException) {
+        Charsets.UTF_8
+    } catch (e: UnsupportedCharsetException) {
+        Charsets.UTF_8
+    }
+    return RawParseUtils.decode(charset, raw, start, end)
+}
+
+/** The lines git takes for the start of a signature, as bytes. */
+private val SIGNATURE_HEADERS = listOf(
+    "-----BEGIN PGP SIGNATURE-----",
+    "-----BEGIN PGP MESSAGE-----",
+    "-----BEGIN SIGNED MESSAGE-----",
+    "-----BEGIN SSH SIGNATURE-----",
+).map { it.toByteArray(Charsets.US_ASCII) }
 
 /**
  * One commit of an input repository, copied out of JGit's object model so the rest of the program

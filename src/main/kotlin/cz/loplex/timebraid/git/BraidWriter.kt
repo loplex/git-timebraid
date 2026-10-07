@@ -386,6 +386,11 @@ class BraidWriter(
      *
      * [WriteOptions.lightweightTags] asks for that same loss outright, whatever the destination:
      * the ref points straight at the commit and no tag object is written at all.
+     *
+     * A signature is not carried: it covers the input's tag object, which names a commit the output
+     * does not have, so nothing could verify it there. The reader leaves it out of the message
+     * [SourceRepository.tags] hands over, cut where git cuts it (see [messageAsGitReads]), so the
+     * message is written as it comes.
      */
     private fun targetOf(name: String, ref: BraidOutRef): ObjectId {
         val commit = idOf(ref.commit)
@@ -396,29 +401,10 @@ class BraidWriter(
             name = name.removePrefix(Constants.R_TAGS),
             target = commit,
             tagger = annotation.tagger,
-            message = stripSignature(annotation.message),
+            message = annotation.message,
         )
     }
 
     private fun idOf(commit: Commit): ObjectId =
         written[commit] ?: error("$commit was never written")
-
-    companion object {
-
-        private const val PGP_HEADER = "-----BEGIN PGP SIGNATURE-----"
-
-        /**
-         * Drops a trailing PGP signature block from a tag message.
-         *
-         * A signature covers the commit the tag pointed at, which no longer exists under that
-         * name here, so carrying it over would attach a proof of something to something else.
-         */
-        fun stripSignature(message: String): String {
-            val start = message.indexOf(PGP_HEADER)
-            if (start < 0) return message
-            if (start != 0 && message[start - 1] != '\n') return message
-            return message.substring(0, start)
-        }
-
-    }
 }
