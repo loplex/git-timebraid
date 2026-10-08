@@ -221,7 +221,7 @@ Verification:
 - An opt-in smoke run against a real corpus.
   On a three-repository history of 14 000 commits the result passes `git fsck --strict`,
   and walking the provenance trailers finds every original parent edge present in the output.
-- CI runs `mvn verify` on Linux and Windows against JDK 17 and 21,
+- CI runs `mvn verify` on Linux, Windows and macOS against JDK 17 and 21,
   and on each of those also builds the bundled-runtime archive and merges two repositories with the launcher inside it.
 
 `mvn package` produces the runnable artifacts — `target/lib/`, the program's jar beside its dependencies',
