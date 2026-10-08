@@ -57,21 +57,18 @@ jobs:
       # The bundled-runtime profile is the part of the build most likely to fail on a platform
       # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
       # and links a hand-written module list. Building it in the same matrix that runs the tests
-      # means the archives a release uploads for Linux x64, Windows x64 and macOS aarch64 have been
-      # built on their platform already; the Linux aarch64 and macOS x64 ones are built only by the
-      # release workflow.
-      #
-      # The quotes around the property are load-bearing on Windows, where the default shell is
-      # PowerShell: it ends a parameter name at a dot, so a bare -Djlink.compress=2 reaches Maven
-      # as the two arguments `-Djlink` and `.compress=2` and the second is read as a lifecycle
-      # phase. Bash needs no such help, and takes the quotes without complaint.
+      # means the archives a release uploads for Linux x64 and macOS aarch64 have been built on
+      # their platform already; the Linux aarch64 and macOS x64 ones are built only by the release
+      # workflow. The Windows one is linked on Linux, as the release links it, by the jobs below.
       - name: Build the bundled-runtime archive
+        if: runner.os != 'Windows'
         run: mvn -B -ntp -DskipTests -Pbundled-runtime "-Djlink.compress=${{ matrix.jlink_compress }}" package
 
       # jlink proves the image links, not that it runs. The script unpacks the archive a user
       # would download and merges two repositories with it; it lives in .github/scripts/ so that
       # anything else building these archives can make the very same check about them.
       - name: Merge two repositories with the unpacked archive
+        if: runner.os != 'Windows'
         shell: bash
         run: .github/scripts/smoke-distribution.sh
 
@@ -84,6 +81,57 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
           if-no-files-found: ignore
+
+  # The Windows archive as the release builds it: linked on Linux from the jmods of the Windows JDK
+  # of the same version, so that a release's Windows leg is not the first run of that path. JDK 21
+  # only, the release's; the matrix above covers jlink on 17.
+  windows-archive:
+    name: windows-x64 archive, linked on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Assigned before it is used: a failing substitution inside an argument would leave the
+      # build to run on the jmods of this JDK instead, and name a Linux image for Windows.
+      - name: Build the bundled-runtime archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          jmods=$(.github/scripts/fetch-jmods.sh windows x64 "$RUNNER_TEMP/jdk")
+          mvn -B -ntp -DskipTests -Pbundled-runtime "-Djlink.jmods=$jmods" -Ddist.os=windows -Ddist.arch=x64 package
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundled-windows-x64
+          path: target/git-timebraid-*-windows-x64.tar.gz
+          if-no-files-found: error
+
+  # The archive above, run where it is for: the smoke test the other platforms run on the archive
+  # they built.
+  windows-archive-runs:
+    name: windows-x64 archive runs
+    needs: windows-archive
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundled-windows-x64
+          path: target
+
+      - name: Merge two repositories with the unpacked archive
+        shell: bash
+        run: .github/scripts/smoke-distribution.sh
 
   # Two places quote the tool's own output to a reader as something they can reproduce: the worked
   # examples, and the option list in doc/usage.md. `mvn verify` proves the behaviour; it says

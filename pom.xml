@@ -101,7 +101,7 @@
 
         <!--
             Platform of the bundled-runtime archive, set by the platform-* profiles below. A runtime
-            image only runs on the platform that built it, so it has to show in the file name; the
+            image only runs on the platform it was linked for, so it has to show in the file name; the
             plain archive carries no runtime and stays portable, hence no suffix there.
         -->
         <dist.os>${os.name}</dist.os>
@@ -495,7 +495,7 @@
         <!--
             `mvn -Pbundled-runtime package` adds a second archive that carries a trimmed JVM, for
             people who would rather not install one. It is opt-in and produced in addition to the
-            portable archive, never instead of it: a runtime image is built by and for one platform,
+            portable archive, never instead of it: a runtime image is built for one platform,
             so producing it by default would quietly make the release platform-specific.
 
             jlink, not GraalVM native-image: the bundle is a real JVM, so no reflection metadata has
@@ -541,7 +541,7 @@
                                     <goal>exec</goal>
                                 </goals>
                                 <configuration>
-                                    <!-- The JDK running Maven is the one that gets bundled. -->
+                                    <!-- The JDK running Maven is the one that gets bundled, unless `jlink.jmods` names another. -->
                                     <executable>${java.home}/bin/jlink</executable>
                                     <arguments>
                                         <argument>--add-modules</argument>
@@ -580,6 +580,41 @@
                                         just warns each time; saying so explicitly keeps the build quiet.
                                     -->
                                     <tarLongFileMode>gnu</tarLongFileMode>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            `-Djlink.jmods=<dir>` links the bundled runtime from another JDK's `jmods` directory
+            rather than from the JDK running Maven, which is how one platform builds another's
+            archive: jlink on Linux, given the jmods of a Windows JDK, writes a Windows image. The
+            jmods have to come from the same JDK version as the jlink reading them.
+
+            The platform in the archive's name still comes from the machine building it, so a cross
+            build names the platform it is for as well:
+
+                mvn -Pbundled-runtime -Djlink.jmods=<windows-jdk>/jmods -Ddist.os=windows -Ddist.arch=x64 package
+        -->
+        <profile>
+            <id>jlink-jmods</id>
+            <activation><property><name>jlink.jmods</name></property></activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>jlink-runtime</id>
+                                <configuration>
+                                    <arguments combine.children="append">
+                                        <argument>--module-path</argument>
+                                        <argument>${jlink.jmods}</argument>
+                                    </arguments>
                                 </configuration>
                             </execution>
                         </executions>

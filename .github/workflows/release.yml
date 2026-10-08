@@ -143,12 +143,17 @@ jobs:
         #
         # ubuntu-24.04-arm is free for public repositories and billed for private ones -- if this
         # repository ever goes private, that leg is the one to drop.
+        #
+        # The Windows image is the exception to building on the platform: it is linked on Linux,
+        # from the jmods of the Windows JDK of the same version (`cross_os` and `cross_arch`, which
+        # spell the platform the way both the archive's name and the Adoptium API do), and run on
+        # Windows by the job after this one.
         include:
           - { os: ubuntu-latest,    label: linux-x64 }
           - { os: ubuntu-24.04-arm, label: linux-aarch64 }
           - { os: macos-15-intel,   label: macos-x64 }
           - { os: macos-latest,     label: macos-aarch64 }
-          - { os: windows-latest,   label: windows-x64 }
+          - { os: ubuntu-latest,    label: windows-x64, cross_os: windows, cross_arch: x64 }
     steps:
       - uses: actions/checkout@v7
 
@@ -164,12 +169,30 @@ jobs:
         shell: bash
         run: .github/scripts/set-release-version.sh "$RELEASE_TAG"
 
-      # A jlink image is built by and for one platform, which is why this job exists once per
-      # platform rather than once. The tests ran in the portable job; this is the archive itself.
+      # A jlink image is built for one platform, which is why this job exists once per platform
+      # rather than once. The tests ran in the portable job; this is the archive itself. A cross leg
+      # fetches the other platform's jmods first; the substitution is assigned before it is used,
+      # since a failing one inside an argument would leave the build to run without them. Two
+      # spelled-out commands rather than an array of extra arguments: the macOS runners' bash is
+      # 3.2, which under `set -u` takes an empty array for an unset variable and stops.
       - name: Build the bundled-runtime archive
-        run: mvn -B -ntp -DskipTests -Pbundled-runtime package
+        shell: bash
+        env:
+          CROSS_OS: ${{ matrix.cross_os }}
+          CROSS_ARCH: ${{ matrix.cross_arch }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CROSS_OS" ]; then
+              jmods=$(.github/scripts/fetch-jmods.sh "$CROSS_OS" "$CROSS_ARCH" "$RUNNER_TEMP/jdk")
+              mvn -B -ntp -DskipTests -Pbundled-runtime \
+                  "-Djlink.jmods=$jmods" "-Ddist.os=$CROSS_OS" "-Ddist.arch=$CROSS_ARCH" package
+          else
+              mvn -B -ntp -DskipTests -Pbundled-runtime package
+          fi
 
+      # A cross-linked image does not run where it was built; the job below runs it.
       - name: Merge two repositories with the unpacked archive
+        if: ${{ !matrix.cross_os }}
         shell: bash
         run: .github/scripts/smoke-distribution.sh
 
@@ -185,9 +208,27 @@ jobs:
             target/git-timebraid-*-${{ matrix.label }}.zip
           if-no-files-found: error
 
+  # The Windows archive was linked on Linux, so this is the first time it meets Windows: the same
+  # smoke test the other legs ran where they built, on the archive the release will upload.
+  windows-runs:
+    name: windows-x64 archive runs
+    needs: bundled
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundled-windows-x64
+          path: target
+
+      - name: Merge two repositories with the unpacked archive
+        shell: bash
+        run: .github/scripts/smoke-distribution.sh
+
   release:
     name: draft release
-    needs: [portable, bundled]
+    needs: [portable, bundled, windows-runs]
     # Where a manual run stops, having built and smoke-tested every archive without putting
     # anything where a person could mistake it for a release.
     if: github.ref_type == 'tag'
