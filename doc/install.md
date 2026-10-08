@@ -109,6 +109,14 @@ and it reads `TIMEBRAID_JAVA` and `JAVA_OPTS` the way the shipped launcher does.
 mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>.tar.gz (and .zip)
 ```
 
-- It is the JDK running Maven that gets bundled, so the archive is for the platform you build on —
+- By default it is the JDK running Maven that gets bundled, so the archive is for the platform you build on —
   hence the platform in its name.
+- `-Djlink.jmods=<dir>` links the `jmods` of another JDK instead, which builds another platform's archive:
+  the Windows one is built on Linux this way.\
+  The `jmods` have to be from the same JDK version as the one running Maven,
+  and `-Ddist.os` and `-Ddist.arch` name the platform it is for:
+
+  ```bash
+  mvn -q -Pbundled-runtime -Djlink.jmods=<windows-jdk>/jmods -Ddist.os=windows -Ddist.arch=x64 package
+  ```
 - `--compress=zip-6` needs JDK 21 or newer; on JDK 17 build it with `-Djlink.compress=2`.

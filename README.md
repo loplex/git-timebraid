@@ -222,7 +222,9 @@ Verification:
   On a three-repository history of 14 000 commits the result passes `git fsck --strict`,
   and walking the provenance trailers finds every original parent edge present in the output.
 - CI runs `mvn verify` on Linux, Windows and macOS against JDK 17 and 21,
-  and on each of those also builds the bundled-runtime archive and merges two repositories with the launcher inside it.
+  and on Linux and macOS also builds the bundled-runtime archive
+  and merges two repositories with the launcher inside it.\
+  The Windows archive is linked on Linux, as a release links it, and that merge runs on Windows.
 
 `mvn package` produces the runnable artifacts — `target/lib/`, the program's jar beside its dependencies',
 a portable archive, and under `-Pbundled-runtime` one carrying its own JVM.\
