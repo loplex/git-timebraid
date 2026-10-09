@@ -335,6 +335,20 @@ class TargetRepository private constructor(
             if (bare) location.toFile() else location.resolve(Constants.DOT_GIT).toFile()
 
         /**
+         * The remotes an output at [location] already records, each name with its URL, or none where
+         * no repository is there yet. Read from the git directory [create] would write into, a bare
+         * output's own or a non-bare one's `.git`, and never from a repository around it.
+         */
+        fun remotesOf(location: Path, bare: Boolean): Map<String, String?> {
+            val gitDir = gitDirOf(location, bare)
+            if (!RepositoryCache.FileKey.isGitRepository(gitDir, FS.DETECTED)) return emptyMap()
+            return FileRepositoryBuilder().setGitDir(gitDir).build().use { repository ->
+                val config = repository.config
+                config.getSubsections("remote").associateWith { config.getString("remote", it, "url") }
+            }
+        }
+
+        /**
          * Pins line-ending handling off in the output's own config.
          *
          * Blobs are copied byte for byte from the inputs, so any translation on the way to a working
