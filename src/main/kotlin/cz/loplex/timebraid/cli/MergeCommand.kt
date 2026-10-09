@@ -62,7 +62,10 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         )
 
     private val force by option("--force").flag()
-        .help("Write into a non-empty output directory instead of refusing it (deletes nothing).")
+        .help(
+            "Write into a non-empty output directory instead of refusing it, over whatever it already " +
+                "holds.",
+        )
 
     private val rootRepo by option("--root-repo")
         .help(
