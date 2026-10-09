@@ -111,7 +111,7 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
         .help("Only report errors.")
 
     private val verbose by option("-v", "--verbose").flag()
-        .help("Print every git subprocess as it runs.")
+        .help("Print each git command the tool shells out to, as it runs.")
 
     private val inputs by argument("repo")
         .help(
