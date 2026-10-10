@@ -54,6 +54,14 @@ jobs:
         if: runner.os == 'Linux'
         run: .github/scripts/check-comments.sh
 
+      # Every runtime dependency ships in lib/ as its own jar, and doc/legal/README.md says under which license:
+      # adding or dropping a dependency in the pom changes the first, not the second.
+      #
+      # Linux and JDK 17 only: what the resolver lists does not vary with either.
+      - name: Check doc/legal lists every library the archives ship
+        if: runner.os == 'Linux' && matrix.java == '17'
+        run: .github/scripts/check-legal.py
+
       - name: mvn verify
         run: mvn -B -ntp verify
 

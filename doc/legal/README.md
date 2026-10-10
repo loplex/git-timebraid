@@ -6,6 +6,9 @@ Each is listed below under the license it is used under,
 and the full text of every one of those licenses is in this directory.\
 A jar that ships license files of its own still carries them.
 
+`.github/scripts/check-legal.py` holds the list to the build's runtime dependencies, both ways:
+a dependency added without a row here, or a row left behind by one removed, fails CI.
+
 ## Libraries
 
 | Library                                              | License                               | Project                                          |
