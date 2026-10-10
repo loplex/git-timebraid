@@ -5,12 +5,13 @@
         git-timebraid-<version>/
             bin/git-timebraid        launcher, resolves lib/ relative to itself
             bin/git-timebraid.bat
-            lib/git-timebraid.jar    the shaded jar
+            lib/git-timebraid.jar    the program; its manifest names the jars beside it
+            lib/*.jar                every runtime dependency, unmodified
+            doc/legal/               the license texts and the library list NOTICE points at
             README.md CHANGELOG.md LICENSE NOTICE
 
-    Only the jar is repackaged here;
-    the assembly plugin never merges class paths (that is shade's job, see pom.xml),
-    so its habit of keeping only the first of same-named resources cannot bite.
+    Every jar goes in as the build wrote or fetched it; the assembly plugin repackages none of them,
+    so its habit of keeping only the first of same-named resources has nothing to bite.
 -->
 <assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -24,12 +25,17 @@
 
     <includeBaseDirectory>true</includeBaseDirectory>
 
-    <files>
-        <file>
-            <source>${project.build.directory}/${project.build.finalName}.jar</source>
+    <fileSets>
+        <!-- The program's jar and every runtime dependency's, as the build laid them out in target/lib/. -->
+        <fileSet>
+            <directory>${project.build.directory}/lib</directory>
             <outputDirectory>lib</outputDirectory>
-        </file>
-    </files>
+            <includes>
+                <include>*.jar</include>
+            </includes>
+            <fileMode>0644</fileMode>
+        </fileSet>
+    </fileSets>
 
     <componentDescriptors>
         <componentDescriptor>src/main/assembly/component-common.xml</componentDescriptor>

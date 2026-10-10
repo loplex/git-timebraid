@@ -42,5 +42,11 @@
             </includes>
             <fileMode>0644</fileMode>
         </fileSet>
+        <!-- What NOTICE points at: the license texts, and the libraries each one covers. -->
+        <fileSet>
+            <directory>${project.basedir}/doc/legal</directory>
+            <outputDirectory>doc/legal</outputDirectory>
+            <fileMode>0644</fileMode>
+        </fileSet>
     </fileSets>
 </component>

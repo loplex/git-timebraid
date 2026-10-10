@@ -7,7 +7,9 @@
             bin/git-timebraid
             bin/git-timebraid.bat
             lib/git-timebraid.jar
+            lib/*.jar                every runtime dependency
             runtime/                 the jlink image; bin/java is what the launcher runs
+            doc/legal/               the license texts and the library list NOTICE points at
             README.md CHANGELOG.md LICENSE NOTICE
 
     Platform-specific by construction, which is why the name says which platform it is for.
@@ -24,14 +26,16 @@
 
     <includeBaseDirectory>true</includeBaseDirectory>
 
-    <files>
-        <file>
-            <source>${project.build.directory}/${project.build.finalName}.jar</source>
-            <outputDirectory>lib</outputDirectory>
-        </file>
-    </files>
-
     <fileSets>
+        <!-- The program's jar and every runtime dependency's, as the build laid them out in target/lib/. -->
+        <fileSet>
+            <directory>${project.build.directory}/lib</directory>
+            <outputDirectory>lib</outputDirectory>
+            <includes>
+                <include>*.jar</include>
+            </includes>
+            <fileMode>0644</fileMode>
+        </fileSet>
         <!--
             The runtime image in two halves,
             because the assembly plugin applies one mode per fileSet and the image needs two.

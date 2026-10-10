@@ -29,8 +29,7 @@ name: Release
 # so the tag after this one has something to agree with.
 # Nothing moves before then, which is what leaves a deleted draft's version free to be cut again.
 #
-# What comes out is a *draft* release
-# holding one portable archive, one archive per platform, the standalone jar, and a SHA256SUMS file.
+# What comes out is a *draft* release holding one portable archive, one archive per platform, and a SHA256SUMS file.
 # Nothing is published to anyone until a human opens that draft and presses the button.
 #
 # The same workflow runs from the Actions tab against any branch, and that run is the rehearsal for all of the above.
@@ -125,7 +124,6 @@ jobs:
           path: |
             target/git-timebraid-*.tar.gz
             target/git-timebraid-*.zip
-            target/git-timebraid.jar
           if-no-files-found: error
 
   bundled:
@@ -216,7 +214,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -la
-          sha256sum git-timebraid-* git-timebraid.jar > SHA256SUMS
+          sha256sum git-timebraid-* > SHA256SUMS
           cat SHA256SUMS
 
       # `gh` is preinstalled on the runners, so the upload needs no third-party action --

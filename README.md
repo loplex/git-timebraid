@@ -233,7 +233,8 @@ Building from source produces the same archive:
 mvn -q package                       # builds target/git-timebraid-<version>.tar.gz (and .zip)
 ```
 
-The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside `lib/git-timebraid.jar`.\
+The archive is `bin/git-timebraid` (plus `git-timebraid.bat` for Windows) beside `lib/`,
+which holds `git-timebraid.jar` and the jars of its dependencies.\
 The launcher finds the jar relative to itself, through symlinks,
 so linking `bin/git-timebraid` into a directory already on `PATH` works too.
 
@@ -250,10 +251,11 @@ The JVM is picked in this order, first hit wins:
 JAVA_OPTS=-Xmx4g git-timebraid -o /tmp/merged ~/repos/backend.git ~/repos/webui.git
 ```
 
-The jar is self-contained (all dependencies shaded in), so skipping the archive works as well:
+The jar's manifest names its dependencies, which the build puts beside it in `target/lib/`,
+so skipping the archive works as well:
 
 ```bash
-java -jar target/git-timebraid.jar --help
+java -jar target/lib/git-timebraid.jar --help
 ```
 
 #### Without a JVM installed
@@ -269,7 +271,7 @@ mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>
   the launcher notices `runtime/` beside it and uses that JVM in preference to `JAVA_HOME`,
   which is the point of the archive.
 - `TIMEBRAID_JAVA=/path/to/java` overrides that when you would rather it ran on yours.
-- Roughly 55 MB unpacked on Linux, 46 MB of it the runtime, against 9 MB for the plain jar.
+- Roughly 56 MB unpacked on Linux, 46 MB of it the runtime, against 10 MB of jars in the plain archive.
 - Unlike the plain archive it only runs on the platform that built it — hence the platform in the file name.
 - It is the JDK running Maven that gets bundled, and `--compress=zip-6` needs JDK 21 or newer;
   on JDK 17 build it with `-Djlink.compress=2`.
@@ -355,12 +357,12 @@ Verification:
 - CI runs `mvn verify` on Linux and Windows against JDK 17 and 21,
   and on each of those also builds the bundled-runtime archive and merges two repositories with the launcher inside it.
 
-`mvn package` produces the runnable artifacts:
-a self-contained jar and a `tar.gz`/`zip` holding it together with the `git-timebraid` launcher,
+`mvn package` produces the runnable artifacts: `target/lib/`, the program's jar beside its dependencies',
+and a `tar.gz`/`zip` holding them together with the `git-timebraid` launcher,
 plus, under `-Pbundled-runtime`, a platform-specific archive with a `jlink` runtime
 for machines without a JVM (see Install).
 
-Releases are cut by tagging: CI builds the portable archive, the jar, and one archive per platform
+Releases are cut by tagging: CI builds the portable archive and one archive per platform
 (Linux, macOS and Windows on x64, Linux and macOS on aarch64),
 merges two repositories with the `.tar.gz` of each archive to check it runs, and uploads them with a `SHA256SUMS`.\
 What changed between releases is in [CHANGELOG.md](CHANGELOG.md).

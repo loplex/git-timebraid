@@ -1,6 +1,7 @@
 ## Install
 
-Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) beside `lib/git-timebraid.jar`.\
+Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows)
+beside `lib/`, the program's jar and its dependencies'.\
 Unpack it and put `bin/` on `PATH` —
 `git timebraid …` then works as well as `git-timebraid …`, because git runs any `git-<name>` it finds there.\
 `--help` is the exception:
@@ -12,7 +13,6 @@ so the program's own help is `git-timebraid --help`.
 |-------------------------------------------------------|------------------------------------------------------------------------------------------------------|
 | `git-timebraid-<version>.tar.gz` / `.zip`             | Runs anywhere; needs Java 17 or newer                                                                |
 | `git-timebraid-<version>-<os>-<arch>.tar.gz` / `.zip` | Carries its own trimmed JVM, for machines without one. Larger, and only for the platform in its name |
-| `git-timebraid.jar`                                   | The same program as `java -jar`, dependencies shaded in                                              |
 
 Whichever asset you take, `git` on `PATH` is needed for three jobs only:
 cloning a remote input and refreshing that clone on a later run,

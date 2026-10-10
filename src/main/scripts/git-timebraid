@@ -6,6 +6,7 @@
 #
 #     bin/git-timebraid   <- this script
 #     lib/git-timebraid.jar
+#     lib/*.jar           the jars its manifest's Class-Path names
 #
 # Put bin/ on PATH and both `git-timebraid …` and `git timebraid …` work,
 # the latter because git runs any `git-<name>` it finds on PATH as a subcommand.

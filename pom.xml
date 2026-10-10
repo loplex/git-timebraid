@@ -54,7 +54,7 @@
 
         <!--
             The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of this file).
-            Derived from `jdeps` with `print-module-deps` over the shaded jar,
+            Derived from `jdeps` with `print-module-deps` over the jars in lib/,
             minus one module and plus two that change the image, each deviation for a reason jdeps cannot see:
 
             - java.desktop is dropped.
@@ -176,6 +176,36 @@
                 </configuration>
             </plugin>
 
+            <!-- Clears what one build leaves in target/ and the next would otherwise pick up. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <!--
+                            target/lib/ goes into the archives whole,
+                            so a jar left there by an earlier build, a dependency's old version after an upgrade,
+                            would ship beside the new one.
+                            Emptied in the same phase that fills it, before the copy, which is declared further down.
+                        -->
+                        <id>clear-lib</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/lib</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!--
                 Unit tests: the pure planner and the narrow git wrappers, milliseconds each.
                 Everything named *IT is an end-to-end fixture and runs in `integration-test`.
@@ -211,103 +241,68 @@
                 </executions>
             </plugin>
 
+            <!--
+                The program's own jar, written into target/lib/ rather than target/:
+                the dependencies are copied there beside it (maven-dependency-plugin, below),
+                so target/lib/ is the archive's lib/ as it ships,
+                and `java -jar target/lib/git-timebraid.jar` runs the program from a build
+                exactly as the launchers run it from an archive.
+
+                The manifest's Class-Path names each dependency by its file name alone,
+                a sibling of the jar, which is where both places put them.
+                The names are the ones maven-dependency-plugin writes;
+                `useUniqueVersions` off keeps a snapshot dependency's name the same on both sides.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.5.1</version>
                 <configuration>
+                    <outputDirectory>${project.build.directory}/lib</outputDirectory>
                     <archive>
                         <manifest>
                             <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
                             <mainClass>${main.class}</mainClass>
+                            <addClasspath>true</addClasspath>
+                            <useUniqueVersions>false</useUniqueVersions>
                         </manifest>
                     </archive>
                 </configuration>
             </plugin>
 
             <!--
-                The distributable jar.
-                Shade rather than assembly:
-                mordant's three terminal backends each register themselves under one META-INF/services name,
-                and assembly's jar-with-dependencies keeps the first of same-named resources
-                and skips the rest instead of merging them, so two of the three would be lost.
-                ServicesResourceTransformer concatenates them instead.
-
-                The shaded jar replaces the main artifact,
-                so `java -jar target/git-timebraid.jar` needs nothing beside it;
-                the thin jar stays as target/original-git-timebraid.jar.
+                The runtime dependencies, each its own unmodified jar, into target/lib/ beside the program's.
+                Unmodified is the point: every jar keeps its own META-INF,
+                so the services each registers (mordant's three terminal backends register theirs under one name),
+                the signatures of signed jars and each project's license files stay as their authors shipped them,
+                with nothing to merge or choose between.
+                Bound to prepare-package, so the directory is complete before the assembly reads it.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.6.1</version>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
                 <executions>
                     <execution>
-                        <phase>package</phase>
+                        <id>copy-runtime-dependencies</id>
+                        <phase>prepare-package</phase>
                         <goals>
-                            <goal>shade</goal>
+                            <goal>copy-dependencies</goal>
                         </goals>
                         <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <!--
-                                            JGit and friends ship signed jars.
-                                            A signature covers the original jar's contents,
-                                            so after repackaging the JVM would reject the entries it still describes
-                                            with "Invalid signature file digest".
-                                        -->
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                        <!-- Module descriptors of the parts, meaningless once merged. -->
-                                        <exclude>module-info.class</exclude>
-                                        <exclude>META-INF/versions/*/module-info.class</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
-                            <transformers>
-                                <!-- Concatenates META-INF/services/* rather than letting one jar win. -->
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-                                <!--
-                                    Keeps Main-Class in the merged manifest.
-                                    Implementation-Version comes with it,
-                                    which is what the version option reads at runtime.
-                                -->
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>${main.class}</mainClass>
-                                </transformer>
-                                <!--
-                                    Both archives ship LICENSE and NOTICE beside the jar,
-                                    but the jar is a release asset on its own too,
-                                    and shading the dependencies in is what makes it the thing that redistributes them:
-                                    JGit's EDL and slf4j's and colormath's MIT
-                                    all ask for their notice to travel with the binary.
-                                    Under META-INF/git-timebraid/ rather than at META-INF/LICENSE,
-                                    because JNA already occupies that path with its own dual-license notice
-                                    and shade has no merge rule for it, so one of the two would win silently.
-                                -->
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
-                                    <resource>META-INF/git-timebraid/LICENSE</resource>
-                                    <file>LICENSE</file>
-                                </transformer>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
-                                    <resource>META-INF/git-timebraid/NOTICE</resource>
-                                    <file>NOTICE</file>
-                                </transformer>
-                            </transformers>
+                            <includeScope>runtime</includeScope>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
 
             <!--
-                The downloadable archive: bin/git-timebraid (plus .bat) beside lib/git-timebraid.jar,
+                The downloadable archive: bin/git-timebraid (plus .bat) beside lib/,
                 so that putting bin/ on PATH makes both `git-timebraid …` and `git timebraid …` work.
-                Runs after shade, which is why it is declared below it:
-                both bind to `package`, and Maven runs same-phase executions in pom order.
+                It runs after the jar is written:
+                both bind to `package`, where maven-jar-plugin's default-jar, which the packaging itself binds,
+                comes before any execution the pom adds to the phase.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -391,7 +386,7 @@
             jlink, not GraalVM native-image:
             the bundle is a real JVM, so no reflection metadata has to be maintained for JGit,
             and nothing can fail at a user's machine that did not already fail here.
-            The cost is size (~55 MB unpacked against ~9 MB) and one build per platform.
+            The cost is size (~56 MB unpacked against ~10 MB) and one build per platform.
         -->
         <profile>
             <id>bundled-runtime</id>
