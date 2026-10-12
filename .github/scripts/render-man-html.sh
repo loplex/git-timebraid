@@ -48,10 +48,17 @@ mkdir -p "$out"
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
 
+# The pieces of the date's pattern below, named so that its sed program fits on a line.
+ws='[[:space:]][[:space:]]*'
+field='[^[:space:]][^[:space:]]*'
+hyphen='\\\{0,1\}-'
+year='\([0-9]\{4\}\)'
+two_digits='\([0-9]\{2\}\)'
+
 status=0
 for page in "${pages[@]}"; do
     # The third field of `.TH NAME 1 "2026\-09\-29" ...`, its hyphens escaped for roff or not.
-    date=$(sed -n 's/^\.TH[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*"\([0-9]\{4\}\)\\\{0,1\}-\([0-9]\{2\}\)\\\{0,1\}-\([0-9]\{2\}\)".*/\1 \2 \3/p' "$page")
+    date=$(sed -n "s/^\.TH$ws$field$ws$field$ws\"$year$hyphen$two_digits$hyphen$two_digits\".*/\1 \2 \3/p" "$page")
     if [ -z "$date" ]; then
         echo "$page has no .TH line with a YYYY-MM-DD date to stamp the HTML with" >&2
         status=1

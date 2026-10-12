@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hold every line of the Kotlin sources and of the documentation's prose to its width.
+"""Hold every line of the Kotlin sources, the scripts, the workflows, the XML and the prose to its width.
 
 The width is the source's, not the page's. A renderer joins the lines of a Markdown paragraph, so
 the page looks the same however they are broken; what a long line costs is everywhere the source
@@ -29,6 +29,10 @@ import markdown_source
 # Markdown is the set check-blocks.py reads, so the two divide the same documents between them.
 SECTIONS = {
     "*.{kt,kts}": lambda: tracked(["*.kt", "*.kts"]),
+    # The launcher is a shell script with no suffix, in the repo root and in src/main/scripts.
+    "{*.py,*.sh,*.yml,*.xml,git-timebraid}": lambda: tracked(
+        ["*.py", "*.sh", "*.yml", "*.xml", "git-timebraid", "*/git-timebraid"]
+    ),
     "*.md": markdown_source.documents,
 }
 TABLE_ROW = re.compile(r"^ {0,3}\|")

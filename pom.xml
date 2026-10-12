@@ -101,7 +101,9 @@
             as java.sql requires java.logging, and jlink adds such a module either way.
             Naming it changes nothing.
         -->
-        <jlink.modules>java.base,java.logging,java.management,java.security.jgss,java.sql,jdk.charsets,jdk.unsupported</jlink.modules>
+        <jlink.modules>
+            java.base,java.logging,java.management,java.security.jgss,java.sql,jdk.charsets,jdk.unsupported
+        </jlink.modules>
 
         <!--
             jlink's compression.
@@ -541,7 +543,9 @@
                                         <descriptor>src/main/assembly/distribution-with-runtime.xml</descriptor>
                                     </descriptors>
                                     <appendAssemblyId>false</appendAssemblyId>
-                                    <finalName>${project.artifactId}-${project.version}-${dist.os}-${dist.arch}</finalName>
+                                    <finalName>
+                                        ${project.artifactId}-${project.version}-${dist.os}-${dist.arch}
+                                    </finalName>
                                     <!--
                                         Two paths under runtime/conf/security exceed tar's 100-character limit.
                                         The default already writes them as GNU long entries, it just warns each time;
