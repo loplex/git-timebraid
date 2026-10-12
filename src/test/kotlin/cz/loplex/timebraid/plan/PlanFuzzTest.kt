@@ -6,9 +6,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 
 /**
- * The invariants of the planner, asserted over a hundred generated histories whose timestamps
- * deliberately run backwards across parent edges — the shape a rebase, a cherry-pick or a skewed
- * clock leaves behind, and the shape hand-written fixtures are least likely to cover.
+ * The invariants of the planner,
+ * asserted over a hundred generated histories whose timestamps deliberately run backwards across parent edges —
+ * the shape a rebase, a cherry-pick or a skewed clock leaves behind,
+ * and the shape hand-written fixtures are least likely to cover.
  */
 class PlanFuzzTest {
 
@@ -26,8 +27,8 @@ class PlanFuzzTest {
 
     @Test
     fun `interleaves the repositories rather than concatenating them`() {
-        // A corpus that came out sorted by repository would satisfy every invariant above and be
-        // useless, so check that the braid actually alternates.
+        // A corpus that came out sorted by repository would satisfy every invariant above and be useless,
+        // so check that the braid actually alternates.
         for (seed in 1..20) {
             val corpus = RandomGraphs.generate(seed, repositories = 3, commitsPerRepository = 70)
             val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sources.associateWith { it.name })
@@ -43,9 +44,9 @@ class PlanFuzzTest {
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
     fun `plans a corpus the size of a real one`() {
-        // The prototype's ordering was quadratic and a corpus this size took minutes of it. Nothing
-        // here is timed to the millisecond, but a planner that regressed to that shape would not
-        // finish inside the timeout.
+        // The prototype's ordering was quadratic and a corpus this size took minutes of it.
+        // Nothing here is timed to the millisecond,
+        // but a planner that regressed to that shape would not finish inside the timeout.
         val corpus = RandomGraphs.generate(seed = 7, repositories = 3, commitsPerRepository = 5_000)
 
         val plan = corpus.graph.braid(corpus.heads).plan(corpus.graph.sources.associateWith { it.name })

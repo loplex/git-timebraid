@@ -53,31 +53,34 @@
         <main.class>cz.loplex.timebraid.MainKt</main.class>
 
         <!--
-            The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of
-            this file). Derived from `jdeps` with `print-module-deps` over the shaded jar, minus one module
-            and plus two, each deviation for a reason jdeps cannot see:
+            The JDK modules the bundled runtime carries (profile `bundled-runtime`, at the bottom of this file).
+            Derived from `jdeps` with `print-module-deps` over the shaded jar,
+            minus one module and plus two, each deviation for a reason jdeps cannot see:
 
-            - java.desktop is dropped. jdeps reports it because com.sun.jna.Native declares methods
-              taking java.awt.Window; the JVM resolves a method descriptor when the method is called,
-              not when the class initialises, and nothing here calls those. Verified against a real
-              terminal: mordant still detects the terminal size through JNA. Saves ~11 MB of ~57.
-            - jdk.charsets is added. Charsets arrive through ServiceLoader, so jdeps never sees them;
-              without it, anything outside the default charset fails, which on Windows is most of
-              cp1250.
-            - jdk.unsupported is added for sun.misc.Unsafe, reached reflectively by libraries that
-              probe for it rather than linking against it.
+            - java.desktop is dropped.
+              jdeps reports it because com.sun.jna.Native declares methods taking java.awt.Window;
+              the JVM resolves a method descriptor when the method is called, not when the class initialises,
+              and nothing here calls those.
+              Verified against a real terminal: mordant still detects the terminal size through JNA.
+              Saves ~11 MB of ~57.
+            - jdk.charsets is added.
+              Charsets arrive through ServiceLoader, so jdeps never sees them;
+              without it, anything outside the default charset fails, which on Windows is most of cp1250.
+            - jdk.unsupported is added for sun.misc.Unsafe,
+              reached reflectively by libraries that probe for it rather than linking against it.
         -->
         <jlink.modules>java.base,java.logging,java.management,java.security.jgss,java.sql,jdk.charsets,jdk.unsupported</jlink.modules>
 
         <!--
-            jlink's compression. `zip-6` needs JDK 21; on JDK 17 build with `-Djlink.compress=2`.
+            jlink's compression.
+            `zip-6` needs JDK 21; on JDK 17 build with `-Djlink.compress=2`.
         -->
         <jlink.compress>zip-6</jlink.compress>
 
         <!--
-            Platform of the bundled-runtime archive, set by the platform-* profiles below. A runtime
-            image only runs on the platform that built it, so it has to show in the file name; the
-            plain archive carries no runtime and stays portable, hence no suffix there.
+            Platform of the bundled-runtime archive, set by the platform-* profiles below.
+            A runtime image only runs on the platform that built it, so it has to show in the file name;
+            the plain archive carries no runtime and stays portable, hence no suffix there.
         -->
         <dist.os>${os.name}</dist.os>
         <dist.arch>${os.arch}</dist.arch>
@@ -110,10 +113,11 @@
         </dependency>
 
         <!--
-            JGit logs through slf4j. Without a binding on the runtime classpath, slf4j's initializer
-            announces itself on stderr ("No SLF4J providers were found.") the first time JGit logs
-            anything, which Progress has no way to suppress. slf4j-simple, configured in
-            simplelogger.properties, keeps a normal run silent while letting JGit's warnings through.
+            JGit logs through slf4j.
+            Without a binding on the runtime classpath, slf4j's initializer announces itself on stderr
+            ("No SLF4J providers were found.") the first time JGit logs anything, which Progress has no way to suppress.
+            slf4j-simple, configured in simplelogger.properties,
+            keeps a normal run silent while letting JGit's warnings through.
         -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -183,10 +187,10 @@
             </plugin>
 
             <!--
-                Integration tests: the whole clone -> read -> plan -> write pipeline over synthetic
-                repositories built by TestRepoBuilder, plus an opt-in smoke run against a real corpus
-                (-Dtimebraid.corpus=<dir of bare clones>). Bound to `verify` so `mvn verify` is the
-                one command CI runs.
+                Integration tests:
+                the whole clone -> read -> plan -> write pipeline over synthetic repositories built by TestRepoBuilder,
+                plus an opt-in smoke run against a real corpus (-Dtimebraid.corpus=<dir of bare clones>).
+                Bound to `verify` so `mvn verify` is the one command CI runs.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -217,13 +221,16 @@
             </plugin>
 
             <!--
-                The distributable jar. Shade rather than assembly: JGit registers its transports and
-                repository builders through META-INF/services entries, and assembly's jar-with-dependencies
-                overwrites same-named resources instead of merging them, so half the providers would be
-                lost. ServicesResourceTransformer concatenates them instead.
+                The distributable jar.
+                Shade rather than assembly:
+                JGit registers its transports and repository builders through META-INF/services entries,
+                and assembly's jar-with-dependencies overwrites same-named resources instead of merging them,
+                so half the providers would be lost.
+                ServicesResourceTransformer concatenates them instead.
 
-                The shaded jar replaces the main artifact, so `java -jar target/git-timebraid.jar` needs
-                nothing beside it; the thin jar stays as target/original-git-timebraid.jar.
+                The shaded jar replaces the main artifact,
+                so `java -jar target/git-timebraid.jar` needs nothing beside it;
+                the thin jar stays as target/original-git-timebraid.jar.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -242,10 +249,10 @@
                                     <artifact>*:*</artifact>
                                     <excludes>
                                         <!--
-                                            JGit and friends ship signed jars. A signature covers the
-                                            original jar's contents, so after repackaging the JVM would
-                                            reject the entries it still describes with
-                                            "Invalid signature file digest".
+                                            JGit and friends ship signed jars.
+                                            A signature covers the original jar's contents,
+                                            so after repackaging the JVM would reject the entries it still describes
+                                            with "Invalid signature file digest".
                                         -->
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
@@ -260,20 +267,22 @@
                                 <!-- Concatenates META-INF/services/* rather than letting one jar win. -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                                 <!--
-                                    Keeps Main-Class in the merged manifest. Implementation-Version comes
-                                    with it, which is what the version option reads at runtime.
+                                    Keeps Main-Class in the merged manifest.
+                                    Implementation-Version comes with it,
+                                    which is what the version option reads at runtime.
                                 -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>${main.class}</mainClass>
                                 </transformer>
                                 <!--
-                                    Both archives ship LICENSE and NOTICE beside the jar, but the jar is a release
-                                    asset on its own too, and shading the dependencies in is what makes it the thing
-                                    that redistributes them: JGit's EDL and slf4j's and colormath's MIT all ask for
-                                    their notice to travel with the binary. Under META-INF/git-timebraid/ rather
-                                    than at META-INF/LICENSE, because JNA already occupies that path with its own
-                                    dual-license notice and shade has no merge rule for it, so one of the two would
-                                    win silently.
+                                    Both archives ship LICENSE and NOTICE beside the jar,
+                                    but the jar is a release asset on its own too,
+                                    and shading the dependencies in is what makes it the thing that redistributes them:
+                                    JGit's EDL and slf4j's and colormath's MIT
+                                    all ask for their notice to travel with the binary.
+                                    Under META-INF/git-timebraid/ rather than at META-INF/LICENSE,
+                                    because JNA already occupies that path with its own dual-license notice
+                                    and shade has no merge rule for it, so one of the two would win silently.
                                 -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
                                     <resource>META-INF/git-timebraid/LICENSE</resource>
@@ -290,10 +299,10 @@
             </plugin>
 
             <!--
-                The downloadable archive: bin/git-timebraid (plus .bat) beside lib/git-timebraid.jar, so
-                that putting bin/ on PATH makes both `git-timebraid …` and `git timebraid …` work. Runs
-                after shade, which is why it is declared below it: both bind to `package`, and Maven runs
-                same-phase executions in pom order.
+                The downloadable archive: bin/git-timebraid (plus .bat) beside lib/git-timebraid.jar,
+                so that putting bin/ on PATH makes both `git-timebraid …` and `git timebraid …` work.
+                Runs after shade, which is why it is declared below it:
+                both bind to `package`, and Maven runs same-phase executions in pom order.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -330,9 +339,10 @@
     </build>
     <profiles>
         <!--
-            Platform naming for the bundled-runtime archive. Hand-rolled rather than pulled from
-            os-maven-plugin: three operating systems and two architectures is the whole matrix, and a
-            build extension for it would cost more than it saves.
+            Platform naming for the bundled-runtime archive.
+            Hand-rolled rather than pulled from os-maven-plugin:
+            three operating systems and two architectures is the whole matrix,
+            and a build extension for it would cost more than it saves.
         -->
         <profile>
             <id>platform-linux</id>
@@ -367,14 +377,16 @@
         </profile>
 
         <!--
-            `mvn -Pbundled-runtime package` adds a second archive that carries a trimmed JVM, for
-            people who would rather not install one. It is opt-in and produced in addition to the
-            portable archive, never instead of it: a runtime image is built by and for one platform,
+            `mvn -Pbundled-runtime package` adds a second archive that carries a trimmed JVM,
+            for people who would rather not install one.
+            It is opt-in and produced in addition to the portable archive, never instead of it:
+            a runtime image is built by and for one platform,
             so producing it by default would quietly make the release platform-specific.
 
-            jlink, not GraalVM native-image: the bundle is a real JVM, so no reflection metadata has
-            to be maintained for JGit, and nothing can fail at a user's machine that did not already
-            fail here. The cost is size (~46 MB against ~9 MB) and one build per platform.
+            jlink, not GraalVM native-image:
+            the bundle is a real JVM, so no reflection metadata has to be maintained for JGit,
+            and nothing can fail at a user's machine that did not already fail here.
+            The cost is size (~46 MB against ~9 MB) and one build per platform.
         -->
         <profile>
             <id>bundled-runtime</id>
@@ -449,9 +461,9 @@
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <finalName>${project.artifactId}-${project.version}-${dist.os}-${dist.arch}</finalName>
                                     <!--
-                                        Two paths under runtime/conf/security exceed tar's 100-character
-                                        limit. The default already writes them as GNU long entries, it
-                                        just warns each time; saying so explicitly keeps the build quiet.
+                                        Two paths under runtime/conf/security exceed tar's 100-character limit.
+                                        The default already writes them as GNU long entries, it just warns each time;
+                                        saying so explicitly keeps the build quiet.
                                     -->
                                     <tarLongFileMode>gnu</tarLongFileMode>
                                 </configuration>

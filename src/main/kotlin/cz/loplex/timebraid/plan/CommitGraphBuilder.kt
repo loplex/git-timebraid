@@ -3,21 +3,21 @@ package cz.loplex.timebraid.plan
 /**
  * Assembles a [CommitGraph] from commits given in any order.
  *
- * A commit may name parents that have not been added yet — a repository log is usually walked
- * newest first, so forward references are the normal case, not the exception. Each one becomes a
- * [Commit] straight away and is filled in when its own turn comes; one that never gets a turn is an
- * error reported by [build], which is exactly the shape a shallow or partial clone has, and the
- * tool needs the whole graph.
+ * A commit may name parents that have not been added yet —
+ * a repository log is usually walked newest first, so forward references are the normal case, not the exception.\
+ * Each one becomes a [Commit] straight away and is filled in when its own turn comes;
+ * one that never gets a turn is an error reported by [build],
+ * which is exactly the shape a shallow or partial clone has, and the tool needs the whole graph.
  *
- * Parent references are resolved **within the same repository**. Original parent edges never cross
- * repository boundaries — the inputs are independent histories, and the edges that do cross are
- * precisely the ones the braid adds later. Two repositories may therefore contain the same commit
- * id without interfering; they become two distinct commits.
+ * Parent references are resolved **within the same repository**.
+ * Original parent edges never cross repository boundaries — the inputs are independent histories,
+ * and the edges that do cross are precisely the ones the braid adds later.\
+ * Two repositories may therefore contain the same commit id without interfering; they become two distinct commits.
  *
- * What the builder hands out is what the graph is made of: [addSource] returns the [Source] and
- * [addCommit] the [Commit] that will be in the finished graph, so a caller that has to remember a
- * commit — a ref target, a mainline tip, the original behind it — remembers the commit itself and
- * has nothing left to look up once [build] has run.
+ * What the builder hands out is what the graph is made of:
+ * [addSource] returns the [Source] and [addCommit] the [Commit] that will be in the finished graph,
+ * so a caller that has to remember a commit — a ref target, a mainline tip, the original behind it —
+ * remembers the commit itself and has nothing left to look up once [build] has run.
  */
 internal class CommitGraphBuilder {
 
@@ -32,7 +32,8 @@ internal class CommitGraphBuilder {
         Source(name).also { sources[it] = HashMap() }
 
     /**
-     * Adds a commit. [parentIds] are commit ids within the same repository, first parent first;
+     * Adds a commit.\
+     * [parentIds] are commit ids within the same repository, first parent first;
      * duplicates are dropped, keeping the first occurrence.
      */
     fun addCommit(
@@ -81,8 +82,8 @@ internal class CommitGraphBuilder {
     /**
      * The commits of [source], which is also the check that it is one of this builder's.
      *
-     * A [Source] is looked up by identity, so one from another builder is refused rather than
-     * quietly interning into a map that is not this graph's.
+     * A [Source] is looked up by identity,
+     * so one from another builder is refused rather than quietly interning into a map that is not this graph's.
      */
     private fun commitsOf(source: Source): HashMap<String, Commit> {
         val byId = sources[source]

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Builds the input repositories for the ordering-algorithm examples in this directory.
 #
-# Timestamps map directly to the "@n" notation the example READMEs use for a commit's ordering
-# timestamp: offset n -> BASE_EPOCH + n hours, so relative order and gaps are preserved and stay
-# readable in `git log`. Every date, name and address is pinned, so the repositories this builds
-# are byte-identical on every machine -- which is why the commit hashes quoted in those READMEs
-# can be checked against a fresh run.
+# Timestamps map directly to the "@n" notation the example READMEs use for a commit's ordering timestamp:
+# offset n -> BASE_EPOCH + n hours, so relative order and gaps are preserved and stay readable in `git log`.
+# Every date, name and address is pinned, so the repositories this builds are byte-identical on every machine --
+# which is why the commit hashes quoted in those READMEs can be checked against a fresh run.
 #
 # The repositories it writes are generated output and are not tracked by git; rerun freely.
 set -euo pipefail
@@ -43,9 +42,9 @@ merge_at() {
     t=$(ts "$offset")
     GIT_AUTHOR_DATE="@$t +0000" GIT_COMMITTER_DATE="@$t +0000" \
         git -C "$dir" merge -q --no-ff --no-edit -m "$name" "$other"
-    # No manual file staging here: the two branches never touch the same file, so a plain
-    # recursive merge (git's default strategy) combines their trees without conflicts. The
-    # graph shape (parents) is what these examples are about, not the merged content.
+    # No manual file staging here: the two branches never touch the same file,
+    # so a plain recursive merge (git's default strategy) combines their trees without conflicts.
+    # The graph shape (parents) is what these examples are about, not the merged content.
 }
 
 branch_from() {

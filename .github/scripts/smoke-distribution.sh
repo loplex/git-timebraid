@@ -2,8 +2,9 @@
 #
 # Unpacks a distribution archive and merges two repositories with the launcher inside it.
 #
-# This is the half `jlink` and the assembly plugin cannot check between them: that the thing a user
-# downloads actually runs. The fixture is small but chosen for what it exercises --
+# This is the half `jlink` and the assembly plugin cannot check between them:
+# that the thing a user downloads actually runs.
+# The fixture is small but chosen for what it exercises --
 #
 #   * a commit message outside ASCII, which needs `jdk.charsets` in the bundled runtime (charsets
 #     arrive through ServiceLoader, so jdeps never sees them and the module is on the list by hand);
@@ -12,12 +13,13 @@
 #   * the launcher's own JVM lookup and its jar-relative path resolution.
 #
 # Usage: smoke-distribution.sh [archive.tar.gz]
-# With no argument it takes the platform archive out of target/ -- the one whose name carries an
-# os-arch suffix, as opposed to the portable archive built beside it.
+# With no argument it takes the platform archive out of target/ --
+# the one whose name carries an os-arch suffix, as opposed to the portable archive built beside it.
 #
-# Works on either archive. When the unpacked tree has a `runtime/`, JAVA_HOME is pointed at a path
-# that does not exist, so reaching a JVM at all proves the launcher preferred the bundled one; the
-# portable archive has no runtime and is run against whatever JVM is installed.
+# Works on either archive.
+# When the unpacked tree has a `runtime/`, JAVA_HOME is pointed at a path that does not exist,
+# so reaching a JVM at all proves the launcher preferred the bundled one;
+# the portable archive has no runtime and is run against whatever JVM is installed.
 
 set -euo pipefail
 
@@ -56,8 +58,8 @@ for repo in alpha beta; do
         commit -q -m "Add the $repo naïve façade"
 done
 
-# On Windows the launcher a user runs is the .bat, and cmd is the only thing that runs it -- this
-# script's own bash notwithstanding.
+# On Windows the launcher a user runs is the .bat, and cmd is the only thing that runs it --
+# this script's own bash notwithstanding.
 case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) timebraid() { cmd //c "$(cygpath -w "$home/bin/git-timebraid.bat")" "$@"; } ;;
     *)                    timebraid() { "$home/bin/git-timebraid" "$@"; } ;;
@@ -66,13 +68,14 @@ esac
 timebraid --version
 timebraid -o "$work/out" "$work/alpha" "$work/beta"
 
-# --no-dangling because the inputs arrive in the output whole, their own commits included, and the
-# braid points no ref at those; `git gc --prune=now` reclaims them. Corruption is what this checks.
+# --no-dangling because the inputs arrive in the output whole, their own commits included,
+# and the braid points no ref at those; `git gc --prune=now` reclaims them.
+# Corruption is what this checks.
 git -C "$work/out" fsck --strict --no-dangling
 git -C "$work/out" log --oneline --all
 
-# The non-ASCII subjects are the point of the fixture, so assert on them rather than trusting that
-# a clean fsck means the bytes came through.
+# The non-ASCII subjects are the point of the fixture,
+# so assert on them rather than trusting that a clean fsck means the bytes came through.
 subjects=$(git -C "$work/out" log --format='%s' --all | sort | tr '\n' '|')
 expected='alpha: Add the alpha naïve façade|beta: Add the beta naïve façade|'
 if [ "$subjects" != "$expected" ]; then

@@ -10,8 +10,9 @@ package cz.loplex.timebraid.plan
  * - `|` separates input repositories, `<name>:` names one.
  * - `<-` chains commits: the left one is the first parent of the right one.
  * - `;` starts another chain inside the same repository, for side branches.
- * - `id(p1,p2)` states the parents explicitly instead of taking them from the chain; the first one
- *   listed is the first parent. This is how merges are written.
+ * - `id(p1,p2)` states the parents explicitly instead of taking them from the chain;
+ *   the first one listed is the first parent.\
+ *   This is how merges are written.
  * - `@n` is the ordering timestamp.
  *
  * Commit names are unique across the whole fixture, so a test can refer to a commit by name alone.

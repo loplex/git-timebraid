@@ -19,10 +19,11 @@ import java.nio.file.Path
 /**
  * One input repository — one *strand* of the braid — opened for reading only.
  *
- * The class exists to keep every JGit type on this side of the boundary: it hands back plain data
- * ([GitRef], [TagRef], [SourceCommit], [TreeEntry]) and the planner never sees an [ObjectId], a
- * [RevWalk] or a [Repository]. Nothing here writes, and nothing here moves objects: the output pulls
- * them across itself, by fetching from [location] (see [TargetRepository.fetchFrom]).
+ * The class exists to keep every JGit type on this side of the boundary:
+ * it hands back plain data ([GitRef], [TagRef], [SourceCommit], [TreeEntry])
+ * and the planner never sees an [ObjectId], a [RevWalk] or a [Repository].\
+ * Nothing here writes, and nothing here moves objects:
+ * the output pulls them across itself, by fetching from [location] (see [TargetRepository.fetchFrom]).
  */
 class SourceRepository private constructor(
     /** Short name of the repository, used as the default subdirectory and the tag prefix. */
@@ -45,12 +46,12 @@ class SourceRepository private constructor(
             }
 
     /**
-     * Tags (under `refs/tags/`), sorted by their short name, each peeled to the commit it ultimately
-     * points at. A tag that does not resolve to a commit (a tag of a tree or a blob) is dropped —
+     * Tags (under `refs/tags/`), sorted by their short name, each peeled to the commit it ultimately points at.\
+     * A tag that does not resolve to a commit (a tag of a tree or a blob) is dropped —
      * it has no place on a history graph.
      *
-     * An annotated tag also carries its [TagAnnotation], so the writer can recreate it as an
-     * annotated tag rather than silently flattening the tagger and the tag message away.
+     * An annotated tag also carries its [TagAnnotation], so the writer can recreate it as an annotated tag
+     * rather than silently flattening the tagger and the tag message away.
      */
     fun tags(): List<TagRef> {
         RevWalk(repository).use { walk ->
@@ -74,11 +75,11 @@ class SourceRepository private constructor(
         repository.resolve(Constants.R_HEADS + shortName)
 
     /**
-     * Every commit reachable from [tips], their ancestors included, as plain data. The [RevWalk] and
-     * its object reader are closed before this returns, so the result outlives the repository handle.
+     * Every commit reachable from [tips], their ancestors included, as plain data.\
+     * The [RevWalk] and its object reader are closed before this returns, so the result outlives the repository handle.
      *
-     * A tip that is not a commit (or an annotated tag of one) is skipped rather than rejected: the
-     * caller passes in whatever the refs point at, and a stray tag of a tree should not abort the run.
+     * A tip that is not a commit (or an annotated tag of one) is skipped rather than rejected:
+     * the caller passes in whatever the refs point at, and a stray tag of a tree should not abort the run.
      */
     fun readReachable(tips: Collection<ObjectId>): List<SourceCommit> {
         val commits = ArrayList<SourceCommit>()
@@ -105,9 +106,10 @@ class SourceRepository private constructor(
     /**
      * The top-level `.gitmodules` of [tree] read as text, or `null` when the tree has none.
      *
-     * Only a regular file counts. A `.gitmodules` stored as a symlink is one git itself refuses to
-     * follow, and a tree of that name describes no submodule, so either is passed through as
-     * ordinary content rather than being read as configuration.
+     * Only a regular file counts.
+     * A `.gitmodules` stored as a symlink is one git itself refuses to follow,
+     * and a tree of that name describes no submodule,
+     * so either is passed through as ordinary content rather than being read as configuration.
      */
     fun gitmodules(tree: ObjectId): String? {
         val parser = CanonicalTreeParser(null, reader(), tree)
@@ -147,11 +149,11 @@ class SourceRepository private constructor(
         /**
          * Opens the repository at [location] (bare or with a working tree).
          *
-         * The repository has to be *at* [location]: either the path is itself a git directory, or
-         * it holds a `.git`. A repository in some parent directory is deliberately not opened.
-         * Inputs are named one by one on the command line, so walking up the tree could only ever
-         * substitute an enclosing repository for the one that was asked for — silently, and under
-         * the name of the path that was written.
+         * The repository has to be *at* [location]: either the path is itself a git directory, or it holds a `.git`.\
+         * A repository in some parent directory is deliberately not opened.
+         * Inputs are named one by one on the command line,
+         * so walking up the tree could only ever substitute an enclosing repository for the one that was asked for —
+         * silently, and under the name of the path that was written.
          */
         fun open(location: Path, name: String = defaultName(location)): SourceRepository {
             val dir = location.toFile()
@@ -159,11 +161,11 @@ class SourceRepository private constructor(
             if (RepositoryCache.FileKey.isGitRepository(dir, FS.DETECTED)) {
                 builder.setGitDir(dir)
             } else if (File(dir, Constants.DOT_GIT).exists()) {
-                // `.git` is a directory in an ordinary working tree and a file pointing elsewhere in
-                // a linked worktree or a submodule; findGitDir resolves both, which is why it is
-                // still used here. Its first step examines `dir` itself, so a `.git` that is present
-                // and usable settles it there; the ceiling stops it from climbing when that `.git`
-                // turns out to be neither.
+                // `.git` is a directory in an ordinary working tree
+                // and a file pointing elsewhere in a linked worktree or a submodule;
+                // findGitDir resolves both, which is why it is still used here.
+                // Its first step examines `dir` itself, so a `.git` that is present and usable settles it there;
+                // the ceiling stops it from climbing when that `.git` turns out to be neither.
                 dir.parentFile?.let { builder.addCeilingDirectory(it) }
                 builder.findGitDir(dir)
             }
@@ -172,14 +174,15 @@ class SourceRepository private constructor(
         }
 
         /**
-         * The repository name implied by a path: the last segment of its absolute, normalized form,
-         * without a trailing `.git`.
+         * The repository name implied by a path:
+         * the last segment of its absolute, normalized form, without a trailing `.git`.
          *
-         * Normalizing first is what lets `.` and `../sibling` be written as inputs and still name
-         * the directory they land on rather than themselves. Dropping a final `.git` *segment* —
-         * as opposed to the `.git` suffix of a bare `repo.git` — is what makes `repo/.git` name
-         * `repo` instead of nothing at all. Empty only for a path with no segment to be named by,
-         * the filesystem root; callers reject that rather than carrying a nameless repository.
+         * Normalizing first is what lets `.` and `../sibling` be written as inputs
+         * and still name the directory they land on rather than themselves.\
+         * Dropping a final `.git` *segment* — as opposed to the `.git` suffix of a bare `repo.git` —
+         * is what makes `repo/.git` name `repo` instead of nothing at all.\
+         * Empty only for a path with no segment to be named by, the filesystem root;
+         * callers reject that rather than carrying a nameless repository.
          */
         fun defaultName(location: Path): String {
             val absolute = location.toAbsolutePath().normalize()
@@ -201,9 +204,10 @@ class TagRef(val name: String, val target: ObjectId, val annotation: TagAnnotati
 class TagAnnotation(val tagger: PersonIdent?, val message: String)
 
 /**
- * One commit of an input repository, copied out of JGit's object model so the rest of the program
- * can stay clear of it. Holds everything the writer will need later — full message, both idents,
- * the root tree — even though the planner only reads [parents] and one timestamp.
+ * One commit of an input repository,
+ * copied out of JGit's object model so the rest of the program can stay clear of it.\
+ * Holds everything the writer will need later — full message, both idents, the root tree —
+ * even though the planner only reads [parents] and one timestamp.
  */
 class SourceCommit(
     val id: ObjectId,

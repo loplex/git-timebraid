@@ -8,10 +8,11 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
 /**
- * A thin wrapper around the `git` command line, for the integration tests that check the output
- * repository the way a user would — `git fsck`, `git log --graph`, `git rev-list`. The build never
- * needs git (JGit does the reading and writing), so a machine without it on `PATH` skips these tests
- * rather than failing them.
+ * A thin wrapper around the `git` command line,
+ * for the integration tests that check the output repository the way a user would —
+ * `git fsck`, `git log --graph`, `git rev-list`.\
+ * The build never needs git (JGit does the reading and writing),
+ * so a machine without it on `PATH` skips these tests rather than failing them.
  */
 object GitCli {
 
@@ -40,11 +41,14 @@ object GitCli {
     }
 
     /**
-     * `git fsck --strict` — asserts no corruption in [dir]. `--no-dangling` is passed because a
-     * braided output legitimately leaves objects unreferenced, and two things put them there: the
-     * inputs arrive whole, so their own commits are present with no ref of the output's pointing at
-     * them, and `--root-repo` splices an input's top-level entries into a fresh root tree, leaving
-     * the tree they came from unused. Both are bloat `git gc` reclaims, not damage.
+     * `git fsck --strict` — asserts no corruption in [dir].\
+     * `--no-dangling` is passed because a braided output legitimately leaves objects unreferenced,
+     * and two things put them there:
+     * the inputs arrive whole,
+     * so their own commits are present with no ref of the output's pointing at them,
+     * and `--root-repo` splices an input's top-level entries into a fresh root tree,
+     * leaving the tree they came from unused.
+     * Both are bloat `git gc` reclaims, not damage.
      */
     fun fsck(dir: Path) =
         assertEquals("", run(dir, "fsck", "--strict", "--no-progress", "--no-dangling"), "git fsck found problems")

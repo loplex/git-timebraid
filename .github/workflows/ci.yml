@@ -14,9 +14,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         java: ["17", "21"]
-        # jlink spells its compression differently across these two: `zip-6` needs JDK 21, and a
-        # JDK 17 build has to ask for the older numeric form. Both spellings are on the release
-        # path, so both are exercised rather than only whichever one the release happens to use.
+        # jlink spells its compression differently across these two:
+        # `zip-6` needs JDK 21, and a JDK 17 build has to ask for the older numeric form.
+        # Both spellings are on the release path,
+        # so both are exercised rather than only whichever one the release happens to use.
         include:
           - java: "17"
             jlink_compress: "2"
@@ -33,29 +34,31 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
-      # The integration tests shell out to `git` for fsck and log --graph; it is
-      # preinstalled on the GitHub-hosted runners, this just records the version.
+      # The integration tests shell out to `git` for fsck and log --graph;
+      # it is preinstalled on the GitHub-hosted runners, this just records the version.
       - name: Show git version
         run: git --version
 
       - name: mvn verify
         run: mvn -B -ntp verify
 
-      # The bundled-runtime profile is the part of the build most likely to fail on a platform
-      # rather than in code: it shells out to jlink, names its archive from the os/arch profiles,
-      # and links a hand-written module list. Building it in the same matrix that runs the tests
+      # The bundled-runtime profile is the part of the build most likely to fail on a platform rather than in code:
+      # it shells out to jlink, names its archive from the os/arch profiles, and links a hand-written module list.
+      # Building it in the same matrix that runs the tests
       # means the archive a release uploads is one that has been built on every supported platform.
       #
-      # The quotes around the property are load-bearing on Windows, where the default shell is
-      # PowerShell: it ends a parameter name at a dot, so a bare -Djlink.compress=2 reaches Maven
-      # as the two arguments `-Djlink` and `.compress=2` and the second is read as a lifecycle
-      # phase. Bash needs no such help, and takes the quotes without complaint.
+      # The quotes around the property are load-bearing on Windows, where the default shell is PowerShell:
+      # it ends a parameter name at a dot,
+      # so a bare -Djlink.compress=2 reaches Maven as the two arguments `-Djlink` and `.compress=2`
+      # and the second is read as a lifecycle phase.
+      # Bash needs no such help, and takes the quotes without complaint.
       - name: Build the bundled-runtime archive
         run: mvn -B -ntp -DskipTests -Pbundled-runtime "-Djlink.compress=${{ matrix.jlink_compress }}" package
 
-      # jlink proves the image links, not that it runs. The script unpacks the archive a user
-      # would download and merges two repositories with it; it lives in .github/scripts/ so that
-      # anything else building these archives can make the very same check about them.
+      # jlink proves the image links, not that it runs.
+      # The script unpacks the archive a user would download and merges two repositories with it;
+      # it lives in .github/scripts/
+      # so that anything else building these archives can make the very same check about them.
       - name: Merge two repositories with the unpacked archive
         shell: bash
         run: .github/scripts/smoke-distribution.sh

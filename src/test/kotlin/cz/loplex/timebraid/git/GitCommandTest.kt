@@ -53,10 +53,10 @@ class GitCommandTest {
     }
 
     /**
-     * The environment reaches the subprocess through `ProcessBuilder`, and a test JVM cannot alter its
-     * own, so the policy is checked where it is decided rather than through a real `git` run. Both
-     * halves matter: dropping too much would break the credential and transport setup that shelling
-     * out to `git` exists to inherit.
+     * The environment reaches the subprocess through `ProcessBuilder`, and a test JVM cannot alter its own,
+     * so the policy is checked where it is decided rather than through a real `git` run.\
+     * Both halves matter:
+     * dropping too much would break the credential and transport setup that shelling out to `git` exists to inherit.
      */
     @Test
     fun `only the variables that redirect git to another repository are dropped`() {

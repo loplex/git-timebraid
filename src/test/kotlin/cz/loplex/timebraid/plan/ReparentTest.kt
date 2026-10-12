@@ -88,9 +88,10 @@ class ReparentTest {
 
     @Test
     fun `a braid order that contradicts ancestry fails loudly instead of writing a broken history`() {
-        // Handed a braid in which a commit precedes its own ancestor — the shape any ordering that
-        // does not respect ancestry produces — the braid edge from c to g closes a loop back through
-        // p. Nothing may be written after that, so it has to be an exception and not a warning.
+        // Handed a braid in which a commit precedes its own ancestor —
+        // the shape any ordering that does not respect ancestry produces —
+        // the braid edge from c to g closes a loop back through p.
+        // Nothing may be written after that, so it has to be an exception and not a warning.
         val spec = GraphSpec.parse("A: g@10 <- p@20 <- c@30")
 
         val failure = assertThrows<CyclicGraphException> {

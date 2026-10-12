@@ -7,8 +7,8 @@
 #     bin/git-timebraid   <- this script
 #     lib/git-timebraid.jar
 #
-# Put bin/ on PATH and both `git-timebraid …` and `git timebraid …` work, the latter because git
-# runs any `git-<name>` it finds on PATH as a subcommand.
+# Put bin/ on PATH and both `git-timebraid …` and `git timebraid …` work,
+# the latter because git runs any `git-<name>` it finds on PATH as a subcommand.
 #
 # The JVM is looked for in this order, first hit wins:
 #
@@ -17,9 +17,9 @@
 #     $JAVA_HOME/bin/java
 #     java on PATH
 #
-# The bundled runtime outranks JAVA_HOME on purpose: the point of that archive is to run on a
-# machine whose Java is absent, old, or not the one this was tested against. TIMEBRAID_JAVA is the
-# way out when you do want your own.
+# The bundled runtime outranks JAVA_HOME on purpose:
+# the point of that archive is to run on a machine whose Java is absent, old, or not the one this was tested against.
+# TIMEBRAID_JAVA is the way out when you do want your own.
 #
 # Environment:
 #     TIMEBRAID_JAVA   java binary to run, overriding everything below it
@@ -29,9 +29,10 @@
 
 set -e
 
-# Resolve this script through any symlinks — an entry on PATH is usually one, and the jar is found
-# relative to the real location, not to the link. Plain `readlink` reads one link and is portable
-# enough; `readlink -f`, which would resolve the whole chain, is not, hence the loop.
+# Resolve this script through any symlinks —
+# an entry on PATH is usually one, and the jar is found relative to the real location, not to the link.
+# Plain `readlink` reads one link and is portable enough;
+# `readlink -f`, which would resolve the whole chain, is not, hence the loop.
 script=$0
 while [ -h "$script" ]; do
     target=$(readlink -- "$script")

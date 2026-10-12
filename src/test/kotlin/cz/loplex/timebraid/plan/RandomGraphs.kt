@@ -6,14 +6,14 @@ import kotlin.random.Random
 class RandomGraph(val graph: CommitGraph, val heads: List<Commit>)
 
 /**
- * Seeded generator of plausible input histories: several repositories, each a first-parent chain
- * with side branches forking off it and merging back.
+ * Seeded generator of plausible input histories:
+ * several repositories, each a first-parent chain with side branches forking off it and merging back.
  *
- * The `ancestryMonotoneTime` parameter of [generate] chooses between the two corpora the tests need.
- * With it set, every commit is strictly newer than all of its parents — the well-behaved case,
- * where ordering by time is already a valid topological order. With it clear, timestamps jitter
- * backwards across parent edges, the way a rebase or a skewed clock leaves them, and ancestry has
- * to override time.
+ * The `ancestryMonotoneTime` parameter of [generate] chooses between the two corpora the tests need.\
+ * With it set, every commit is strictly newer than all of its parents —
+ * the well-behaved case, where ordering by time is already a valid topological order.\
+ * With it clear, timestamps jitter backwards across parent edges,
+ * the way a rebase or a skewed clock leaves them, and ancestry has to override time.
  */
 object RandomGraphs {
 

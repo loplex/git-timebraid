@@ -1,8 +1,8 @@
 ## Install
 
-Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) beside
-`lib/git-timebraid.jar`. Unpack it and put `bin/` on `PATH` — `git timebraid …` then works as well as
-`git-timebraid …`, because git runs any `git-<name>` it finds there.
+Every archive holds `bin/git-timebraid` (and `git-timebraid.bat` for Windows) beside `lib/git-timebraid.jar`.\
+Unpack it and put `bin/` on `PATH` —
+`git timebraid …` then works as well as `git-timebraid …`, because git runs any `git-<name>` it finds there.
 
 | Asset                                                 | What it is                                                                                           |
 |-------------------------------------------------------|------------------------------------------------------------------------------------------------------|
@@ -18,7 +18,7 @@ Verify a download against `SHA256SUMS`:
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-See the [README](https://github.com/loplex/git-timebraid#readme) for what the tool does and how the
-braid is built. What changed in this release is below, taken from the changelog entry for this tag;
-the [CHANGELOG](https://github.com/loplex/git-timebraid/blob/main/CHANGELOG.md) carries every
-release's, and is the place to read a run of them.
+See the [README](https://github.com/loplex/git-timebraid#readme) for what the tool does and how the braid is built.\
+What changed in this release is below, taken from the changelog entry for this tag;
+the [CHANGELOG](https://github.com/loplex/git-timebraid/blob/main/CHANGELOG.md) carries every release's,
+and is the place to read a run of them.

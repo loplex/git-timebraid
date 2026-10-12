@@ -10,16 +10,18 @@ import org.eclipse.jgit.lib.TreeFormatter
 class TreeEntry(val name: String, val mode: FileMode, val id: ObjectId)
 
 /**
- * Builds the root tree of a braided commit: one entry per input repository that already has content
- * at this point in the braid, each pointing straight at that repository's own original tree.
+ * Builds the root tree of a braided commit:
+ * one entry per input repository that already has content at this point in the braid,
+ * each pointing straight at that repository's own original tree.
  *
- * This is the tree rule of the README made concrete. Nothing is recursed into and no blob is
- * rewritten — a subdirectory entry *is* the original repository's root tree object, which is why the
- * output shares its content objects with the inputs and why writing costs one small tree per commit
- * rather than a copy of the whole worktree.
+ * This is the tree rule of the README made concrete.\
+ * Nothing is recursed into and no blob is rewritten —
+ * a subdirectory entry *is* the original repository's root tree object,
+ * which is why the output shares its content objects with the inputs
+ * and why writing costs one small tree per commit rather than a copy of the whole worktree.
  *
- * The repository placed at the output root (`--root-repo`) is the one exception: its tree cannot be
- * an entry, so its top-level entries are spliced in beside the subdirectories.
+ * The repository placed at the output root (`--root-repo`) is the one exception:
+ * its tree cannot be an entry, so its top-level entries are spliced in beside the subdirectories.
  */
 class RootTreeAssembler(private val inserter: ObjectInserter) {
 
@@ -31,12 +33,13 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
         private set
 
     /**
-     * @param rootEntries top-level entries of the root repository's tree, empty when there is no
-     *   `--root-repo` or it has no content yet.
+     * @param rootEntries top-level entries of the root repository's tree,
+     *   empty when there is no `--root-repo` or it has no content yet.
      * @param subdirEntries one entry per other repository with content, name = its subdirectory.
-     * @param gitmodules the `.gitmodules` [SubmoduleWiring] built for this commit, or `null` when no
-     *   input describes a submodule here. It replaces the root repository's own entry of that name
-     *   rather than colliding with it, because it already holds that file's sections.
+     * @param gitmodules the `.gitmodules` [SubmoduleWiring] built for this commit,
+     *   or `null` when no input describes a submodule here.\
+     *   It replaces the root repository's own entry of that name rather than colliding with it,
+     *   because it already holds that file's sections.
      * @param at describes the commit being built, used only to make a collision error locatable.
      */
     fun assemble(
@@ -74,12 +77,11 @@ class RootTreeAssembler(private val inserter: ObjectInserter) {
 
         /**
          * The order git stores tree entries in, which [TreeFormatter] does not apply on its own:
-         * plain byte order over the entry name, except that a directory name sorts as if it ended
-         * in `/`. That is what puts `a.txt` before `a/` — `.` (0x2E) precedes `/` (0x2F) — and a
-         * tree written in any other order is one `git fsck` rejects.
+         * plain byte order over the entry name, except that a directory name sorts as if it ended in `/`.
+         * That is what puts `a.txt` before `a/` — `.` (0x2E) precedes `/` (0x2F) —
+         * and a tree written in any other order is one `git fsck` rejects.
          *
-         * A gitlink is not a directory as far as this rule is concerned: only [FileMode.TREE] gets
-         * the trailing slash.
+         * A gitlink is not a directory as far as this rule is concerned: only [FileMode.TREE] gets the trailing slash.
          */
         val GIT_TREE_ORDER: Comparator<TreeEntry> = Comparator { a, b ->
             compareBytes(sortKey(a), sortKey(b))

@@ -93,12 +93,13 @@ class MergeCommandOptionsTest {
             tmp.resolve("webui.git").toString(),
         )
 
-        // The inputs arrive by one fetch each and the braid is written on top, so the output holds
-        // the union of the inputs' objects plus what the braid invented -- and holds each of them
-        // once. A second copy is the failure this pins: it is what an object-by-object import
-        // followed by a fetch produced, and what a fetch of something already imported would produce
-        // again. Counting is enough to see it, because every object here is reachable from a ref of
-        // the output's: --keep-remotes puts the inputs' own commits under refs/remotes.
+        // The inputs arrive by one fetch each and the braid is written on top,
+        // so the output holds the union of the inputs' objects plus what the braid invented --
+        // and holds each of them once.
+        // A second copy is the failure this pins: it is what an object-by-object import followed by a fetch produced,
+        // and what a fetch of something already imported would produce again.
+        // Counting is enough to see it, because every object here is reachable from a ref of the output's:
+        // --keep-remotes puts the inputs' own commits under refs/remotes.
         val inputObjects = listOf("backend.git", "webui.git")
             .flatMap { objectIdsOf(tmp.resolve(it)) }
             .toSet()
@@ -119,9 +120,9 @@ class MergeCommandOptionsTest {
     /**
      * Every object id the bare repository at [dir] holds, packed and loose alike.
      *
-     * Both halves are needed and neither is optional: a fixture built object by object is loose,
-     * where a fetch and the braid's own inserter both write packs. Counting the union is what makes
-     * "exactly once" a statement about objects rather than about pack files.
+     * Both halves are needed and neither is optional:
+     * a fixture built object by object is loose, where a fetch and the braid's own inserter both write packs.
+     * Counting the union is what makes "exactly once" a statement about objects rather than about pack files.
      */
     private fun objectIdsOf(dir: Path): Set<String> {
         val objects = dir.resolve("objects")
@@ -141,8 +142,8 @@ class MergeCommandOptionsTest {
         corpus()
         val out = tmp.resolve("merged.git")
         val cwd = Path.of("").toAbsolutePath()
-        // A relative path between the two only exists when they share a filesystem root, which on
-        // Windows they need not.
+        // A relative path between the two only exists when they share a filesystem root,
+        // which on Windows they need not.
         assumeTrue(cwd.root == tmp.root, "temp directory is on another root than the working directory")
         val backend = cwd.relativize(tmp.resolve("backend.git")).toString()
         val webui = cwd.relativize(tmp.resolve("webui.git")).toString()
@@ -150,11 +151,11 @@ class MergeCommandOptionsTest {
 
         run("-o", out.toString(), "--keep-remotes", backend, webui)
 
-        // git stores a remote's URL verbatim and resolves it against the repository holding it, so
-        // the relative path the caller typed has to be made absolute on the way in. The run itself
-        // no longer fetches, so nothing fails at merge time any more -- what a relative path would
-        // break is the `git fetch <name>` the remote exists for, later, from a directory that is
-        // not the one the caller typed it in.
+        // git stores a remote's URL verbatim and resolves it against the repository holding it,
+        // so the relative path the caller typed has to be made absolute on the way in.
+        // The run itself no longer fetches, so nothing fails at merge time any more --
+        // what a relative path would break is the `git fetch <name>` the remote exists for,
+        // later, from a directory that is not the one the caller typed it in.
         FileRepositoryBuilder().setGitDir(out.toFile()).build().use { repo ->
             for (name in listOf("backend", "webui")) {
                 val url = repo.config.getString("remote", name, "url")
@@ -179,8 +180,8 @@ class MergeCommandOptionsTest {
         )
 
         SourceRepository.open(out).use { repo ->
-            // The default tag prefix is "{repo}/", so the tag shows the name and not just where the
-            // content was placed; the same name has to reach the provenance trailer.
+            // The default tag prefix is "{repo}/", so the tag shows the name and not just where the content was placed;
+            // the same name has to reach the provenance trailer.
             assertEquals(listOf("legacy/v1"), repo.tags().map { it.name })
             val messages = repo.readReachable(repo.branches().map { it.target }).map { it.message }
             assertTrue(messages.any { it.contains("repo=\"legacy\"") }, messages.toString())
@@ -215,8 +216,8 @@ class MergeCommandOptionsTest {
 
         run(
             "-o", out.toString(),
-            // `toUri` rather than `"file://" + path`: the two agree only where a path already
-            // begins with a separator, and a Windows one begins with a drive letter instead.
+            // `toUri` rather than `"file://" + path`: the two agree only where a path already begins with a separator,
+            // and a Windows one begins with a drive letter instead.
             tmp.resolve("backend.git").toUri().toString(),
             tmp.resolve("webui.git").toString(),
         )

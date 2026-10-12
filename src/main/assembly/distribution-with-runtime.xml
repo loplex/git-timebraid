@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    The distribution archive with a JVM inside, built by the `bundled-runtime` profile. Same layout
-    as distribution.xml plus the jlink image, which the launcher picks up automatically:
+    The distribution archive with a JVM inside, built by the `bundled-runtime` profile.
+    Same layout as distribution.xml plus the jlink image, which the launcher picks up automatically:
 
         git-timebraid-<version>-<os>-<arch>/
             bin/git-timebraid
@@ -33,11 +33,11 @@
 
     <fileSets>
         <!--
-            The runtime image in two halves, because the assembly plugin applies one mode per fileSet
-            and the image needs two. Everything that has to keep the executable bit is listed here:
-            bin/ for the launchers themselves, and lib/jspawnhelper, which is how a JVM on Linux
-            spawns a subprocess — without it every `git clone` and `git fetch` this tool runs would
-            fail.
+            The runtime image in two halves,
+            because the assembly plugin applies one mode per fileSet and the image needs two.
+            Everything that has to keep the executable bit is listed here:
+            bin/ for the launchers themselves, and lib/jspawnhelper, which is how a JVM on Linux spawns a subprocess —
+            without it every `git clone` and `git fetch` this tool runs would fail.
         -->
         <fileSet>
             <directory>${project.build.directory}/runtime</directory>

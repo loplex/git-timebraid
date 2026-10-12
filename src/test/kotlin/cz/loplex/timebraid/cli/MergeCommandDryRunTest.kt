@@ -129,10 +129,11 @@ class MergeCommandDryRunTest {
 
     @Test
     fun `a separator that belongs to the location is left there`() {
-        // Both suffixes are recognised only before a bare word, so a path that happens to contain
-        // one is not split behind the user's back. The segment carrying it is what the report is
-        // read for: the rest of the location reaches the message as a path, and its separators are
-        // then the platform's rather than the ones written here.
+        // Both suffixes are recognised only before a bare word,
+        // so a path that happens to contain one is not split behind the user's back.
+        // The segment carrying it is what the report is read for:
+        // the rest of the location reaches the message as a path,
+        // and its separators are then the platform's rather than the ones written here.
         for (segment in listOf("a=b", "a::b")) {
             val result = MergeCommand().test(listOf("--dry-run", "/nonexistent/$segment/c"))
 
@@ -143,10 +144,11 @@ class MergeCommandDryRunTest {
 
     @Test
     fun `a file scheme over a Windows path is still named by its last segment`() {
-        // Concatenating `file://` with an absolute path is how a caller spells a local repository as
-        // a URL, and on Windows the result carries a drive letter and backslashes. The name is the
-        // directory the clone goes in, so reading it from the colon of `C:` would take the clone out
-        // of the clone root and into whatever `\repos\backend` resolves to.
+        // Concatenating `file://` with an absolute path is how a caller spells a local repository as a URL,
+        // and on Windows the result carries a drive letter and backslashes.
+        // The name is the directory the clone goes in,
+        // so reading it from the colon of `C:` would take the clone out of the clone root
+        // and into whatever `\repos\backend` resolves to.
         val result = MergeCommand().test(listOf("--dry-run", "file://C:\\repos\\backend.git"))
 
         assertEquals(1, result.statusCode, result.output)
@@ -166,9 +168,9 @@ class MergeCommandDryRunTest {
 
     @Test
     fun `a location the platform cannot spell as a path is a usage error`() {
-        // A NUL is the one character no filesystem here accepts; Windows also rejects a colon
-        // outside a drive letter, which is how `a::b` gets in. Either way the report is the user's
-        // typo, not an exception out of the parser.
+        // A NUL is the one character no filesystem here accepts;
+        // Windows also rejects a colon outside a drive letter, which is how `a::b` gets in.
+        // Either way the report is the user's typo, not an exception out of the parser.
         val result = MergeCommand().test(listOf("--dry-run", "no\u0000such"))
 
         assertEquals(1, result.statusCode, result.output)

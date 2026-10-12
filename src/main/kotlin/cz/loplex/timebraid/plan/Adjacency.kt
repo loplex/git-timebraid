@@ -1,17 +1,17 @@
 package cz.loplex.timebraid.plan
 
 /**
- * A graph's edges in the flat form the walks want: both directions as a pair of arrays each,
- * addressed by the graph's own numbering.
+ * A graph's edges in the flat form the walks want:
+ * both directions as a pair of arrays each, addressed by the graph's own numbering.
  *
- * Filled in a **single pass** over the nodes, so [Graph.parentsOf] is asked about each node exactly
- * once. That matters beyond the pointer chasing: a graph that filters its edges — the braid's scope
- * does — allocates a list per node to answer, and a second pass would pay for it twice. The parents
- * land in a flat array as they arrive and the children are counted on the way past, so reversing
- * them afterwards never leaves the ints.
+ * Filled in a **single pass** over the nodes, so [Graph.parentsOf] is asked about each node exactly once.
+ * That matters beyond the pointer chasing: a graph that filters its edges — the braid's scope does —
+ * allocates a list per node to answer, and a second pass would pay for it twice.\
+ * The parents land in a flat array as they arrive and the children are counted on the way past,
+ * so reversing them afterwards never leaves the ints.
  *
- * The alternative, one `IntArray` of parent indices per node, is one object per node of short-lived
- * garbage: 26 MB per build over a 600k-commit history, three builds to a plan.
+ * The alternative, one `IntArray` of parent indices per node, is one object per node of short-lived garbage:
+ * 26 MB per build over a 600k-commit history, three builds to a plan.
  */
 internal class Adjacency<T : Any> private constructor(
     /** Where each node's parents start in [parentTargets]; one longer than the index space. */
@@ -60,8 +60,9 @@ internal class Adjacency<T : Any> private constructor(
             val parentStarts = IntArray(space + 1)
             for (at in 0 until space) parentStarts[at + 1] = parentStarts[at] + parentCounts[at]
 
-            // Every edge has to land on a node of this graph. A parent from outside would hold its
-            // child back for ever and be reported as a cycle that is not there, so say so instead.
+            // Every edge has to land on a node of this graph.
+            // A parent from outside would hold its child back for ever and be reported as a cycle that is not there,
+            // so say so instead.
             for (edge in 0 until edges) {
                 if (nodeAt[parentTargets[edge]] == null) {
                     var child = 0

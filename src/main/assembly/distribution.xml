@@ -8,8 +8,9 @@
             lib/git-timebraid.jar    the shaded jar
             README.md CHANGELOG.md LICENSE NOTICE
 
-    Only the jar is repackaged here; the assembly plugin never merges class paths (that is shade's
-    job, see pom.xml), so its habit of overwriting same-named resources cannot bite.
+    Only the jar is repackaged here;
+    the assembly plugin never merges class paths (that is shade's job, see pom.xml),
+    so its habit of overwriting same-named resources cannot bite.
 -->
 <assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

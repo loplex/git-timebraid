@@ -37,7 +37,8 @@ import sys
 
 CHANGELOG = pathlib.Path("CHANGELOG.md")
 
-# `## [0.2.0] - 2026-09-08`. The open entry, `## [Unreleased]`, is no heading to this pattern.
+# `## [0.2.0] - 2026-09-08`.
+# The open entry, `## [Unreleased]`, is no heading to this pattern.
 HEADING = re.compile(r"^## \[(?P<version>[^\]\s]+)\] - (?P<when>.+?)\s*$", re.M)
 UNRELEASED = re.compile(r"^## \[Unreleased\]\s*$", re.M)
 # `[0.2.0]: https://...`, the link definitions at the foot of the file.

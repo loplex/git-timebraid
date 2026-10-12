@@ -95,8 +95,8 @@ class SourceRepositoryTest {
         built.close()
         val inside = tmp.resolve("outer/sub").createDirectories()
 
-        // Without this, JGit's findGitDir walks up to outer/.git and opens that instead, so a
-        // mistyped input silently becomes some other repository under the mistyped name.
+        // Without this, JGit's findGitDir walks up to outer/.git and opens that instead,
+        // so a mistyped input silently becomes some other repository under the mistyped name.
         val refused = assertThrows<IllegalArgumentException> { SourceRepository.open(inside) }
 
         assertTrue(refused.message!!.contains("no git repository"), refused.message)
@@ -123,9 +123,10 @@ class SourceRepositoryTest {
         assertEquals("outer", SourceRepository.defaultName(tmp.resolve("outer/.git")))
         // A bare repository still loses the suffix of its own directory name.
         assertEquals("outer", SourceRepository.defaultName(tmp.resolve("outer.git")))
-        // "." is the natural way to name the repository the shell is sitting in. The expected value
-        // comes first, as everywhere above; the inspection reads defaultName(Path.of(".")) as the
-        // more constant side and would have the two swapped, which would make a failure message lie.
+        // "." is the natural way to name the repository the shell is sitting in.
+        // The expected value comes first, as everywhere above;
+        // the inspection reads defaultName(Path.of(".")) as the more constant side
+        // and would have the two swapped, which would make a failure message lie.
         @Suppress("KotlinMisorderedAssertEqualsArguments")
         assertEquals(
             Path.of("").toAbsolutePath().fileName.toString(),

@@ -25,9 +25,8 @@ class BraidInputs(
     /** Per input repository, in the order they were given to [CommitGraphReader.read]. */
     val sources: List<SourceInputs>,
     /**
-     * Commits whose ancestry may delay a braid commit — the refs matched by `--interleave-ref`,
-     * across every input. Empty unless the option was given, which is the default scope: the
-     * mainline chains alone (see `BraidInterleave`).
+     * Commits whose ancestry may delay a braid commit — the refs matched by `--interleave-ref`, across every input.\
+     * Empty unless the option was given, which is the default scope: the mainline chains alone (see `BraidInterleave`).
      */
     val interleaveTips: List<Commit> = emptyList(),
 )
@@ -35,19 +34,20 @@ class BraidInputs(
 /** What was read out of one input repository, with every ref resolved to the commit it names. */
 class SourceInputs(
     /**
-     * The strand this repository became. Naming it rather than repeating its name is what lets a
-     * caller pair an open repository with its [Source] once, here, where the two are the same
-     * iteration — and look one up by the other afterwards instead of trusting two lists to have
-     * stayed in step.
+     * The strand this repository became.\
+     * Naming it rather than repeating its name is what lets a caller pair an open repository with its [Source]
+     * once, here, where the two are the same iteration —
+     * and look one up by the other afterwards instead of trusting two lists to have stayed in step.
      */
     val source: Source,
     val branches: List<BraidRef>,
     val tags: List<BraidTag>,
     /**
-     * Full names of the refs this repository was read from, mainline first. The output fetches
-     * exactly these (see [TargetRepository.fetchFrom]), so the set has to be the one the graph was
-     * built from — anything less and the output would be missing objects it points at, anything
-     * more and it would carry history the run never read.
+     * Full names of the refs this repository was read from, mainline first.\
+     * The output fetches exactly these (see [TargetRepository.fetchFrom]),
+     * so the set has to be the one the graph was built from —
+     * anything less and the output would be missing objects it points at,
+     * anything more and it would carry history the run never read.
      */
     val readRefs: List<String>,
 )
@@ -61,11 +61,11 @@ class BraidTag(val name: String, val commit: Commit, val annotation: TagAnnotati
 /**
  * Reads a set of [SourceRepository] into the single [CommitGraph] the planner works on.
  *
- * The model is deliberately global: load *every* commit of *every* strand at once — reachable from
- * the branches to be recreated and from all tags — and let the planner reparent only the braid.
- * Off-braid commits keep their original parents, so a branch that exists in one repository still
- * forks off the braid at the right moment with no special handling (see the README's Branches
- * section).
+ * The model is deliberately global: load *every* commit of *every* strand at once —
+ * reachable from the branches to be recreated and from all tags — and let the planner reparent only the braid.
+ * Off-braid commits keep their original parents,
+ * so a branch that exists in one repository still forks off the braid at the right moment with no special handling
+ * (see the README's Branches section).
  */
 object CommitGraphReader {
 
@@ -73,12 +73,11 @@ object CommitGraphReader {
     val MAINLINE_CANDIDATES = listOf("main", "master", "develop")
 
     /**
-     * @param branches short branch names to load (and later recreate); `null` loads them all. The
-     *   resolved mainline branch is always loaded even if it is not in this set — the braid needs it.
-     * @param interleaveRefs glob patterns matched against full ref names — `refs/tags/v1.*` for a
-     *   release series, a star alone for every ref — applied in every input repository. A matched
-     *   ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that
-     *   trades away.
+     * @param branches short branch names to load (and later recreate); `null` loads them all.\
+     *   The resolved mainline branch is always loaded even if it is not in this set — the braid needs it.
+     * @param interleaveRefs glob patterns matched against full ref names —
+     *   `refs/tags/v1.*` for a release series, a star alone for every ref — applied in every input repository.\
+     *   A matched ref's ancestry is allowed to delay a braid commit; see `BraidInterleave` for what that trades away.
      */
     fun read(
         repositories: List<SourceRepository>,
@@ -107,9 +106,9 @@ object CommitGraphReader {
             val selectedBranches = repo.branches().filter { branches == null || it.name in branches }
             val selectedTags = repo.tags()
 
-            // The refs the graph is read from, and the objects they point at. Both are needed and
-            // they are not the same thing: the walk starts from objects, while the fetch that later
-            // fills the output has to name refs.
+            // The refs the graph is read from, and the objects they point at.
+            // Both are needed and they are not the same thing:
+            // the walk starts from objects, while the fetch that later fills the output has to name refs.
             val readRefs = LinkedHashSet<String>()
             val tips = LinkedHashSet<ObjectId>()
             readRefs += Constants.R_HEADS + mainline
@@ -136,9 +135,8 @@ object CommitGraphReader {
             heads += builder.find(source, mainlineTip.name)
                 ?: error("repository '${repo.name}' did not read its own mainline tip")
 
-            // A ref whose target never made it into the graph is dropped rather than rejected: it
-            // points at something that is not a commit, which is a fact about the input, not an
-            // error in the run.
+            // A ref whose target never made it into the graph is dropped rather than rejected:
+            // it points at something that is not a commit, which is a fact about the input, not an error in the run.
             inputs += SourceInputs(
                 source = source,
                 branches = selectedBranches.mapNotNull { branch ->
@@ -170,9 +168,9 @@ object CommitGraphReader {
     /**
      * The refs the patterns match, as the commits they name, deduplicated.
      *
-     * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a
-     * branch or a tag, and a pattern that cannot express the difference would be a trap. The star
-     * spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
+     * Matching is against the *full* ref name, because a short name cannot say whether `v1.0` is a branch or a tag,
+     * and a pattern that cannot express the difference would be a trap.\
+     * The star spans path separators, so a pattern ending in one covers a whole prefix however deeply nested,
      * and a bare star is every ref — which puts the whole loaded graph in scope.
      */
     private fun interleaveTips(patterns: List<String>, inputs: List<SourceInputs>): List<Commit> {

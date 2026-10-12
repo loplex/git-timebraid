@@ -10,9 +10,15 @@ import org.eclipse.jgit.lib.ObjectId
 
 /** Everything about the output that is a matter of taste rather than of correctness. */
 class WriteOptions(
-    /** Prepended to every commit subject. `{repo}` and `{subdir}` are substituted. */
+    /**
+     * Prepended to every commit subject.\
+     * `{repo}` and `{subdir}` are substituted.
+     */
     val subjectPrefix: String = "{subdir}: ",
-    /** Prepended to every tag name. `{repo}` is substituted. */
+    /**
+     * Prepended to every tag name.\
+     * `{repo}` is substituted.
+     */
     val tagPrefix: String = "{repo}/",
     /** Whether to record the original identity of each commit in a trailer. */
     val provenance: Boolean = true,
@@ -32,20 +38,21 @@ class WriteSummary(
 /**
  * Turns a [MergePlan] into a real repository.
  *
- * Everything the inputs themselves hold is in [target] before this runs — [TargetRepository.fetchFrom]
- * put it there — so what is left is what the braid invents, and the order of the two passes is forced
- * by git itself. The commits first, in the plan's write order, which guarantees that a parent already
- * has a new identity by the time its child needs it: the planner works in indices precisely because
- * it cannot know a sha that does not exist yet. Refs last, after the objects have been flushed,
+ * Everything the inputs themselves hold is in [target] before this runs — [TargetRepository.fetchFrom] put it there —
+ * so what is left is what the braid invents, and the order of the two passes is forced by git itself.\
+ * The commits first, in the plan's write order,
+ * which guarantees that a parent already has a new identity by the time its child needs it:
+ * the planner works in indices precisely because it cannot know a sha that does not exist yet.\
+ * Refs last, after the objects have been flushed,
  * because a ref pointing at an object no reader can see is a broken repository.
  */
 class BraidWriter(
     private val target: TargetRepository,
     /**
-     * The open repository behind each strand, paired by whoever opened them — see
-     * [CommitGraphReader.read], where a [Source] and the repository it was read from are one
-     * iteration. Every lookup here is by [Source], so nothing in this class has to know what order
-     * anything arrived in, or be trusted to get it right.
+     * The open repository behind each strand, paired by whoever opened them —
+     * see [CommitGraphReader.read], where a [Source] and the repository it was read from are one iteration.\
+     * Every lookup here is by [Source],
+     * so nothing in this class has to know what order anything arrived in, or be trusted to get it right.
      */
     private val repoOf: Map<Source, SourceRepository>,
     private val inputs: BraidInputs,
@@ -64,10 +71,10 @@ class BraidWriter(
     private val rootEntries = HashMap<ObjectId, List<TreeEntry>>()
 
     /**
-     * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by
-     * that tree. [MergePlan.contentOf] names the commit each input *last* made at a point in the
-     * braid, so the same tree is asked about at as many braid positions as the input stood still
-     * for — without this the answer would be recomputed at every one of them.
+     * Per input, what the `.gitmodules` of each of its trees contributes to the output's, keyed by that tree.\
+     * [MergePlan.contentOf] names the commit each input *last* made at a point in the braid,
+     * so the same tree is asked about at as many braid positions as the input stood still for —
+     * without this the answer would be recomputed at every one of them.
      */
     private val wiring = graph.sources.associateWith { HashMap<ObjectId, RewiredGitmodules>() }
 
@@ -82,9 +89,9 @@ class BraidWriter(
     /**
      * The commit an input originally made, as the reader read it.
      *
-     * Missing means the commit is not one of these inputs' — which can only happen if the plan and
-     * the inputs were built from different graphs, and is worth saying rather than reading whatever
-     * happens to be at hand.
+     * Missing means the commit is not one of these inputs' —
+     * which can only happen if the plan and the inputs were built from different graphs,
+     * and is worth saying rather than reading whatever happens to be at hand.
      */
     private fun originalOf(commit: Commit): SourceCommit =
         inputs.commits[commit] ?: error("$commit is not a commit of these inputs")
@@ -93,8 +100,8 @@ class BraidWriter(
         writeCommits()
         val refs = resolveRefs()
 
-        // Annotated tags are objects too, and a ref pointing at an object no reader can see is
-        // rejected, so nothing may be published before everything is flushed.
+        // Annotated tags are objects too, and a ref pointing at an object no reader can see is rejected,
+        // so nothing may be published before everything is flushed.
         target.flushObjects()
         for ((name, id) in refs.targets) target.point(name, id)
         target.setHead(inputs.mainlineBranch)
@@ -131,9 +138,10 @@ class BraidWriter(
     }
 
     /**
-     * The root tree of [commit]: every repository that already has content, each at whatever the
-     * plan says it last committed. [MergePlan.contentOf] has done the accumulating; all that is left
-     * here is to turn those commits into the trees they carried.
+     * The root tree of [commit]:
+     * every repository that already has content, each at whatever the plan says it last committed.\
+     * [MergePlan.contentOf] has done the accumulating;
+     * all that is left here is to turn those commits into the trees they carried.
      */
     private fun treeOf(commit: Commit): ObjectId {
         val content = plan.contentOf(commit)
@@ -165,9 +173,9 @@ class BraidWriter(
         }
 
     /**
-     * The root `.gitmodules` blob for one commit, or `null` when no input describes a submodule
-     * there. Identical files are written once: the wiring only changes when an input adds, moves or
-     * drops a submodule, so one blob typically serves a long stretch of the braid.
+     * The root `.gitmodules` blob for one commit, or `null` when no input describes a submodule there.\
+     * Identical files are written once: the wiring only changes when an input adds, moves or drops a submodule,
+     * so one blob typically serves a long stretch of the braid.
      */
     private fun gitmodulesOf(parts: List<RewiredGitmodules>, at: () -> String): ObjectId? {
         val text = SubmoduleWiring.merge(parts, at) ?: return null
@@ -177,10 +185,11 @@ class BraidWriter(
     /**
      * The subject prefix, the original message, and the provenance trailer.
      *
-     * The trailer is what makes the README's promise checkable instead of merely claimed: it records
-     * the original sha and the original parent shas, so a script can walk the output and verify that
-     * every edge of every input still exists. Trailing newlines are normalised so the trailer always
-     * ends up as its own paragraph, which is where git's trailer parsing expects it.
+     * The trailer is what makes the README's promise checkable instead of merely claimed:
+     * it records the original sha and the original parent shas,
+     * so a script can walk the output and verify that every edge of every input still exists.\
+     * Trailing newlines are normalised so the trailer always ends up as its own paragraph,
+     * which is where git's trailer parsing expects it.
      */
     private fun messageOf(planned: PlannedCommit, original: SourceCommit): String {
         val repo = planned.commit.source.name
@@ -205,14 +214,15 @@ class BraidWriter(
     )
 
     /**
-     * Works out the complete set of refs the output should have, writing an object for every
-     * annotated tag on the way. Nothing is published here — see [write] for why.
+     * Works out the complete set of refs the output should have, writing an object for every annotated tag on the way.\
+     * Nothing is published here — see [write] for why.
      *
-     * The mainline collapses: every input contributed its mainline to one braid, so the output gets
-     * one branch of that name, at the braid's tip. Every other branch keeps its own name where that
-     * name belongs to a single repository, and is qualified with the repository name where two
-     * inputs happen to have used it. Tags are always qualified, because release names collide across
-     * repositories as a matter of course rather than by accident.
+     * The mainline collapses: every input contributed its mainline to one braid,
+     * so the output gets one branch of that name, at the braid's tip.\
+     * Every other branch keeps its own name where that name belongs to a single repository,
+     * and is qualified with the repository name where two inputs happen to have used it.\
+     * Tags are always qualified,
+     * because release names collide across repositories as a matter of course rather than by accident.
      */
     private fun resolveRefs(): Refs {
         val refs = LinkedHashMap<String, ObjectId>()
@@ -254,28 +264,29 @@ class BraidWriter(
     }
 
     /**
-     * Adds a ref under `refs/remotes/<repo>/` for every branch and every tag of every input, each
-     * pointing at that input's *original* commit.
+     * Adds a ref under `refs/remotes/<repo>/` for every branch and every tag of every input,
+     * each pointing at that input's *original* commit.
      *
-     * Nothing is copied here, and nothing needs to be: the fetch that filled the output brought
-     * every input across whole, commits included, with their shas intact — that is what a fetch
-     * moves. All that was missing is a ref of the output's own that outlives
-     * [TargetRepository.dropFetchRefs], and that is what this writes.
+     * Nothing is copied here, and nothing needs to be:
+     * the fetch that filled the output brought every input across whole,
+     * commits included, with their shas intact — that is what a fetch moves.
+     * All that was missing is a ref of the output's own that outlives [TargetRepository.dropFetchRefs],
+     * and that is what this writes.
      *
-     * Tags are covered as well as branches because a great many commits hang off them and nothing
-     * else: on a three-repository history of 14 387 commits, 929 of them were reachable in their
-     * input from a tag alone, and mirroring only the branches left every one of those originals
-     * with no ref pointing at it — present in the output, but unreachable, and swept away by the
-     * first `git gc`. They go under `tags/` so that the branch `v1.0` and the tag `v1.0` of one
-     * input do not land on the same name.
+     * Tags are covered as well as branches because a great many commits hang off them and nothing else:
+     * on a three-repository history of 14 387 commits, 929 of them were reachable in their input from a tag alone,
+     * and mirroring only the branches left every one of those originals with no ref pointing at it —
+     * present in the output, but unreachable, and swept away by the first `git gc`.\
+     * They go under `tags/` so that the branch `v1.0` and the tag `v1.0` of one input do not land on the same name.
      *
      * A ref here points at the commit a tag peels to rather than at the input's own tag object.
-     * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its
-     * message — is recreated in full by [tagTarget] under the output's own prefixed tag name.
+     * Nothing is lost by that: what an annotated tag holds beyond its target — its tagger, its message —
+     * is recreated in full by [tagTarget] under the output's own prefixed tag name.
      *
-     * The mirror covers the refs that were read, so `-b` narrows it the same way it narrows the
-     * output, and for the same reason: the fetch was narrowed to those refs too, and a ref pointing
-     * at an object that is not there is a broken repository.
+     * The mirror covers the refs that were read,
+     * so `-b` narrows it the same way it narrows the output, and for the same reason:
+     * the fetch was narrowed to those refs too,
+     * and a ref pointing at an object that is not there is a broken repository.
      *
      * @return how many remote-tracking refs were added.
      */
@@ -296,10 +307,11 @@ class BraidWriter(
     }
 
     /**
-     * An annotated tag stays annotated: its tagger and message are the only thing about a tag that a
-     * person actually wrote, and dropping them would lose text no other object holds. The signature,
-     * if there was one, is not carried over — it covers the commit the tag pointed at, which no
-     * longer exists under that name.
+     * An annotated tag stays annotated:
+     * its tagger and message are the only thing about a tag that a person actually wrote,
+     * and dropping them would lose text no other object holds.\
+     * The signature, if there was one, is not carried over —
+     * it covers the commit the tag pointed at, which no longer exists under that name.
      */
     private fun tagTarget(name: String, tag: BraidTag): ObjectId {
         val commit = idOf(tag.commit)
@@ -328,10 +340,10 @@ class BraidWriter(
         }
 
         /**
-         * Refs are paths, so `refs/heads/a` and `refs/heads/a/b` cannot both exist — git would have
-         * to store a file and a directory under the same name. Detecting that here, before anything
-         * is written, turns a half-populated repository and an opaque lock error into one message
-         * naming both refs.
+         * Refs are paths, so `refs/heads/a` and `refs/heads/a/b` cannot both exist —
+         * git would have to store a file and a directory under the same name.\
+         * Detecting that here, before anything is written,
+         * turns a half-populated repository and an opaque lock error into one message naming both refs.
          */
         fun checkRefNames(names: Collection<String>) {
             val all = names.toSet()

@@ -39,8 +39,8 @@ class MergeRequest(
     val mainlineBranch: String?,
     val branches: Set<String>?,
     /**
-     * Glob patterns over full ref names whose ancestry may delay a braid commit. Empty means the
-     * default scope, the mainline chains alone.
+     * Glob patterns over full ref names whose ancestry may delay a braid commit.\
+     * Empty means the default scope, the mainline chains alone.
      */
     val interleaveRefs: List<String>,
     val writeOptions: WriteOptions,
@@ -50,7 +50,10 @@ class MergeRequest(
 /** What the transfer that fills the output brought into it. */
 class FetchSummary(val repositories: Int, val refs: Int)
 
-/** What a run produced. [fetch] and [write] are `null` for a dry run. */
+/**
+ * What a run produced.\
+ * [fetch] and [write] are `null` for a dry run.
+ */
 class MergeResult(
     val braid: BraidInputs,
     val plan: MergePlan,
@@ -60,12 +63,13 @@ class MergeResult(
 
 /**
  * Ties the whole pipeline together: make every input a local repository (cloning the remote ones),
- * read them into one graph, plan the braid, and — unless this is a dry run — fetch the inputs into
- * the output and write the braid on top, optionally keeping the inputs as remotes and checking out a
- * working tree.
+ * read them into one graph, plan the braid,
+ * and — unless this is a dry run — fetch the inputs into the output and write the braid on top,
+ * optionally keeping the inputs as remotes and checking out a working tree.
  *
- * This is the only place that knows the order of those steps. Everything it calls is either pure
- * (the planner) or a narrow git wrapper ([SourceRepository], [TargetRepository], [GitCommand]).
+ * This is the only place that knows the order of those steps.\
+ * Everything it calls is either pure (the planner)
+ * or a narrow git wrapper ([SourceRepository], [TargetRepository], [GitCommand]).
  */
 class MergeRunner(
     private val request: MergeRequest,
@@ -97,8 +101,8 @@ class MergeRunner(
             val plan = braid.graph
                 .braid(braid.heads, braid.interleaveTips)
                 .plan(
-                    // The strands are in the order the inputs were given, so the two are paired by
-                    // position here rather than by asking a Source where it sits.
+                    // The strands are in the order the inputs were given,
+                    // so the two are paired by position here rather than by asking a Source where it sits.
                     braid.graph.sources
                         .mapIndexed { index, source -> source to request.inputs[index].subdir }
                         .toMap()
@@ -107,10 +111,10 @@ class MergeRunner(
             val output = request.output
             if (request.dryRun || output == null) return MergeResult(braid, plan, null, null)
 
-            // The one place that can pair the two rather than assume it: these are the repositories
-            // handed to read() above, and it gives back one SourceInputs per repository, each naming
-            // the strand that repository became. Everything downstream looks a repository up by its
-            // Source and never has to know the order again.
+            // The one place that can pair the two rather than assume it:
+            // these are the repositories handed to read() above,
+            // and it gives back one SourceInputs per repository, each naming the strand that repository became.
+            // Everything downstream looks a repository up by its Source and never has to know the order again.
             val repoOf = braid.sources.map { it.source }.zip(sources).toMap()
 
             val written = writeOutput(output, repoOf, braid, plan)
@@ -128,10 +132,10 @@ class MergeRunner(
     /**
      * Fills the output: every input's objects first, then the braid on top of them.
      *
-     * The order is the one git forces. A commit cannot be written before the tree it points at
-     * exists, and every tree the braid points at is an input's — so the transfer has to come first
-     * and be complete. What it leaves behind, the refs it needed to name what to fetch, is dropped
-     * once the output has refs of its own.
+     * The order is the one git forces.
+     * A commit cannot be written before the tree it points at exists,
+     * and every tree the braid points at is an input's — so the transfer has to come first and be complete.\
+     * What it leaves behind, the refs it needed to name what to fetch, is dropped once the output has refs of its own.
      */
     private fun writeOutput(
         output: Path,
@@ -173,8 +177,9 @@ class MergeRunner(
     }
 
     /**
-     * Records each input as a remote of the output. The remote-tracking refs themselves are written
-     * by [BraidWriter] along with everything else, so all that is left here is the configuration
+     * Records each input as a remote of the output.\
+     * The remote-tracking refs themselves are written by [BraidWriter] along with everything else,
+     * so all that is left here is the configuration
      * that lets a later `git fetch <name>` pick up what the input has gained since.
      */
     private fun keepRemotes(output: Path, locations: List<LocalInput>) {
@@ -185,10 +190,11 @@ class MergeRunner(
     }
 
     /**
-     * Every input as a local path. A remote input is cloned next to the output under
-     * `.timebraid-clones/`, and a clone that is already there is refreshed rather than remade, so a
-     * second run over the same URLs does not pay the download again. When there is no output to sit
-     * beside (`--dry-run` with no `-o`), the clones go to a temporary directory instead.
+     * Every input as a local path.\
+     * A remote input is cloned next to the output under `.timebraid-clones/`,
+     * and a clone that is already there is refreshed rather than remade,
+     * so a second run over the same URLs does not pay the download again.\
+     * When there is no output to sit beside (`--dry-run` with no `-o`), the clones go to a temporary directory instead.
      */
     private fun resolveInputs(): List<LocalInput> {
         if (request.inputs.none { it.isRemote }) {
@@ -215,10 +221,11 @@ class MergeRunner(
     /**
      * A local input recorded as its own remote URL, made absolute.
      *
-     * `git remote add` stores the string verbatim, and every later `git fetch` runs with the
-     * *output* repository as its working directory — so a relative path, which is the ordinary way
-     * to name a repository on the command line, would be resolved against the wrong directory and
-     * the fetch would fail. A remote input keeps its URL, which needs no such treatment.
+     * `git remote add` stores the string verbatim,
+     * and every later `git fetch` runs with the *output* repository as its working directory —
+     * so a relative path, which is the ordinary way to name a repository on the command line,
+     * would be resolved against the wrong directory and the fetch would fail.\
+     * A remote input keeps its URL, which needs no such treatment.
      */
     private fun localRemote(location: String): String =
         Path.of(location).toAbsolutePath().normalize().toString()

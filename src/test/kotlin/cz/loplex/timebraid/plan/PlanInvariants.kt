@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 
 /**
- * The contracts a [MergePlan] has to satisfy whatever history it was built from. Stated once here
- * and asserted both on the hand-written fixtures and over the fuzz corpus.
+ * The contracts a [MergePlan] has to satisfy whatever history it was built from.\
+ * Stated once here and asserted both on the hand-written fixtures and over the fuzz corpus.
  */
 object PlanInvariants {
 
@@ -91,9 +91,9 @@ object PlanInvariants {
     }
 
     /**
-     * The accumulation invariant, and with it the whole promise of the tool: a commit's content map
-     * is its first parent's map with its own repository's entry replaced by itself. Checked
-     * symbolically, without a single git object.
+     * The accumulation invariant, and with it the whole promise of the tool:
+     * a commit's content map is its first parent's map with its own repository's entry replaced by itself.\
+     * Checked symbolically, without a single git object.
      */
     fun assertAccumulation(plan: MergePlan, label: String) {
         for (commit in plan.graph.commits) {

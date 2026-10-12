@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 /**
  * End-to-end check of the writer: a plan becomes a repository git itself accepts.
  *
- * The corpus is the README's example plus the awkward parts — a merge on the braid, a side branch,
- * a branch that exists in only one input, a lightweight and an annotated tag:
+ * The corpus is the README's example plus the awkward parts —
+ * a merge on the braid, a side branch, a branch that exists in only one input, a lightweight and an annotated tag:
  *
  * ```
  * backend   a1 09:00 <- a2 11:00 <- a3 15:00 (merge of f1)
@@ -25,8 +25,8 @@ import java.util.concurrent.TimeUnit
  * webui     b1 10:00 <- b2 13:00
  * ```
  *
- * Braided by committer time the mainline is a1, b1, a2, b2, a3, so `a3` — already a merge at home —
- * is the three-parent case the README makes so much of.
+ * Braided by committer time the mainline is a1, b1, a2, b2, a3,
+ * so `a3` — already a merge at home — is the three-parent case the README makes so much of.
  */
 class BraidWriterTest {
 
@@ -74,8 +74,8 @@ class BraidWriterTest {
             val repoOf = inputs.sources.map { it.source }.zip(opened).toMap()
             val plan = inputs.graph.braid(inputs.heads).plan(inputs.graph.sources.associateWith { if (it.name == rootRepo) null else subdirs[it.name] ?: it.name })
             return TargetRepository.create(out, inputs.mainlineBranch).use { target ->
-                // The same order the runner uses: the inputs' objects arrive by fetch, the braid is
-                // written on top of them, and the refs the fetch needed are dropped afterwards.
+                // The same order the runner uses: the inputs' objects arrive by fetch,
+                // the braid is written on top of them, and the refs the fetch needed are dropped afterwards.
                 for (input in inputs.sources) {
                     target.fetchFrom(repoOf.getValue(input.source), input.readRefs)
                 }
@@ -172,8 +172,8 @@ class BraidWriterTest {
             assertEquals(setOf("backend", "webui"), entries("b1").keys)
             // The first commit of the braid has only its own repository.
             assertEquals(setOf("backend"), entries("a1").keys)
-            // A side branch freezes the other strand where it was cut: f1 forks off a2, so webui
-            // stays at b1 even though the braid went on to b2.
+            // A side branch freezes the other strand where it was cut:
+            // f1 forks off a2, so webui stays at b1 even though the braid went on to b2.
             assertEquals(setOf("backend", "webui"), entries("f1").keys)
             assertEquals(entries("b1")["webui"], entries("f1")["webui"])
             assertNotEquals(entries("a3")["webui"], entries("f1")["webui"])
@@ -332,10 +332,10 @@ class BraidWriterTest {
     /**
      * Runs `git fsck --strict` and returns its output; the test is skipped when git is absent.
      *
-     * `--no-dangling` because a braided output is expected to hold unreferenced objects: the inputs
-     * arrive whole, their own commits included, and the braid points no ref at those — see
-     * [TargetRepository.dropFetchRefs]. `git gc --prune=now` reclaims them; corruption is what this
-     * is looking for.
+     * `--no-dangling` because a braided output is expected to hold unreferenced objects:
+     * the inputs arrive whole, their own commits included,
+     * and the braid points no ref at those — see [TargetRepository.dropFetchRefs].
+     * `git gc --prune=now` reclaims them; corruption is what this is looking for.
      */
     private fun fsck(dir: Path): String {
         val process = try {

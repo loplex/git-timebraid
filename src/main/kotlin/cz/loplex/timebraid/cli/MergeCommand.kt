@@ -30,18 +30,18 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
 /**
- * Entry point of the `git-timebraid` CLI: parse and validate the options, hand a [MergeRequest] to
- * [MergeRunner], and turn what it returns into the closing report. All the orchestration — cloning,
- * reading, planning, writing — lives in the runner; this class is only the command line.
+ * Entry point of the `git-timebraid` CLI: parse and validate the options,
+ * hand a [MergeRequest] to [MergeRunner], and turn what it returns into the closing report.\
+ * All the orchestration — cloning, reading, planning, writing — lives in the runner;
+ * this class is only the command line.
  */
 class MergeCommand : CliktCommand(name = "git-timebraid") {
 
     /**
-     * An input is written `<path-or-url>[::<name>][=<subdir>]`, and an absolute path (or a URL) is
-     * a token that
-     * clikt would otherwise try to read as a long option. Routing unknown option-shaped tokens to
-     * the arguments instead lets the positional parser see the whole spec; [run] rejects a real stray
-     * `-`/`--` token by hand so the usual protection against a mistyped option is kept.
+     * An input is written `<path-or-url>[::<name>][=<subdir>]`,
+     * and an absolute path (or a URL) is a token that clikt would otherwise try to read as a long option.\
+     * Routing unknown option-shaped tokens to the arguments instead lets the positional parser see the whole spec;
+     * [run] rejects a real stray `-`/`--` token by hand so the usual protection against a mistyped option is kept.
      */
     override val treatUnknownOptionsAsArgs: Boolean = true
 
@@ -210,8 +210,8 @@ class MergeCommand : CliktCommand(name = "git-timebraid") {
     }
 
     /**
-     * The project version Maven bakes into the jar manifest (`Implementation-Version`), or "dev"
-     * when running from unpacked classes (an IDE, `mvn exec:java`).
+     * The project version Maven bakes into the jar manifest (`Implementation-Version`),
+     * or "dev" when running from unpacked classes (an IDE, `mvn exec:java`).
      */
     private fun version(): String =
         MergeCommand::class.java.`package`?.implementationVersion ?: "dev"
@@ -230,14 +230,14 @@ private class RepoSpec(
 /**
  * Splits `<path-or-url>[::<name>][=<subdir>]`.
  *
- * The two are separate because they answer separate questions. The name is the repository's
- * identity — the tag prefix, the provenance label, the qualifier on a branch two inputs share, what
- * `--root-repo` matches — and has to be unique, which is the only way two inputs whose directories
- * happen to share a name can be merged at all. The subdirectory is merely where the content lands,
- * and defaults to the name without being tied to it.
+ * The two are separate because they answer separate questions.\
+ * The name is the repository's identity — the tag prefix, the provenance label,
+ * the qualifier on a branch two inputs share, what `--root-repo` matches — and has to be unique,
+ * which is the only way two inputs whose directories happen to share a name can be merged at all.\
+ * The subdirectory is merely where the content lands, and defaults to the name without being tied to it.
  *
- * Each suffix is recognised only when what follows it is a bare word: a `/` or a `:` means the
- * character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
+ * Each suffix is recognised only when what follows it is a bare word:
+ * a `/` or a `:` means the character belonged to the location instead (`host:path`, `.../a=b/c`, `https://[::1]/repo`).
  */
 private fun parseRepoSpec(raw: String): RepoSpec {
     val (beforeSubdir, subdir) = splitSuffix(raw, "=")
@@ -250,12 +250,13 @@ private fun parseRepoSpec(raw: String): RepoSpec {
     val derived = name
         ?: if (remote) repoNameFromLocation(location)
         else SourceRepository.defaultName(localPath(location, raw))
-    // The name becomes the default subdirectory, the tag prefix and the provenance label, so an
-    // input that yields none is rejected here rather than failing later as an unusable subdirectory.
+    // The name becomes the default subdirectory, the tag prefix and the provenance label,
+    // so an input that yields none is rejected here rather than failing later as an unusable subdirectory.
     if (derived.isEmpty()) throw UsageError("cannot work out a repository name from '$raw'")
     // It also becomes a directory name: a remote input is cloned into `<clone root>/<name>.git`.
-    // `Path.resolve` on a name that is rooted or carries a separator leaves the clone root instead
-    // of descending into it, so such a name is refused before anything is written anywhere.
+    // `Path.resolve` on a name that is rooted or carries a separator
+    // leaves the clone root instead of descending into it,
+    // so such a name is refused before anything is written anywhere.
     if (!isOneSegment(derived)) throw UsageError("'$derived' is not a usable name (in '$raw')")
     return RepoSpec(location, remote, derived, subdir)
 }
@@ -263,9 +264,10 @@ private fun parseRepoSpec(raw: String): RepoSpec {
 /**
  * [location] as a path, or a usage error naming it.
  *
- * A location the platform cannot spell as a path at all — `a::b` on Windows, where a colon is legal
- * only in a drive letter — is the user's typo, not an internal failure, so it is reported the way
- * every other unusable argument is instead of as an `InvalidPathException` from inside the parser.
+ * A location the platform cannot spell as a path at all —
+ * `a::b` on Windows, where a colon is legal only in a drive letter — is the user's typo,
+ * not an internal failure, so it is reported the way every other unusable argument is
+ * instead of as an `InvalidPathException` from inside the parser.
  */
 private fun localPath(location: String, raw: String): Path =
     try {
@@ -277,9 +279,10 @@ private fun localPath(location: String, raw: String): Path =
 /**
  * Whether [name] can serve as a single directory name on this platform.
  *
- * Which characters that admits is the platform's business, not this parser's: a backslash is an
- * ordinary character in a POSIX filename and a separator in a Windows one, and Windows rejects a
- * handful of others outright. Asking [Path] is what keeps the rule the filesystem's own.
+ * Which characters that admits is the platform's business, not this parser's:
+ * a backslash is an ordinary character in a POSIX filename and a separator in a Windows one,
+ * and Windows rejects a handful of others outright.
+ * Asking [Path] is what keeps the rule the filesystem's own.
  */
 private fun isOneSegment(name: String): Boolean {
     if (name.isBlank() || name == "." || name == "..") return false
@@ -307,10 +310,11 @@ private fun isRemoteLocation(location: String): Boolean = REMOTE_LOCATION.contai
 /**
  * The repository name implied by a URL: its last path segment without a trailing `.git`.
  *
- * A backslash separates segments here as well as a slash, because a location can be a Windows path
- * wearing a URL scheme — `file://C:\repos\backend.git`, which is what concatenating `file://`
- * with an absolute path produces there. Cutting that at the colon of the drive letter would read the
- * name as `\repos\backend`, and the name is a directory name.
+ * A backslash separates segments here as well as a slash,
+ * because a location can be a Windows path wearing a URL scheme —
+ * `file://C:\repos\backend.git`, which is what concatenating `file://` with an absolute path produces there.
+ * Cutting that at the colon of the drive letter would read the name as `\repos\backend`,
+ * and the name is a directory name.
  */
 private fun repoNameFromLocation(location: String): String {
     val trimmed = location.trimEnd('/', '\\')

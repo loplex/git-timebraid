@@ -4,23 +4,25 @@ package cz.loplex.timebraid.plan
 class CyclicGraphException(message: String) : IllegalStateException(message)
 
 /**
- * Verifies that [graph] contains no cycle, and throws [CyclicGraphException] naming the offending
- * chain if it does.
+ * Verifies that [graph] contains no cycle, and throws [CyclicGraphException] naming the offending chain if it does.
  *
- * This runs in production, not only in tests. Reparenting adds an edge from each braid commit to its
- * predecessor in the braid sequence; as long as that sequence is a valid topological order, no cycle
- * can arise. So a cycle here means the ordering contradicted ancestry, and the only safe response is
- * to fail loudly before a single object is written. The graph checked is not always the commits' own
- * — reparenting checks the braided edges it has just derived, before anything is written from them.
+ * This runs in production, not only in tests.
+ * Reparenting adds an edge from each braid commit to its predecessor in the braid sequence;
+ * as long as that sequence is a valid topological order, no cycle can arise.
+ * So a cycle here means the ordering contradicted ancestry,
+ * and the only safe response is to fail loudly before a single object is written.\
+ * The graph checked is not always the commits' own —
+ * reparenting checks the braided edges it has just derived, before anything is written from them.
  *
- * Iterative depth-first search — the first-parent chain of a real repository is tens of thousands of
- * commits deep, which recursion would not survive. Colouring nodes and unwinding a stack wants flat
- * arrays, which is what the graph's own numbering gives it. A caller passes a graph and the cycle is
- * named by what its nodes print as.
+ * Iterative depth-first search —
+ * the first-parent chain of a real repository is tens of thousands of commits deep, which recursion would not survive.\
+ * Colouring nodes and unwinding a stack wants flat arrays, which is what the graph's own numbering gives it.\
+ * A caller passes a graph and the cycle is named by what its nodes print as.
  *
- * @param adjacency the edges to walk. Defaults to this graph's, and is passed in by a caller that has
- *   already built them — [KahnOrder] checks the graph it has just failed to order, and building a
- *   second copy to say so would be the one path that allocates for an error.
+ * @param adjacency the edges to walk.\
+ *   Defaults to this graph's, and is passed in by a caller that has already built them —
+ *   [KahnOrder] checks the graph it has just failed to order,
+ *   and building a second copy to say so would be the one path that allocates for an error.
  */
 internal fun <T : Any> requireAcyclic(
     graph: IndexedGraph<T>,

@@ -1,11 +1,11 @@
 # Changelog
 
-What changed between releases, and what a run that worked before may do differently after an
-upgrade. The specification of the construction itself lives in
-[doc/how-it-works.md](doc/how-it-works.md); this file only records the differences.
+What changed between releases, and what a run that worked before may do differently after an upgrade.\
+The specification of the construction itself lives in [doc/how-it-works.md](doc/how-it-works.md);
+this file only records the differences.
 
-The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and the
-project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
+and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 

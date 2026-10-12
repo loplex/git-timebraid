@@ -5,10 +5,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import java.nio.file.Path
 
 /**
- * Reads a braided output repository back as plain data, keyed by the *original* sha each commit
- * records in its provenance trailer. This is the view the integration tests assert against: they know
- * the inputs by the shas TestRepoBuilder produced, and the trailer is the only bridge from those to
- * the rewritten commits.
+ * Reads a braided output repository back as plain data,
+ * keyed by the *original* sha each commit records in its provenance trailer.\
+ * This is the view the integration tests assert against:
+ * they know the inputs by the shas TestRepoBuilder produced,
+ * and the trailer is the only bridge from those to the rewritten commits.
  */
 object OutputRepo {
 
@@ -50,9 +51,9 @@ object OutputRepo {
     }
 
     /**
-     * The machine check behind the tool's central guarantee: read every commit's `original_parents`
-     * from the trailer and assert every one of those edges exists in the rewritten repository. This
-     * is the guarantee — 100 % of original edges preserved — stated as a test.
+     * The machine check behind the tool's central guarantee: read every commit's `original_parents` from the trailer
+     * and assert every one of those edges exists in the rewritten repository.
+     * This is the guarantee — 100 % of original edges preserved — stated as a test.
      */
     fun assertEveryOriginalEdgePreserved(dir: Path) {
         val contents = read(dir)

@@ -1,19 +1,17 @@
 # The repository is LF, in the working tree as well as in the object store.
-# Git for Windows defaults core.autocrlf to true, so without this the
-# Windows leg of the matrix checks out CRLF copies of the fixtures that
-# assert on exact tree bytes, and then fails on content it never wrote.
-# The tool takes the same position about the repositories it writes, where
-# it sets core.autocrlf=false and core.eol=lf.
+# Git for Windows defaults core.autocrlf to true,
+# so without this the Windows leg of the matrix checks out CRLF copies of the fixtures that assert on exact tree bytes,
+# and then fails on content it never wrote.
+# The tool takes the same position about the repositories it writes, where it sets core.autocrlf=false and core.eol=lf.
 * text=auto eol=lf
 
-# The exception, because cmd.exe is the only thing that runs it. The
-# assembly re-applies the line endings when it packages the launchers, so
-# this line covers the checkout rather than the archive.
+# The exception, because cmd.exe is the only thing that runs it.
+# The assembly re-applies the line endings when it packages the launchers,
+# so this line covers the checkout rather than the archive.
 *.bat text eol=crlf
 
-# `git diff --check` reads the .gitmodules fixtures in SubmoduleWiringTest
-# as "space before tab in indent". The tab is .gitmodules syntax -- git
-# writes that file tab-indented -- sitting inside a space-indented Kotlin
-# raw string whose common prefix trimIndent() strips at runtime. The tab
-# is content, not indentation, so the warning does not apply here.
+# `git diff --check` reads the .gitmodules fixtures in SubmoduleWiringTest as "space before tab in indent".
+# The tab is .gitmodules syntax -- git writes that file tab-indented --
+# sitting inside a space-indented Kotlin raw string whose common prefix trimIndent() strips at runtime.
+# The tab is content, not indentation, so the warning does not apply here.
 src/test/kotlin/cz/loplex/timebraid/git/SubmoduleWiringTest.kt whitespace=-space-before-tab

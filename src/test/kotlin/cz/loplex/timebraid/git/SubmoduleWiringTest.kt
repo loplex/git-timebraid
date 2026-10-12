@@ -9,9 +9,10 @@ import org.junit.jupiter.api.assertThrows
 /**
  * The text transform on its own, without a repository in the way.
  *
- * Every case here is a `.gitmodules` that could plausibly be sitting in someone's history, checked
- * against the one property that matters: after the transform, a `path` names where the gitlink
- * actually is in the output, and a section name is one no other input can claim.
+ * Every case here is a `.gitmodules` that could plausibly be sitting in someone's history,
+ * checked against the one property that matters:
+ * after the transform, a `path` names where the gitlink actually is in the output,
+ * and a section name is one no other input can claim.
  */
 class SubmoduleWiringTest {
 
@@ -72,8 +73,8 @@ class SubmoduleWiringTest {
             subdir = "A",
         )
 
-        // The url in particular: a relative one still resolves against the *output's* remote, which
-        // is a limitation of the merge and not something this transform may paper over.
+        // The url in particular: a relative one still resolves against the *output's* remote,
+        // which is a limitation of the merge and not something this transform may paper over.
         assertTrue(rewired.text.contains("url = ../lib.git"), rewired.text)
         assertTrue(rewired.text.contains("branch = release"), rewired.text)
         assertTrue(rewired.text.contains("update = rebase"), rewired.text)
@@ -84,8 +85,8 @@ class SubmoduleWiringTest {
 
     @Test
     fun `a name that git does not derive from the path is prefixed all the same`() {
-        // `git submodule add --name` decouples the two, and it is the name — not the path — that
-        // decides which directory under .git/modules a populated submodule gets.
+        // `git submodule add --name` decouples the two, and it is the name — not the path —
+        // that decides which directory under .git/modules a populated submodule gets.
         val rewired = rewire(
             """
             [submodule "the-library"]
@@ -148,8 +149,8 @@ class SubmoduleWiringTest {
 
     @Test
     fun `two inputs claiming one submodule name is a named error`() {
-        // Only reachable across the root repository, whose names are not prefixed: a subdirectory
-        // input cannot collide, because subdirectory names are unique and hold no slash.
+        // Only reachable across the root repository, whose names are not prefixed:
+        // a subdirectory input cannot collide, because subdirectory names are unique and hold no slash.
         val root = rewire("[submodule \"A/lib\"]\n\tpath = A/lib\n\turl = r\n", subdir = null, repo = "root")
         val a = rewire("[submodule \"lib\"]\n\tpath = lib\n\turl = a\n", subdir = "A")
 

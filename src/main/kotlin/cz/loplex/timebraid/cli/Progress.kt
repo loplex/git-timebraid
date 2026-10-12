@@ -1,8 +1,9 @@
 package cz.loplex.timebraid.cli
 
 /**
- * Where the program narrates what it is doing. Every line goes to stderr — stdout is reserved for
- * results (the plan summary), so `git-timebraid --dry-run … | diff` stays clean.
+ * Where the program narrates what it is doing.\
+ * Every line goes to stderr —
+ * stdout is reserved for results (the plan summary), so `git-timebraid --dry-run … | diff` stays clean.
  */
 class Progress(
     private val level: Level,
@@ -11,12 +12,18 @@ class Progress(
 
     enum class Level { QUIET, NORMAL, VERBOSE }
 
-    /** A milestone — cloning, reading, planning, writing. Printed unless `--quiet`. */
+    /**
+     * A milestone — cloning, reading, planning, writing.\
+     * Printed unless `--quiet`.
+     */
     fun step(message: String) {
         if (level != Level.QUIET) sink("git-timebraid: $message")
     }
 
-    /** A detail — every git subprocess, mostly. Printed only with `--verbose`. */
+    /**
+     * A detail — every git subprocess, mostly.\
+     * Printed only with `--verbose`.
+     */
     fun detail(message: String) {
         if (level == Level.VERBOSE) sink("  $message")
     }

@@ -16,20 +16,22 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Builds a real on-disk git repository object by object, with fixed idents and a controlled clock so
- * the resulting shas are deterministic — the fixture generator the integration tests are written
- * against.
+ * Builds a real on-disk git repository object by object,
+ * with fixed idents and a controlled clock so the resulting shas are deterministic —
+ * the fixture generator the integration tests are written against.
  *
  * Two properties matter for those tests:
  *
- * - **Deterministic shas.** Every ident is the same `Tester <tester@example.com>` in UTC and the
- *   clock only moves when a test says so, so a fixture produces byte-identical objects on every run
- *   and on every machine. That is what lets an integration test assert an exact output sha.
- * - **Awkward trees on demand.** A file path may contain `/`, so a fixture can put a blob inside a
- *   subdirectory; content is written verbatim, so a fixture can carry `CRLF`, NUL bytes or a
- *   non-ASCII name. A path may also be a *gitlink* rather than a blob, which is how a fixture
- *   carries a submodule. Tree entries are ordered the way git orders them
- *   ([RootTreeAssembler.GIT_TREE_ORDER]), which is the only ordering `git fsck` accepts.
+ * - **Deterministic shas.**
+ *   Every ident is the same `Tester <tester@example.com>` in UTC and the clock only moves when a test says so,
+ *   so a fixture produces byte-identical objects on every run and on every machine.
+ *   That is what lets an integration test assert an exact output sha.
+ * - **Awkward trees on demand.**
+ *   A file path may contain `/`, so a fixture can put a blob inside a subdirectory;
+ *   content is written verbatim, so a fixture can carry `CRLF`, NUL bytes or a non-ASCII name.\
+ *   A path may also be a *gitlink* rather than a blob, which is how a fixture carries a submodule.\
+ *   Tree entries are ordered the way git orders them ([RootTreeAssembler.GIT_TREE_ORDER]),
+ *   which is the only ordering `git fsck` accepts.
  */
 class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable {
 
@@ -41,14 +43,15 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
     private fun who(at: Instant) = PersonIdent("Tester", "tester@example.com", at, ZoneOffset.UTC)
 
     /**
-     * Creates a commit and returns its id. The clock advances one hour per commit unless [at] is
-     * given explicitly, which is how a test writes a history whose timestamps run backwards.
-     * [authorAt] overrides only the author date, so a test can reproduce a rebased commit whose
-     * author and committer dates disagree.
+     * Creates a commit and returns its id.\
+     * The clock advances one hour per commit unless [at] is given explicitly,
+     * which is how a test writes a history whose timestamps run backwards.\
+     * [authorAt] overrides only the author date,
+     * so a test can reproduce a rebased commit whose author and committer dates disagree.
      *
-     * [files] keys are slash-separated paths: `mapOf("src/App.kt" to "…")` builds the `src` tree.
-     * [gitlinks] puts a submodule entry at a path instead of a blob, pointing at a commit that need
-     * not exist in this repository — which is the situation in every real superproject.
+     * [files] keys are slash-separated paths: `mapOf("src/App.kt" to "…")` builds the `src` tree.\
+     * [gitlinks] puts a submodule entry at a path instead of a blob,
+     * pointing at a commit that need not exist in this repository — which is the situation in every real superproject.
      */
     fun commit(
         message: String,
@@ -82,9 +85,9 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
         val stamp = at ?: clock.also { clock = clock.plusSeconds(3600) }
         repository.newObjectInserter().use { inserter ->
             val builder = CommitBuilder().apply {
-                // JGit pairs getTreeId(): ObjectId with setTreeId(AnyObjectId), so Kotlin sees a
-                // read-only property plus a setter method: the property-access syntax the inspection
-                // suggests does not compile.
+                // JGit pairs getTreeId(): ObjectId with setTreeId(AnyObjectId),
+                // so Kotlin sees a read-only property plus a setter method:
+                // the property-access syntax the inspection suggests does not compile.
                 @Suppress("UsePropertyAccessSyntax")
                 setTreeId(writeTree(inserter, leaves))
                 setParentIds(parents)
@@ -157,8 +160,8 @@ class TestRepoBuilder private constructor(private val git: Git) : AutoCloseable 
 
     private fun point(ref: String, target: ObjectId) {
         repository.updateRef(ref).apply {
-            // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) — same asymmetry as
-            // above: assigning through the property does not compile.
+            // getNewObjectId(): ObjectId against setNewObjectId(AnyObjectId) —
+            // same asymmetry as above: assigning through the property does not compile.
             @Suppress("UsePropertyAccessSyntax")
             setNewObjectId(target)
             isForceUpdate = true

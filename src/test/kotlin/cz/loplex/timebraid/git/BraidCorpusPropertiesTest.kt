@@ -12,24 +12,27 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 
 /**
- * The properties [BraidInterleave] promises, checked against real repositories rather than the
- * synthetic graphs the unit tests use — thousands of commits with timestamps that genuinely run
- * backwards here and there, which is what these properties exist to survive:
+ * The properties [BraidInterleave] promises,
+ * checked against real repositories rather than the synthetic graphs the unit tests use —
+ * thousands of commits with timestamps that genuinely run backwards here and there,
+ * which is what these properties exist to survive:
  *
- * 1. **The write order is topological over the braided history.** Every parent, original or braid,
- *    comes before its child, so no commit is ever written referring to an object that does not exist.
- * 2. **No braid edge points into the future.** Where a braid commit's predecessor comes from another
- *    repository, that predecessor is never timestamped later than the commit itself.
+ * 1. **The write order is topological over the braided history.**
+ *    Every parent, original or braid, comes before its child,
+ *    so no commit is ever written referring to an object that does not exist.
+ * 2. **No braid edge points into the future.**
+ *    Where a braid commit's predecessor comes from another repository,
+ *    that predecessor is never timestamped later than the commit itself.
  *
- * It also reports, without asserting on it, how much the braid would differ if it were interleaved
- * over the whole graph instead of over the mainline chains alone ([WholeGraphBraid]) — the difference
- * being merges whose merged-in branch is timestamped after the merge itself. On the three-repository,
- * 14 387-commit history this was developed against, the two came out identical: 0 of 6929 braid
- * positions moved. That number is a measurement of one corpus, not a guarantee, which is exactly why
- * it is printed rather than asserted.
+ * It also reports, without asserting on it, how much the braid would differ
+ * if it were interleaved over the whole graph instead of over the mainline chains alone ([WholeGraphBraid]) —
+ * the difference being merges whose merged-in branch is timestamped after the merge itself.\
+ * On the three-repository, 14 387-commit history this was developed against, the two came out identical:
+ * 0 of 6929 braid positions moved.
+ * That number is a measurement of one corpus, not a guarantee, which is exactly why it is printed rather than asserted.
  *
- * Opt-in, because a corpus of large real repositories does not belong in this tree. Point
- * `-Dtimebraid.corpus` at a directory of bare clones:
+ * Opt-in, because a corpus of large real repositories does not belong in this tree.\
+ * Point `-Dtimebraid.corpus` at a directory of bare clones:
  *
  * ```
  * mvn -q test -Dtest=BraidCorpusPropertiesTest -Dtimebraid.corpus=/path/to/bare-clones
@@ -53,8 +56,8 @@ class BraidCorpusPropertiesTest {
         }
         val graph = braidInputs.graph
 
-        // build() reparents and orders, and fails loudly on a braid that contradicts ancestry, so
-        // getting a plan back at all is already part of what is being checked here.
+        // build() reparents and orders, and fails loudly on a braid that contradicts ancestry,
+        // so getting a plan back at all is already part of what is being checked here.
         val plan = graph.braid(braidInputs.heads).plan(graph.sources.associateWith { it.name })
         val wholeGraph = WholeGraphBraid.compute(graph, braidInputs.heads)
 
@@ -87,9 +90,9 @@ class BraidCorpusPropertiesTest {
     }
 
     /**
-     * Braid members whose predecessor comes from another repository and carries a later timestamp.
-     * Same-repository predecessors are exempt: their order is forced by ancestry, not decided by
-     * time, and there the braid adds no edge at all — the predecessor already is the first parent.
+     * Braid members whose predecessor comes from another repository and carries a later timestamp.\
+     * Same-repository predecessors are exempt: their order is forced by ancestry, not decided by time,
+     * and there the braid adds no edge at all — the predecessor already is the first parent.
      */
     private fun futureBraidEdges(braid: List<Commit>): List<String> {
         val lines = ArrayList<String>()

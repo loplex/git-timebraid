@@ -17,10 +17,11 @@ import java.time.Instant
 import kotlin.io.path.createDirectories
 
 /**
- * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command
- * line, one fixture per behaviour that has to hold end to end. Every fixture is built by
- * [TestRepoBuilder] with fixed idents and a controlled clock, so its output is byte-identical on
- * every run; where git is on `PATH` each output is run through `git fsck --strict`.
+ * The whole pipeline (`MergeCommand` → clone/read/plan/write) exercised through the command line,
+ * one fixture per behaviour that has to hold end to end.\
+ * Every fixture is built by [TestRepoBuilder] with fixed idents and a controlled clock,
+ * so its output is byte-identical on every run;
+ * where git is on `PATH` each output is run through `git fsck --strict`.
  *
  * The reference model is the README's two-strand example:
  *
@@ -118,10 +119,11 @@ class BraidPipelineIT {
         GitCli.requireGit()
         GitCli.fsck(out)
 
-        // Every branch and every tag of both inputs, at its own sha. Tags go under `tags/` so that a
-        // branch and a tag of one name cannot land on the same ref, and they are mirrored at all
-        // because a commit an input reaches only from a tag would otherwise have no ref pointing at
-        // it -- present in the output but unreachable.
+        // Every branch and every tag of both inputs, at its own sha.
+        // Tags go under `tags/` so that a branch and a tag of one name cannot land on the same ref,
+        // and they are mirrored at all
+        // because a commit an input reaches only from a tag would otherwise have no ref pointing at it --
+        // present in the output but unreachable.
         assertEquals(
             listOf(
                 "refs/remotes/backend/feature",
@@ -136,20 +138,22 @@ class BraidPipelineIT {
         assertEquals(ids.getValue("a3").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/main"))
         assertEquals(ids.getValue("f1").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/feature"))
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/main"))
-        // v1.0 was a lightweight tag of a2 and v2.0 an annotated tag of b2; either way the mirror
-        // names the commit, because the annotation itself is recreated under the output's own tag.
+        // v1.0 was a lightweight tag of a2 and v2.0 an annotated tag of b2;
+        // either way the mirror names the commit,
+        // because the annotation itself is recreated under the output's own tag.
         assertEquals(ids.getValue("a2").name, GitCli.run(out, "rev-parse", "refs/remotes/backend/tags/v1.0"))
         assertEquals(ids.getValue("b2").name, GitCli.run(out, "rev-parse", "refs/remotes/webui/tags/v2.0"))
 
-        // The originals are complete, not just their tips: rev-list cannot count a history whose
-        // parent is missing, and `--objects` cannot list one whose trees are missing -- which is the
-        // point, because those trees were never transferred, only reused where the braid put them.
+        // The originals are complete, not just their tips:
+        // rev-list cannot count a history whose parent is missing,
+        // and `--objects` cannot list one whose trees are missing -- which is the point,
+        // because those trees were never transferred, only reused where the braid put them.
         assertEquals(4, GitCli.run(out, "rev-list", "--count", "refs/remotes/backend/main").toInt())
         assertEquals(2, GitCli.run(out, "rev-list", "--count", "refs/remotes/webui/main").toInt())
         GitCli.run(out, "rev-list", "--objects", "--remotes")
 
-        // The whole point of mirroring the tags: every original the run read is now reachable, so
-        // nothing of the inputs survives only as an object nobody can name.
+        // The whole point of mirroring the tags: every original the run read is now reachable,
+        // so nothing of the inputs survives only as an object nobody can name.
         assertEquals(
             ids.size,
             GitCli.run(out, "rev-list", "--count", "--remotes").toInt(),
@@ -182,10 +186,11 @@ class BraidPipelineIT {
         GitCli.requireGit()
         GitCli.fsck(out)
 
-        // -b says which branches are read, and the output is filled by fetching exactly those, so a
-        // commit only that branch could reach is not merely unreferenced -- its object is not there.
-        // The check is on the *original* sha: a rewritten x1 would be a different object, and the
-        // originals do arrive, which is what makes this worth asserting rather than assuming.
+        // -b says which branches are read, and the output is filled by fetching exactly those,
+        // so a commit only that branch could reach is not merely unreferenced -- its object is not there.
+        // The check is on the *original* sha:
+        // a rewritten x1 would be a different object, and the originals do arrive,
+        // which is what makes this worth asserting rather than assuming.
         assertEquals(
             listOf("refs/heads/main"),
             GitCli.run(out, "for-each-ref", "--format=%(refname)").lines(),
@@ -268,9 +273,9 @@ class BraidPipelineIT {
     }
 
     /**
-     * `backend`'s `m` (12:00) merges in `f`, timestamped 20:00 -- a slow review, or a clock skewed the
-     * other way. `webui` has commits at 11:00 and 13:00, so whether `f` is allowed to delay `m`
-     * decides which of them becomes `m`'s braid predecessor.
+     * `backend`'s `m` (12:00) merges in `f`, timestamped 20:00 -- a slow review, or a clock skewed the other way.\
+     * `webui` has commits at 11:00 and 13:00,
+     * so whether `f` is allowed to delay `m` decides which of them becomes `m`'s braid predecessor.
      */
     private fun lateMergeFixture(): Map<String, ObjectId> {
         val ids = HashMap<String, ObjectId>()
@@ -294,10 +299,10 @@ class BraidPipelineIT {
 
     @Test
     fun `a merge whose merged-in branch is timestamped late still lands at its own time`() {
-        // Only the mainlines decide where the strands interleave, so m takes its place by its own
-        // 12:00, between b1 (11:00) and b2 (13:00). Waiting for f as well would push m past b2 and
-        // give it a braid predecessor timestamped after itself -- which the checkout would then show
-        // as webui/ at 13:00 under a commit recorded at 12:00.
+        // Only the mainlines decide where the strands interleave,
+        // so m takes its place by its own 12:00, between b1 (11:00) and b2 (13:00).
+        // Waiting for f as well would push m past b2 and give it a braid predecessor timestamped after itself --
+        // which the checkout would then show as webui/ at 13:00 under a commit recorded at 12:00.
         val ids = lateMergeFixture()
         val out = tmp.resolve("merged.git")
 
@@ -323,10 +328,10 @@ class BraidPipelineIT {
 
     @Test
     fun `--interleave-ref lets that branch delay the merge that brings it in`() {
-        // The same fixture with f opted in: m now waits for f, so it lands after webui's whole
-        // history and its braid predecessor becomes b2 -- later than m's own timestamp. That is the
-        // trade the option exists to make available, and it is the behaviour the tool had before the
-        // braid and the write order were separated.
+        // The same fixture with f opted in: m now waits for f,
+        // so it lands after webui's whole history and its braid predecessor becomes b2 -- later than m's own timestamp.
+        // That is the trade the option exists to make available,
+        // and it is the behaviour the tool had before the braid and the write order were separated.
         val ids = lateMergeFixture()
         val out = tmp.resolve("merged.git")
 
@@ -471,8 +476,9 @@ class BraidPipelineIT {
 
     @Test
     fun `a submodule comes out wired, so git submodule resolves it in the output`() {
-        // The gitlink's target need not exist anywhere here: a superproject records a sha it fetches
-        // from the submodule's own url, and that is what the output has to keep pointing at.
+        // The gitlink's target need not exist anywhere here:
+        // a superproject records a sha it fetches from the submodule's own url,
+        // and that is what the output has to keep pointing at.
         val vendored = ObjectId.fromString("06df2481b3f0ad0e5d6d0f04ac4b5f0e0eaa1234")
         TestRepoBuilder.create(tmp.resolve("backend.git")).use { r ->
             val a1 = r.commit("a1", at = at("09:00"))
@@ -500,8 +506,8 @@ class BraidPipelineIT {
             val tip = repo.resolveBranch("main")!!
             val tree = repo.readReachable(listOf(tip)).first { it.id == tip }.tree
 
-            // The wiring git actually reads: one file at the root, its path pointing at where the
-            // gitlink landed rather than at where it used to be.
+            // The wiring git actually reads: one file at the root,
+            // its path pointing at where the gitlink landed rather than at where it used to be.
             assertEquals(
                 "[submodule \"backend/vendor/lib\"]\n\tpath = backend/vendor/lib\n" +
                     "\turl = https://example.com/lib.git\n",
@@ -516,9 +522,9 @@ class BraidPipelineIT {
                 "160000 commit ${vendored.name}\tbackend/vendor/lib",
                 GitCli.run(out, "ls-tree", "main", "backend/vendor/lib"),
             )
-            // The command that used to fail outright with "no submodule mapping found". It reports
-            // the submodule as not checked out (the leading `-`), which is what an uninitialised
-            // submodule looks like — the mapping resolves.
+            // The command that used to fail outright with "no submodule mapping found".
+            // It reports the submodule as not checked out (the leading `-`),
+            // which is what an uninitialised submodule looks like — the mapping resolves.
             assertEquals(
                 "-${vendored.name} backend/vendor/lib",
                 GitCli.run(out, "submodule", "status"),
@@ -585,9 +591,8 @@ class BraidPipelineIT {
         val inside = tmp.resolve("webui/sub").createDirectories()
         val out = tmp.resolve("out.git")
 
-        // The name-collision check cannot catch this on its own: "sub" and "webui" are different
-        // names, so an enclosing repository would come in a second time as a strand of its own and
-        // be braided against itself.
+        // The name-collision check cannot catch this on its own: "sub" and "webui" are different names,
+        // so an enclosing repository would come in a second time as a strand of its own and be braided against itself.
         val result = MergeCommand().test(listOf("-o", out.toString(), path("backend.git"), inside.toString()))
 
         assertEquals(1, result.statusCode, result.output)
