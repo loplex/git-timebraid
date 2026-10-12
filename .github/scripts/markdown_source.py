@@ -4,7 +4,8 @@ Two checkers need the blocks: check-blocks.py measures the lines inside a code b
 check-width.py measures the prose outside one. Each line of a document but a fence or a table row
 has to fall to exactly one of them, so both ask the same function where the blocks are; two
 scanners that disagreed about an indented block would leave its lines to neither. Both take the
-list of documents from here too, and so does check-links.py.
+list of documents from here too, and so does check-links.py. check-hard-breaks.py takes both, to
+leave a code block's lines alone: a `\\` ending one is code, not a break.
 """
 import pathlib
 import re

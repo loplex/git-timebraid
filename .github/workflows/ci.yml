@@ -258,6 +258,10 @@ jobs:
       - name: Check every line fits the width .editorconfig sets
         run: .github/scripts/check-width.py
 
+      # A `\` that ends a paragraph breaks no line: the page shows it as text, and the source looks no different.
+      - name: Check every hard line break is inside a paragraph
+        run: .github/scripts/check-hard-breaks.py
+
       # One spelling of the punctuation dash, where the spelling is a choice:
       # a comment reaches no console, so nothing forces the ASCII form there
       # the way MessageCharsetTest forces it on the messages.
