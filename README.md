@@ -186,14 +186,15 @@ Neither is something braiding introduces, and both are worked through under [Cav
 
 ## Documentation
 
-- [**doc/install.md**](doc/install.md) —
-  the archives, verifying one, which JVM the launcher picks, and building from source.
+- [**doc/install.md**](doc/install.md) — the archives, verifying one, and which JVM the launcher picks.
 - [**doc/usage.md**](doc/usage.md) — every option, how an input argument is written,
   where content lands, and what the output holds when the run finishes.
 - [**doc/how-it-works.md**](doc/how-it-works.md) — the parent rule, the tree rule,
   why a merge on the braid can end up with three parents, and the caveats that follow from them.
 - [**doc/examples/**](doc/examples/README.md) — small histories you can build and walk yourself,
   some on the order the commits end up in and others on where their content lands and which refs come with it.
+- [**CONTRIBUTING.md**](CONTRIBUTING.md) — building from a clone, the checks CI runs,
+  and how the text and the commits are written.
 
 ---
 
@@ -228,7 +229,7 @@ Verification:
 
 `mvn package` produces the runnable artifacts — `target/lib/`, the program's jar beside its dependencies',
 a portable archive, and under `-Pbundled-runtime` one carrying its own JVM.\
-[Building from source](doc/install.md#building-from-source) has the detail.
+[CONTRIBUTING.md](CONTRIBUTING.md#building-from-source) has the detail.
 
 Releases are cut by tagging:
 

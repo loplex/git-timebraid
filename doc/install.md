@@ -116,45 +116,8 @@ which sit beside it in `lib/`, so running it without the launcher works as well:
 java -jar lib/git-timebraid.jar --help
 ```
 
----
+## No archive for your platform
 
-## Building from source
-
-**You do not need this to run the tool.**
-The archives above are this same build, produced by CI and smoke-tested on every platform it publishes.\
-Build it yourself to work on git-timebraid, or to get an archive for a platform the releases do not cover.
-
-```bash
-mvn -q package                       # builds target/git-timebraid-<version>.tar.gz (and .zip)
-```
-
-That is the portable archive, unpacked the same way, plus `target/lib/`, the archive's `lib/` as it ships,
-for running the jar straight out of the build: `java -jar target/lib/git-timebraid.jar`.\
-The release archives also carry the manual page as HTML,
-which `.github/scripts/render-man-html.sh` renders before they are packaged, and which needs groff and python3;
-an archive packaged without running it first has no `share/doc/git-doc/`,
-which only [Git for Windows](#git-for-windows-reads-the-html-page) misses.
-
-**`./git-timebraid` in the repo root runs that jar**, so a clone needs no install to be driven.\
-It is what the [worked examples](examples/README.md) are written in terms of,
-and it reads `TIMEBRAID_JAVA` and `JAVA_OPTS` the way the shipped launcher does.
-
-### Building an archive that carries its own JVM
-
-`-Pbundled-runtime` builds the platform archive, trimming a JVM with `jlink`:
-
-```bash
-mvn -q -Pbundled-runtime package      # adds git-timebraid-<version>-<os>-<arch>.tar.gz (and .zip)
-```
-
-- By default it is the JDK running Maven that gets bundled, so the archive is for the platform you build on —
-  hence the platform in its name.
-- `-Djlink.jmods=<dir>` links the `jmods` of another JDK instead, which builds another platform's archive:
-  the Windows one is built on Linux this way.\
-  The `jmods` have to be from the same JDK version as the one running Maven,
-  and `-Ddist.os` and `-Ddist.arch` name the platform it is for:
-
-  ```bash
-  mvn -q -Pbundled-runtime -Djlink.jmods=<windows-jdk>/jmods -Ddist.os=windows -Ddist.arch=x64 package
-  ```
-- `--compress=zip-6` needs JDK 21 or newer; on JDK 17 build it with `-Djlink.compress=2`.
+Take the [portable archive](#the-portable-archive-if-you-already-have-java).\
+An archive carrying its own JVM can also be built for it from a clone,
+as [CONTRIBUTING.md](../CONTRIBUTING.md#building-an-archive-that-carries-its-own-jvm) describes.
